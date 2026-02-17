@@ -55,16 +55,14 @@ class MaintenanceSchedule:
 
     def full_names(self, catalog: str | None = None, schema: str | None = None) -> list[str]:
         self._check_init()
-        prefix_filter = ""
-        if catalog:
-            prefix_filter = catalog
-        if catalog and schema:
-            prefix_filter = f"{catalog}.{schema}"
-
-        names = list(self.maintenance_entry_map.keys())
-        if prefix_filter:
-            names = [name for name in names if name.startswith(prefix_filter)]
-        return names
+        # If we don't have a catalog requested, include the full_name.
+        # If we do have a catalog and it matches the entry, include the full_name.
+        # Repeat the same logic for the schema.
+        return [
+            entry.full_name
+            for entry in self.maintenance_entry_map.values()
+            if (not catalog or entry.catalog == catalog) and (not schema or entry.schema == schema)
+        ]
 
     def entries(self) -> list[MaintenanceScheduleEntry]:
         self._check_init()

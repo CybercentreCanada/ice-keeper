@@ -73,11 +73,11 @@ class Scope:
     def make_scoping_stmt(self) -> str:
         filters = []
         if self.catalog:
-            filters.append(f"(catalog like '{self.catalog}')")
+            filters.append(f"(catalog = '{self.catalog}')")
         if self.schema:
-            filters.append(f"(schema like '{self.schema}')")
+            filters.append(f"(schema = '{self.schema}')")
         if self.table_name:
-            filters.append(f"(table_name like '{self.table_name}')")
+            filters.append(f"(table_name = '{self.table_name}')")
         if self.where:
             filters.append(f"({self.where})")
         if len(filters) > 0:
