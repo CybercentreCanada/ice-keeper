@@ -1,0 +1,21 @@
+
+CALL {{ catalog }}.system.rewrite_data_files(
+    table => '{{ schema }}.{{ table_name }}'
+    {%- if options is not none and options | length > 0 %}
+    , options => map(
+        {%- for key, value in options.items() %}
+        '{{ key }}', '{{ value }}'
+        {%- if not loop.last -%}, {% endif -%}
+        {%- endfor -%}
+    )
+    {%- endif %}
+    {%- if strategy is not none %}
+    , strategy => '{{ strategy }}'
+    {%- endif %}
+    {%- if where is not none %}
+    , where => " {{ where }} "
+    {%- endif %}
+    {%- if sort_order is not none %}
+    , sort_order => '{{ sort_order }}'
+    {%- endif %}
+)

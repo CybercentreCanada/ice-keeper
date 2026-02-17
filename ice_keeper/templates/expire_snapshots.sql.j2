@@ -1,0 +1,5 @@
+call {{ catalog }}.system.expire_snapshots(
+                  table => '{{ schema }}.{{ table_name }}',
+                  older_than => timestamp '{{ older_than }}',
+                  retain_last => {{ retain_last }},
+                  stream_results => true)

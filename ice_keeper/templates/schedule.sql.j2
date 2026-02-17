@@ -1,0 +1,24 @@
+create table {{ full_name }} (
+        {{ ddl }}
+    )
+    using iceberg
+    partitioned by (catalog, schema)
+    {%- if location is not none %}
+    location '{{ location }}'
+    {%- endif %}
+    tblproperties (
+        'write.metadata.delete-after-commit.enabled'='true',
+        'write.target-file-size-bytes'='67108864',
+        'write.delete.mode'='merge-on-read',
+        'write.update.mode'='merge-on-read',
+        'write.merge.mode'='merge-on-read',
+        'write.delete.isolation-level'='snapshot',
+        'write.update.isolation-level'='snapshot',
+        'write.merge.isolation-level'='snapshot',
+        {%- if notification_email is not none %}
+        'ice-keeper.notification-email'='{{ notification_email }}',
+        {%- endif %}
+        'ice-keeper.should-optimize'='true',
+        'ice-keeper.optimization-strategy'='binpack',
+        'ice-keeper.retention-days-snapshots'='90'
+    )

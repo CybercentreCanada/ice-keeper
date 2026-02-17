@@ -1,0 +1,239 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "notify",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "ice_keeper",
+      "env": {
+        "ICEKEEPER_CONFIG": "./config/ice-keeper.yaml"
+      },
+      "args": [
+        "notify",
+        "--last_num_days",
+        "2"
+      ]
+    },
+    {
+      "name": "audit_config",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "ice_keeper",
+      "env": {
+        "ICEKEEPER_CONFIG": "./config/ice-keeper.yaml"
+      },
+      "args": [
+        "audit_config"
+      ]
+    },
+    {
+      "name": "optimize",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "ice_keeper",
+      "env": {
+        "ICEKEEPER_CONFIG": "./config/ice-keeper.yaml"
+      },
+      "args": [
+        "--concurrency",
+        "8",
+        "--spark_driver_cores",
+        "8",
+        "--spark_driver_memory",
+        "16g",
+        "--spark_executors",
+        "4",
+        "--where",
+        " full_name='catalog.schema.table_name' ",
+        "optimize"
+      ]
+    },
+    {
+      "name": "multi",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "ice_keeper",
+      "env": {
+        "ICEKEEPER_CONFIG": "./config/ice-keeper.yaml"
+      },
+      "args": [
+        "--concurrency",
+        "32",
+        "--spark_driver_cores",
+        "8",
+        "--spark_driver_memory",
+        "16g",
+        "--spark_executors",
+        "0",
+        "--where",
+        " catalog = 'catalog' and schema = 'schema' ",
+        "multi",
+        "--command",
+        "rewrite_manifests",
+        "--command",
+        "expire",
+        "--command",
+        "optimize"
+      ]
+    },
+    {
+      "name": "lifecycle",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "ice_keeper",
+      "env": {
+        "ICEKEEPER_CONFIG": "./config/ice-keeper.yaml"
+      },
+      "args": [
+        "--concurrency",
+        "1",
+        "--spark_driver_cores",
+        "8",
+        "--spark_driver_memory",
+        "16g",
+        "--spark_executors",
+        "1",
+        "--where",
+        " catalog = 'catalog' and schema = 'admin' and table_name='ice_keeper_journal' ",
+        "lifecycle"
+      ]
+    },
+    {
+      "name": "rewrite_manifests",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "ice_keeper",
+      "env": {
+        "ICEKEEPER_CONFIG": "./config/ice-keeper.yaml"
+      },
+      "args": [
+        "--concurrency",
+        "1",
+        "--spark_driver_cores",
+        "8",
+        "--spark_driver_memory",
+        "16g",
+        "--spark_executors",
+        "1",
+        "--where",
+        " catalog = 'catalog' and schema = 'admin'  ",
+        "rewrite_manifests"
+      ]
+    },
+    {
+      "name": "orphan",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "ice_keeper",
+      "env": {
+        "ICEKEEPER_CONFIG": "./config/ice-keeper.yaml"
+      },
+      "args": [
+        "--concurrency",
+        "1",
+        "--spark_driver_cores",
+        "8",
+        "--spark_driver_memory",
+        "16g",
+        "--spark_executors",
+        "5",
+        "--spark_executor_cores",
+        "8",
+         "--spark_executor_memory",
+        "8g",
+        "--where",
+        " full_name = 'catalog.admin.ice_keeper_journal' ",
+        "orphan"
+      ]
+    },
+    {
+      "name": "empty_dirs",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "ice_keeper",
+      "env": {
+        "ICEKEEPER_CONFIG": "./config/ice-keeper.yaml"
+      },
+      "args": [
+        "--concurrency",
+        "1",
+        "--spark_driver_cores",
+        "8",
+        "--spark_driver_memory",
+        "16g",
+        "--spark_executors",
+        "5",
+        "--spark_executor_cores",
+        "8",
+         "--spark_executor_memory",
+        "8g",
+        "--where",
+        " full_name = 'catalog.admin.ice_keeper_journal' ",
+        "empty_dirs"
+      ]
+    },
+    {
+      "name": "diagnose",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "ice_keeper",
+      "env": {
+        "ICEKEEPER_CONFIG": "./config/ice-keeper.yaml"
+      },
+      "args": [
+        "diagnose",
+        "--full_name",
+        "catalog.admin.ice_keeper_journal",
+        "--max_age_to_diagnose",
+        "50"
+      ]
+    },
+    {
+      "name": "discover",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "ice_keeper",
+      "env": {
+        "ICEKEEPER_CONFIG": "./config/ice-keeper.yaml"
+      },
+      "args": [
+        "--concurrency",
+        "1",
+        "--spark_driver_cores",
+        "8",
+        "--spark_driver_memory",
+        "16g",
+        "--spark_executors",
+        "0",
+        "--catalog",
+        "catalog",
+        "--schema",
+        "nbs",
+        "discover"
+      ]
+    },
+    {
+      "name": "unit tests",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "tests",
+      "env": {
+        "ICEKEEPER_CONFIG": "./tests/config/"
+      }
+    },
+    {
+      "name": "integration tests",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "tests",
+      "args": ["--integration"],
+      "env": {
+        "ICEKEEPER_CONFIG": "./tests/config/"
+      }
+    }
+  ]
+}

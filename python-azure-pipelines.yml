@@ -1,0 +1,131 @@
+trigger:
+  batch: true
+  branches:
+    include:
+      - main
+
+
+pr:
+  branches:
+    include:
+      - main
+
+parameters:
+  - name: force_publish
+    displayName: Publish ice-keeper package from any successfull branch build.
+    type: boolean
+    default: false
+  - name: skipTests
+    displayName: Skip tests
+    type: boolean
+    default: false
+
+
+variables:
+  pythonVersion: "3.10" # JupyterHub requires 3.10
+  buildId: "$(Build.BuildId)"
+  branch: "$(Build.SourceBranchName)"
+  src: "$(Build.sourcesDirectory)"
+  isMain: $[eq(variables['Build.SourceBranch'], 'refs/heads/main')]
+
+pool: 'cybertron-build-pool'
+
+
+stages:
+  - stage: Check
+    jobs:
+      - job: CheckCode
+        displayName: Run Ruff and Mypy Linting
+        steps:
+          - script: |
+              python$(pythonVersion) -m pip install uv
+            displayName: Install uv
+          - script: |
+              make install
+            workingDirectory: $(src)
+            displayName: make install
+          - script: |
+              make lint
+            workingDirectory: $(src)
+            displayName: make lint
+
+  - stage: Test
+    jobs:
+      - job: RunPytest
+        condition: eq('${{ parameters.skipTests }}', false)
+        displayName: Run Pytest Suite
+        steps:
+          - script: |
+              python$(pythonVersion) -m pip install uv
+            displayName: Install uv
+          - script: |
+              make install
+            workingDirectory: $(src)
+            displayName: make install
+          - script: |
+              export JAVA_HOME="/usr/lib/jvm/java-17-openjdk-amd64/"
+              export PATH="${JAVA_HOME}/bin:${PATH}"
+              if [[ "$(java -version 2>&1 | grep '17')" == "" ]]; then
+                echo "Java 17 is not being used!"
+                exit 1
+              fi
+              java --version
+              make all-test
+            workingDirectory: $(src)
+            displayName: make all-test
+  - stage: Build
+    jobs:
+      - job: BuildPythonArtifact
+        displayName: Build Python Artifacts
+        workspace:
+          clean: all
+        steps:
+          - script: |
+              python$(pythonVersion) -m pip install uv
+            displayName: Install uv
+          - script: |
+              make install
+            workingDirectory: $(src)
+          - script: |
+              SHORT_VERSION=$(uv version --short) || { echo "Failed to get short version!"; exit 1; }
+
+              NEW_VERSION="$SHORT_VERSION.$(buildId)"
+
+              uv version "$NEW_VERSION" || { echo "Failed to set version number!"; exit 1; }
+
+              uv build || { echo "Failed to build!"; exit 1; }
+            workingDirectory: $(src)
+            displayName: "Set Version and Build"
+            name: SetVersionAndBuild
+          - task: CopyFiles@2
+            inputs:
+              targetFolder: $(Build.ArtifactStagingDirectory)
+              SourceFolder: $(src)/dist
+            displayName: "Stage build artifact to publish"
+          - task: PublishBuildArtifacts@1
+            inputs:
+              pathtoPublish: "$(Build.ArtifactStagingDirectory)"
+              artifactName: "ice_keeper"
+              publishLocation: "Container"
+            displayName: Publish build artifacts
+
+  - stage: Publish
+    jobs:
+      - job: PublishArtifactToFeed
+        # Publish artifact on successfull builds on main branch
+        # OR successfull builds with force_publish
+        condition: and(succeeded(), or(eq(variables.isMain, true), eq('${{ parameters.force_publish }}', true)))
+        displayName: Publish Python Artifacts
+        steps:
+          - task: DownloadBuildArtifacts@0
+            inputs:
+              buildEnvironment: "current"
+              downloadType: "specific"
+              downloadPath: "$(Pipeline.Workspace)"
+            displayName: "Download build artifact."
+          - script: |
+              virtualenv -p python$(pythonVersion) env
+              . env/bin/activate
+              pip install twine
+              python -m twine upload -r pypi-ap --config-file /azp/pypirc/pypirc $(Pipeline.Workspace)/ice_keeper/*
+            displayName: "Publish artifact to feed."

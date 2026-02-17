@@ -1,0 +1,54 @@
+create table {{ full_name }} (
+        start_time timestamp,
+        full_name string not null,
+        catalog string not null,
+        schema string not null,
+        table_name string not null,
+        partition_desc string,
+        partition_age int,
+        before struct<
+            n_files long,
+            num_files_targetted_for_rewrite long,
+            n_records long,
+            avg_file_size double,
+            min_file_size double,
+            max_file_size double,
+            sum_file_size double,
+            corr double
+            >,
+        after struct<
+            n_files long,
+            num_files_targetted_for_rewrite long,
+            n_records long,
+            avg_file_size double,
+            min_file_size double,
+            max_file_size double,
+            sum_file_size double,
+            corr double
+            >
+    )
+    using iceberg
+    partitioned by (days(start_time), catalog, schema)
+    {%- if location is not none %}
+    location '{{ location }}'
+    {%- endif %}
+    tblproperties (
+        'write.metadata.delete-after-commit.enabled'='true',
+        'write.target-file-size-bytes'='67108864',
+        'write.delete.mode'='merge-on-read',
+        'write.update.mode'='merge-on-read',
+        'write.merge.mode'='merge-on-read',
+        'write.delete.isolation-level'='snapshot',
+        'write.update.isolation-level'='snapshot',
+        'write.merge.isolation-level'='snapshot',
+        {%- if notification_email is not none %}
+        'ice-keeper.notification-email'='{{ notification_email }}',
+        {%- endif %}
+        'ice-keeper.should-optimize'='true',
+        'ice-keeper.optimization-strategy'='binpack',
+        'ice-keeper.should-expire-snapshots'='true',
+        'ice-keeper.should-remove-orphan-files'='true',
+        'ice-keeper.should-apply-lifecycle'='true',
+        'ice-keeper.lifecycle-max-days'='330',
+        'ice-keeper.lifecycle-ingestion-time-column'='start_time'
+    )

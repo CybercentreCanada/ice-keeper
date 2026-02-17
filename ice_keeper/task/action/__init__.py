@@ -1,0 +1,14 @@
+from .config_auditor import ConfigAuditorStrategy
+from .expiry import ExpireSnapshotsStrategy
+from .factory import ActionTaskFactory
+from .lifecycle import LifecycleStrategy
+from .optimization.optimization import OptimizationStrategy
+from .orphans import RemoveOrphanFilesStrategy
+from .rewrite import RewriteManifestStrategy
+
+ActionTaskFactory.register(OptimizationStrategy)
+ActionTaskFactory.register(RewriteManifestStrategy)
+ActionTaskFactory.register(ExpireSnapshotsStrategy)
+ActionTaskFactory.register(RemoveOrphanFilesStrategy)
+ActionTaskFactory.register(LifecycleStrategy)
+ActionTaskFactory.register(ConfigAuditorStrategy)

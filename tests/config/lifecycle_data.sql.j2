@@ -1,0 +1,2 @@
+delete from {{ catalog }}.{{ schema }}.{{ table_name }}
+    where {{ lifecycle_ingestion_time_column }} < current_date() - interval '{{ lifecycle_max_days }}' days

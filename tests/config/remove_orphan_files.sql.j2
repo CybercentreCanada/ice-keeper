@@ -1,0 +1,7 @@
+call {{ catalog }}.system.remove_orphan_files(
+                table => '{{ schema }}.{{ table_name }}'
+                , older_than => timestamp '{{ older_than }}'
+                {%- if file_list_view is not none %}
+                , file_list_view => '{{ file_list_view }}'
+                {%- endif %}
+                , dry_run => false)

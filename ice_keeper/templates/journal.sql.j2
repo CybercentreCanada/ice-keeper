@@ -1,0 +1,35 @@
+create table {{ full_name }} (
+        {{ ddl }}
+    )
+    using iceberg
+    partitioned by (days(start_time))
+    {%- if location is not none %}
+    location '{{ location }}'
+    {%- endif %}
+    tblproperties (
+        'write.metadata.metrics.default'='none',
+        'write.metadata.metrics.column.start_time'='truncate(16)',
+        'write.metadata.metrics.column.catalog'='truncate(32)',
+        'write.metadata.metrics.column.schema'='truncate(32)',
+        'write.metadata.metrics.column.table_name'='truncate(128)',
+        'write.metadata.metrics.column.full_name'='truncate(128)',
+        'write.metadata.delete-after-commit.enabled'='true',
+        'write.target-file-size-bytes'='67108864',
+        'write.delete.mode'='merge-on-read',
+        'write.update.mode'='merge-on-read',
+        'write.merge.mode'='merge-on-read',
+        'write.delete.isolation-level'='snapshot',
+        'write.update.isolation-level'='snapshot',
+        'write.merge.isolation-level'='snapshot',
+        {%- if notification_email is not none %}
+        'ice-keeper.notification-email'='{{ notification_email }}',
+        {%- endif %}
+        'ice-keeper.should-optimize'='true',
+        'ice-keeper.optimization-strategy'='full_name',
+        'ice-keeper.min-age-to-optimize'='2',
+        'ice-keeper.should-expire-snapshots'='true',
+        'ice-keeper.should-remove-orphan-files'='true',
+        'ice-keeper.should-apply-lifecycle'='true',
+        'ice-keeper.lifecycle-max-days'='330',
+        'ice-keeper.lifecycle-ingestion-time-column'='start_time'
+        )
