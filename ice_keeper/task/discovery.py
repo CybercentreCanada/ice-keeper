@@ -89,7 +89,9 @@ class DiscoveryTask(Task):
 
     def discover_schema(self) -> None:
         full_names_in_catalog = self.find_tables_in_catalog()
+        logger.debug("full_names_in_catalog: %s", full_names_in_catalog)
         current_entries = self.maintenance_schedule.full_names(self.catalog, self.schema)
+        logger.debug("current_entries: %s", current_entries)
         self.prune_deleted_tables(full_names_in_catalog, current_entries)
         self.add_newly_created_tables(full_names_in_catalog, current_entries)
 
@@ -104,6 +106,7 @@ class DiscoveryTask(Task):
 
     def prune_deleted_tables(self, full_names_in_catalog: list[str], current_entries: list[str]) -> None:
         full_names_to_remove = [full_name for full_name in current_entries if full_name not in full_names_in_catalog]
+        logger.debug("full_names_to_remove: %s", full_names_to_remove)
         self.maintenance_schedule.remove(full_names_to_remove)
 
     def add_newly_created_tables(self, full_names_in_catalog: list[str], current_entries: list[str]) -> None:
