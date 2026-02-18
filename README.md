@@ -7,9 +7,9 @@ ice-keeper can:
 - find and remove orphan files (not tracked by Iceberg)
 - run an optimization on unhealthy partitions to improve search performance
 
-[user documentation](./docs/USERS.md)
+[user documentation](./docs/users/USERS.md)
 
-[developer documentation](./docs/DEVELOPERS.md)
+[developer documentation](./docs/devs/DEVELOPERS.md)
 
 ---
 
@@ -22,6 +22,6 @@ ice-keeper peut :
 - trouver et supprimer les fichiers orphelins (non suivis par Iceberg)
 - exécuter une optimisation sur les partitions non saines pour améliorer les performances de recherche
 
-[documentation utilisateur](./docs/USERS-FR.md)
+[documentation utilisateur](./docs/users/USERS-FR.md)
 
-[documentation développeur](./docs/DEVELOPERS-FR.md)
+[documentation développeur](./docs/devs/DEVELOPERS-FR.md)
