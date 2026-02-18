@@ -110,8 +110,8 @@ class DiscoveryTask(Task):
     def make_tasks(cls, maintenance_schedule: MaintenanceSchedule, scope: Scope) -> list[Task]:
         tasks: list[Task] = []
         assert scope.catalog, "Must be specified"
-        assert not scope.table_name, "Unsuported"
-        assert not scope.where, "Unsuported"
+        assert not scope.table_name, "Unsupported"
+        assert not scope.where, "Unsupported"
         # Must have a catalog and optionally a schema, but not a table or where clause.
         if scope.schema:
             # If asked to focus on a specific schema, only create a task for that schema.

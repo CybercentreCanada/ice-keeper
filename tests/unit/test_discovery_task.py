@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 if TYPE_CHECKING:
-    # 2. This import only runs during type checking (e.g., by MyPy or Pyright)
+    # This import only runs during type checking (e.g., by MyPy or Pyright)
     from ice_keeper.table import MaintenanceScheduleEntry
 
 from ice_keeper.task.discovery import DiscoveryTask, PruneDeletedSchemasTask
