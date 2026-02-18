@@ -187,6 +187,11 @@ def escape_identifier(identifier: str) -> str:
     return identifier
 
 
+def quote_literal_value(value: str) -> str:
+    """Quote a string literal escaping any quotes found in the value."""
+    return "'" + value.replace("'", "\\'") + "'"
+
+
 def dedent(sql: str) -> str:
     return textwrap.dedent(sql)
 

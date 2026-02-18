@@ -1,7 +1,6 @@
 import logging
 
-from pyiceberg.expressions.parser import quoted_identifier
-
+from ice_keeper import escape_identifier
 from ice_keeper.catalog import load_table
 from ice_keeper.stm import STL, Scope
 from ice_keeper.table import MaintenanceSchedule, MaintenanceScheduleEntry, MaintenanceScheduleRecord
@@ -21,9 +20,20 @@ def list_table_names_in_schema(catalog: str, schema: str) -> set[str]:
     Returns:
         set[str]: A set of table names in the schema.
     """
-    sql = f"show tables in {quoted_identifier(catalog)}.{quoted_identifier(schema)}"
+    sql = f"show tables in {escape_identifier(catalog)}.{escape_identifier(schema)}"
     rows = STL.sql(sql, sql).collect()
     return {row.tableName for row in rows if not row.tableName.endswith("__dbt_tmp")}  # Ignore dbt temp tables.
+
+
+def remove_backticks_from_schema(schema: str) -> str:
+    """Spark strangely returns schema names with backticks.
+
+    We remove them to be consistent with the way listing table names work
+    and with the fact that internally we keep the names of tables and schemas without backticks.
+    """
+    if schema.startswith("`") and schema.endswith("`"):
+        return schema[1:-1]
+    return schema
 
 
 def list_schemas_in_catalog(catalog: str) -> set[str]:
@@ -35,9 +45,9 @@ def list_schemas_in_catalog(catalog: str) -> set[str]:
     Returns:
         set[str]: A set of schema names in the catalog.
     """
-    sql = f"show schemas in {quoted_identifier(catalog)}"
+    sql = f"show schemas in {escape_identifier(catalog)}"
     rows = STL.sql(sql, sql).collect()
-    return {row.namespace for row in rows}
+    return {remove_backticks_from_schema(row.namespace) for row in rows}
 
 
 class PruneDeletedSchemasTask(Task):

@@ -3,11 +3,11 @@ import threading
 from pathlib import Path
 from urllib.parse import urlparse
 
-from ice_keeper import ActionFailed, get_user_name
+from ice_keeper import ActionFailed, get_user_name, quote_literal_value
 from ice_keeper.catalog import load_table
 from ice_keeper.config import Config, TemplateName
 from ice_keeper.output import print_df_to_console_vertical
-from ice_keeper.stm import STL, Scope, escape_identifier
+from ice_keeper.stm import STL, Scope
 
 from .schedule_entry import MaintenanceScheduleEntry, MaintenanceScheduleRecord
 
@@ -109,29 +109,25 @@ class MaintenanceSchedule:
             print_df_to_console_vertical(df, n=3, truncate=150)
 
     def _table_names_to_in_stmt(self, table_names: set[str]) -> str:
-        """Create a IN statement list."""
-        escaped_table_names = [escape_identifier(table_name) for table_name in table_names]
-        if len(escaped_table_names) == 1:
-            return f" ('{escaped_table_names[0]}') "
-        return str(tuple(escaped_table_names))
+        """Create an IN statement list with properly escaped SQL string literals."""
+        literals = [quote_literal_value(table_name) for table_name in table_names]
+        return "(" + ", ".join(literals) + ")"
 
     def _schemas_to_in_stmt(self, schemas: set[str]) -> str:
-        """Create a IN statement list."""
-        escaped_schemas = [escape_identifier(schema) for schema in schemas]
-        if len(escaped_schemas) == 1:
-            return f" ('{escaped_schemas[0]}') "
-        return str(tuple(escaped_schemas))
+        """Create an IN statement list with properly escaped SQL string literals."""
+        literals = [quote_literal_value(schema) for schema in schemas]
+        return "(" + ", ".join(literals) + ")"
 
     def delete_table_names(self, catalog: str, schema: str, table_names: set[str]) -> None:
         """Delete all entries matching the given catalog, schema and table names."""
         assert table_names, "Should not call with empty set."
         logger.debug("Removing table_names from the maintenance schedule.")
         table_names_in_str = self._table_names_to_in_stmt(table_names)
+        scope_stmt = Scope(catalog=catalog, schema=schema).make_scoping_stmt()
         sql = f"""
             delete from {Config.instance().maintenance_schedule_table_name}
             where
-                catalog = '{escape_identifier(catalog)}'
-                and schema = '{escape_identifier(schema)}'
+                {scope_stmt}
                 and table_name in {table_names_in_str}
             """
         with self.maintenance_table_lock:
@@ -142,10 +138,11 @@ class MaintenanceSchedule:
         assert schemas, "Should not call with empty set."
         logger.debug("Removing schemas from the maintenance schedule.")
         schemas_in_str = self._schemas_to_in_stmt(schemas)
+        scope_stmt = Scope(catalog=catalog).make_scoping_stmt()
         sql = f"""
             delete from {Config.instance().maintenance_schedule_table_name}
             where
-                catalog = '{escape_identifier(catalog)}'
+                {scope_stmt}
                 and schema in {schemas_in_str}
             """
         with self.maintenance_table_lock:
