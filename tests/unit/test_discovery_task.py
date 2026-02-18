@@ -221,7 +221,7 @@ class TestSyncSchemaFoundInCatalog:
 
         mock_load_table.assert_not_called()
         schedule.delete_table_names.assert_not_called()
-        schedule.merge.assert_not_called()
+        schedule.merge_entries.assert_not_called()
 
     @patch(f"{MODULE}.load_table")
     @patch(f"{MODULE}.MaintenanceScheduleRecord")
@@ -383,4 +383,4 @@ class TestSpecialCharsInTableNames:
 
         mock_load_table.assert_not_called()
         schedule.delete_table_names.assert_not_called()
-        schedule.merge.assert_not_called()
+        schedule.merge_entries.assert_not_called()

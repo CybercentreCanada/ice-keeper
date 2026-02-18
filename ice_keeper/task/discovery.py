@@ -1,5 +1,7 @@
 import logging
 
+from pyiceberg.expressions.parser import quoted_identifier
+
 from ice_keeper.catalog import load_table
 from ice_keeper.stm import STL, Scope
 from ice_keeper.table import MaintenanceSchedule, MaintenanceScheduleEntry, MaintenanceScheduleRecord
@@ -19,9 +21,9 @@ def list_table_names_in_schema(catalog: str, schema: str) -> set[str]:
     Returns:
         set[str]: A set of table names in the schema.
     """
-    sql = f"show tables in {catalog}.{schema}"
+    sql = f"show tables in {quoted_identifier(catalog)}.{quoted_identifier(schema)}"
     rows = STL.sql(sql, sql).collect()
-    return {row.tableName for row in rows}
+    return {row.tableName for row in rows if not row.tableName.endswith("__dbt_tmp")}  # Ignore dbt temp tables.
 
 
 def list_schemas_in_catalog(catalog: str) -> set[str]:
@@ -33,7 +35,7 @@ def list_schemas_in_catalog(catalog: str) -> set[str]:
     Returns:
         set[str]: A set of schema names in the catalog.
     """
-    sql = f"show schemas in {catalog}"
+    sql = f"show schemas in {quoted_identifier(catalog)}"
     rows = STL.sql(sql, sql).collect()
     return {row.namespace for row in rows}
 
