@@ -7,7 +7,7 @@ from ice_keeper import ActionFailed, get_user_name
 from ice_keeper.catalog import load_table
 from ice_keeper.config import Config, TemplateName
 from ice_keeper.output import print_df_to_console_vertical
-from ice_keeper.stm import STL, Scope
+from ice_keeper.stm import STL, Scope, escape_identifier
 
 from .schedule_entry import MaintenanceScheduleEntry, MaintenanceScheduleRecord
 
@@ -53,16 +53,19 @@ class MaintenanceSchedule:
         self._check_init()
         return self.maintenance_entry_map.get(full_name)
 
-    def full_names(self, catalog: str | None = None, schema: str | None = None) -> list[str]:
+    def list_table_names_in_schema(self, catalog: str, schema: str) -> set[str]:
+        """List all table names in a given catalog and schema in the maintenance schedule."""
         self._check_init()
-        # If we don't have a catalog requested, include the full_name.
-        # If we do have a catalog and it matches the entry, include the full_name.
-        # Repeat the same logic for the schema.
-        return [
-            entry.full_name
+        return {
+            entry.table_name
             for entry in self.maintenance_entry_map.values()
-            if (not catalog or entry.catalog == catalog) and (not schema or entry.schema == schema)
-        ]
+            if (entry.catalog == catalog) and (entry.schema == schema)
+        }
+
+    def list_schemas_in_catalog(self, catalog: str) -> set[str]:
+        """List all schemas in a given catalog in the maintenance schedule."""
+        self._check_init()
+        return {entry.schema for entry in self.maintenance_entry_map.values() if (entry.catalog == catalog)}
 
     def entries(self) -> list[MaintenanceScheduleEntry]:
         self._check_init()
@@ -105,44 +108,79 @@ class MaintenanceSchedule:
             df = STL.sql_and_log(sql)
             print_df_to_console_vertical(df, n=3, truncate=150)
 
-    def _to_tuple_str(self, array: list[str]) -> str:
-        if len(array) == 1:
-            return f" ('{array[0]}') "
-        return str(tuple(array))
+    def _table_names_to_in_stmt(self, table_names: set[str]) -> str:
+        """Create a IN statement list."""
+        escaped_table_names = [escape_identifier(table_name) for table_name in table_names]
+        if len(escaped_table_names) == 1:
+            return f" ('{escaped_table_names[0]}') "
+        return str(tuple(escaped_table_names))
 
-    def remove(self, full_names: list[str]) -> None:
-        if len(full_names) > 0:
-            logger.debug("Removing the following tables from the maintenance schedule.")
-            in_str = self._to_tuple_str(full_names)
+    def _schemas_to_in_stmt(self, schemas: set[str]) -> str:
+        """Create a IN statement list."""
+        escaped_schemas = [escape_identifier(schema) for schema in schemas]
+        if len(escaped_schemas) == 1:
+            return f" ('{escaped_schemas[0]}') "
+        return str(tuple(escaped_schemas))
+
+    def delete_table_names(self, catalog: str, schema: str, table_names: set[str]) -> None:
+        """Delete all entries matching the given catalog, schema and table names."""
+        assert table_names, "Should not call with empty set."
+        logger.debug("Removing table_names from the maintenance schedule.")
+        table_names_in_str = self._table_names_to_in_stmt(table_names)
+        sql = f"""
+            delete from {Config.instance().maintenance_schedule_table_name}
+            where
+                catalog = '{escape_identifier(catalog)}'
+                and schema = '{escape_identifier(schema)}'
+                and table_name in {table_names_in_str}
+            """
+        with self.maintenance_table_lock:
+            STL.sql_and_log(sql)
+
+    def delete_schemas(self, catalog: str, schemas: set[str]) -> None:
+        """Delete all entries matching the given catalog and schemas."""
+        assert schemas, "Should not call with empty set."
+        logger.debug("Removing schemas from the maintenance schedule.")
+        schemas_in_str = self._schemas_to_in_stmt(schemas)
+        sql = f"""
+            delete from {Config.instance().maintenance_schedule_table_name}
+            where
+                catalog = '{escape_identifier(catalog)}'
+                and schema in {schemas_in_str}
+            """
+        with self.maintenance_table_lock:
+            STL.sql_and_log(sql)
+
+    def merge_an_entry(self, maintenance_entry: MaintenanceScheduleEntry) -> None:
+        """Merge a single maintenance entry into the schedule.
+
+        If an entry for the same table already exists, it will be updated,
+        otherwise it will be inserted.
+        """
+        self.merge_entries({maintenance_entry})
+
+    def merge_entries(self, maintenance_entries: set[MaintenanceScheduleEntry]) -> None:
+        """Merge multiple maintenance entries into the schedule."""
+        assert maintenance_entries, "Should not call with empty set."
+        with self.maintenance_table_lock:
+            rows = [entry.record.to_row() for entry in maintenance_entries]
+            rows_df = STL.get().createDataFrame(rows, MaintenanceScheduleRecord.get_ddl())
+            rows_df.createOrReplaceTempView("new_maintenance_entries")
             sql = f"""
-                delete from {Config.instance().maintenance_schedule_table_name}
-                where
-                    full_name in {in_str}
+                merge into {Config.instance().maintenance_schedule_table_name} t
+                using ( select * from new_maintenance_entries ) s
+                on (
+                    t.catalog = s.catalog
+                    and t.schema = s.schema
+                    and t.table_name = s.table_name
+                )
+                WHEN MATCHED THEN UPDATE SET *
+                WHEN NOT MATCHED THEN INSERT *
                 """
-            with self.maintenance_table_lock:
-                STL.sql_and_log(sql)
-
-    def merge(self, maintenance_entries: list[MaintenanceScheduleEntry]) -> None:
-        if len(maintenance_entries) > 0:
-            with self.maintenance_table_lock:
-                rows = [entry.record.to_row() for entry in maintenance_entries]
-                rows_df = STL.get().createDataFrame(rows, MaintenanceScheduleRecord.get_ddl())
-                rows_df.createOrReplaceTempView("new_maintenance_entries")
-                sql = f"""
-                    merge into {Config.instance().maintenance_schedule_table_name} t
-                    using ( select * from new_maintenance_entries ) s
-                    on (
-                      t.catalog = s.catalog
-                      and t.schema = s.schema
-                      and t.table_name = s.table_name
-                    )
-                    WHEN MATCHED THEN UPDATE SET *
-                    WHEN NOT MATCHED THEN INSERT *
-                    """
-                STL.sql_and_log(sql, "Merging maintenance entries")
-                for mnt_props in maintenance_entries:
-                    self.maintenance_entry_map[mnt_props.full_name] = mnt_props
-                    self.maintenance_entry_tblproperties_sync_done[mnt_props.full_name] = True
+            STL.sql_and_log(sql, "Merging maintenance entries")
+            for mnt_props in maintenance_entries:
+                self.maintenance_entry_map[mnt_props.full_name] = mnt_props
+                self.maintenance_entry_tblproperties_sync_done[mnt_props.full_name] = True
 
     def update_maintenance_schedule_entry(
         self, mnt_props: MaintenanceScheduleEntry, *, force: bool = False
@@ -155,8 +193,7 @@ class MaintenanceSchedule:
             configured_entry = MaintenanceScheduleRecord.from_iceberg_table(table).to_entry()
             if not configured_entry.record.same_config_as(mnt_props.record):
                 logger.info("updating maintenance entry of table %s", mnt_props.full_name)
-                maintenance_entries_to_update = [configured_entry]
-                self.merge(maintenance_entries_to_update)
+                self.merge_an_entry(configured_entry)
                 # Return the updated schedule entry
                 updated_props = configured_entry
 
