@@ -180,7 +180,13 @@ def should_escape(identifier: str) -> bool:
 
 
 def escape_identifier(identifier: str) -> str:
-    # Check if identifier contains spaces or special characters
+    """Check if identifier contains spaces or special characters.
+
+    Backticks inside a name: Spark SQL does not generally support backticks within
+    a single identifier (table or column name) as a valid part of the name itself.
+    If a column name from a source includes a backtick, Spark may throw an AnalysisException.
+    It is best practice to rename such columns if possible.
+    """
     if should_escape(identifier):
         return f"`{identifier}`"
 
@@ -189,7 +195,9 @@ def escape_identifier(identifier: str) -> str:
 
 def quote_literal_value(value: str) -> str:
     """Quote a string literal escaping any quotes found in the value."""
-    return "'" + value.replace("'", "\\'") + "'"
+    # First escape backslashes, then escape single quotes using SQL-style doubling.
+    escaped = value.replace("\\", "\\\\").replace("'", "\\'")
+    return f"'{escaped}'"
 
 
 def dedent(sql: str) -> str:

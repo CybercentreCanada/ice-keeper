@@ -6,6 +6,7 @@ from ice_keeper.stm import STL, Scope
 from ice_keeper.table import MaintenanceSchedule
 from ice_keeper.table.schedule_entry import IceKeeperTblProperty
 from ice_keeper.task import DiscoveryTask
+from ice_keeper.task.discovery import list_table_names_in_schema
 from tests.test_common import (
     ONE_EXPECTED,
     SCOPE_SCHEMA,
@@ -115,7 +116,7 @@ def test_discovery_changed_properties(executor: TaskExecutor) -> None:
 @pytest.mark.integration
 def test_discovery_of_table_name_with_special_characters(executor: TaskExecutor) -> None:
     schema = "test1"
-    table_name = "table'name'with'quote"
+    table_name = "table'name\\\\with\\quote-dash"
     STL.sql(
         f"""
             create table {TEST_CATALOG_NAME}.{escape_identifier(schema)}.{escape_identifier(table_name)}
@@ -123,6 +124,9 @@ def test_discovery_of_table_name_with_special_characters(executor: TaskExecutor)
             using iceberg
         """,
     )
+    table_names = list_table_names_in_schema(TEST_CATALOG_NAME, schema)
+    assert table_name in table_names, "Should find the table name with special characters."
+
     discover_tables(executor, Scope(TEST_CATALOG_NAME))
     maintenance_schedule = MaintenanceSchedule(Scope())
     schemas = maintenance_schedule.list_schemas_in_catalog(TEST_CATALOG_NAME)  # to load schemas in cache
@@ -140,7 +144,7 @@ def test_discovery_of_table_name_with_special_characters(executor: TaskExecutor)
 
 @pytest.mark.integration
 def test_discovery_of_schema_with_special_characters(executor: TaskExecutor) -> None:
-    schema = "schema'name'with'quote"
+    schema = "schema'name'with\\quote-dash"
     table_name = "table1"
     STL.sql(
         f"""

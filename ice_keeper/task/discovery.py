@@ -88,7 +88,7 @@ class PruneDeletedSchemasTask(Task):
 
 
 class DiscoveryTask(Task):
-    """Each discovery task process one schema at a time.
+    """Each discovery task processes one schema at a time.
 
     For a given schema that exists in the catalog, it compares the list of tables in the catalog to the list of tables
     in the maintenance schedule and removes any tables from the schedule that no longer exist in the catalog

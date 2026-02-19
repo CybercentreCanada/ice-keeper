@@ -13,8 +13,20 @@ from pyiceberg.types import (
 )
 from pyspark.sql.types import Row
 
-from ice_keeper import should_escape
+from ice_keeper import quote_literal_value, should_escape
 from ice_keeper.spec.partition_spec import PartitionSpecification
+
+
+def test_quote_literal_value() -> None:
+    """Test the `quote_literal_value` function to ensure it correctly escapes and quotes string literals."""
+    # Test cases
+    assert quote_literal_value("simple") == "'simple'"
+    assert quote_literal_value("with 'single' quotes") == "'with \\'single\\' quotes'"
+    assert quote_literal_value("with \\ backslash") == "'with \\\\ backslash'"
+    assert quote_literal_value("complex 'mix' of \\ characters") == "'complex \\'mix\\' of \\\\ characters'"
+    assert quote_literal_value("") == "''"  # Empty string
+    assert quote_literal_value("'") == "'\\''"  # Single quote only
+    assert quote_literal_value("\\") == "'\\\\'"  # Backslash only
 
 
 @pytest.mark.parametrize(
