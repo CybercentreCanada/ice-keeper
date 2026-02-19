@@ -1,15 +1,14 @@
 """Module for managing Iceberg table maintenance schedules.
 
 Including properties like optimizations, lifecycle policies, snapshot expiration, orphan file management, and partitioning.
-Provides the `MaintenanceScheduleEntry` dataclass as a key abstraction.
+Provides the `MaintenanceScheduleEntry` as a key abstraction.
 """
 
-import dataclasses
 import logging
-from dataclasses import dataclass, field
 from functools import cached_property
 from typing import Any
 
+from pydantic import BaseModel, Field
 from pyiceberg.table import Table
 from pyspark.sql import Row
 
@@ -48,8 +47,7 @@ DEFAULTS = {
 }
 
 
-@dataclass(frozen=True)
-class MaintenanceScheduleRecord:
+class MaintenanceScheduleRecord(BaseModel):
     """Represents a maintenance schedule record in the database.
 
     Stores table metadata,
@@ -59,7 +57,8 @@ class MaintenanceScheduleRecord:
 
     full_name: str
     catalog: str
-    schema: str
+    # Use an alias to avoid conflict with .schema()
+    schema_: str = Field(alias="schema")
     table_name: str
     partition_by: str | None = None
     optimize_partition_depth: int | None = None
@@ -72,7 +71,7 @@ class MaintenanceScheduleRecord:
     retention_days_snapshots: int | None = None
     should_remove_orphan_files: bool | None = None
     retention_days_orphan_files: int | None = None
-    last_updated_by: str | None = field(default=None, compare=False)  # Ignored in same_config_as
+    last_updated_by: str | None = None
     retention_num_snapshots: int | None = None
     should_rewrite_manifest: bool | None = None
     notification_email: str | None = None
@@ -134,8 +133,8 @@ class MaintenanceScheduleRecord:
             bool: True if the configurations are identical, False otherwise.
         """
         # The last_updated_by field is ignored.
-        # dataclass field(default=None, compare=False)
-        return self == other
+        # Compare everything except last_updated_by
+        return self.model_dump(exclude={"last_updated_by"}) == other.model_dump(exclude={"last_updated_by"})
 
     def get(self, field: str) -> Any:  # noqa: ANN401
         """Get field value, returning default if None.
@@ -167,7 +166,7 @@ class MaintenanceScheduleRecord:
         Returns:
             Row: A PySpark row representation of the instance.
         """
-        return Row(**dataclasses.asdict(self))
+        return Row(**self.model_dump(by_alias=True))
 
     @classmethod
     def from_iceberg_table(cls, table: Table) -> "MaintenanceScheduleRecord":
@@ -349,7 +348,7 @@ class MaintenanceScheduleEntry:
 
     @property
     def schema(self) -> str:
-        return self._record.schema
+        return self._record.schema_
 
     @property
     def table_name(self) -> str:

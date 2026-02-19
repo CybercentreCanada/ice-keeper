@@ -1,10 +1,9 @@
-import dataclasses
 import logging
 import time
-from dataclasses import dataclass, field, fields
 from datetime import datetime, timezone
 from typing import Any
 
+from pydantic import BaseModel, Field
 from pyspark.sql import Row
 
 from ice_keeper import Action, Status, TimeProvider, get_user_name
@@ -18,14 +17,14 @@ MAX_STATUS_LENGTH = 1024 * 1024
 """Keep the length of stacktraces errors to a maximum of 1MB"""
 
 
-@dataclass
-class JournalEntry:
-    full_name: str = ""
-    catalog: str = ""
-    schema: str = ""
-    table_name: str = ""
-    start_time: datetime = field(default_factory=TimeProvider.current_datetime)
-    end_time: datetime = field(default_factory=TimeProvider.current_datetime)
+class JournalEntry(BaseModel):
+    full_name: str
+    catalog: str
+    # Use an alias to avoid conflict with .schema()
+    schema_: str = Field(alias="schema")
+    table_name: str
+    start_time: datetime = Field(default_factory=TimeProvider.current_datetime)
+    end_time: datetime = Field(default_factory=TimeProvider.current_datetime)
     exec_time_seconds: float = 0.0
     sql_stm: str = ""
     status: str = ""
@@ -105,18 +104,37 @@ class JournalEntry:
         self.status_details = self._truncate_middle_if_too_large(status_details)
 
     def to_row(self) -> Row:
-        return Row(**dataclasses.asdict(self))
+        return Row(**self.model_dump(by_alias=True))
 
     @classmethod
     def from_row(cls, row: Row) -> "JournalEntry":
         return cls(**row.asDict())
 
     def apply_dict(self, **kwargs: dict[str, Any]) -> None:
+        """Apply values return from maintenance procedures.
+
+        The table name, start_time, status should be set using the apply dict method.
+        """
+        for key in kwargs:
+            assert key not in {
+                "full_name",
+                "catalog",
+                "schema",
+                "table_name",
+                "start_time",
+                "end_time",
+                "exec_time_seconds",
+                "sql_stm",
+                "status",
+                "status_details",
+                "executed_by",
+                "action",
+            }, f"The given key {key} should not be applied using apply dict."
         for key, value in kwargs.items():
             if hasattr(self, key):
                 setattr(self, key, value)
             else:
-                msg = f"The provided key [{key}] does not match any of the JouralEntry fields {fields(JournalEntry)}"
+                msg = f"The provided key [{key}] does not match any of the JournalEntry fields {JournalEntry.model_fields}"
                 logger.error(msg)
 
     @classmethod

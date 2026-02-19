@@ -1,4 +1,3 @@
-import dataclasses
 import logging
 import smtplib
 from email.message import EmailMessage
@@ -16,10 +15,10 @@ logger = logging.getLogger("ice-keeper")
 NUMBER_OF_ROWS_IN_PREVIEW = 50
 
 
-@dataclasses.dataclass
 class Emailer:
-    maintenance: MaintenanceSchedule
-    should_send_emails: bool = False
+    def __init__(self, maintenance: MaintenanceSchedule, *, should_send_emails: bool = False) -> None:
+        self.maintenance = maintenance
+        self.should_send_emails = should_send_emails
 
     @classmethod
     def notification_email_fallback(cls) -> str:
