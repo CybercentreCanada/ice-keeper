@@ -111,7 +111,7 @@ class JournalEntry(BaseModel):
         return cls(**row.asDict())
 
     def apply_dict(self, **kwargs: dict[str, Any]) -> None:
-        """Apply values return from mainenance procedures.
+        """Apply values return from maintenance procedures.
 
         The table name, start_time, status should be set using the apply dict method.
         """
