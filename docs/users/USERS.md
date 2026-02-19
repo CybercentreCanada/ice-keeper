@@ -16,12 +16,12 @@ These are the most common operations that are needed to keep tables performant a
 - Snapshot expiration removes old snapshots and deletes data files that are no longer needed.
 - Orphan file cleanup identifies and deletes data files that were written but never committed because of job failures.
 
-ice-keeper is a service that automates Iceberg table mainenance. ice-keeper is scheduled to run every night in Airflow/Spellboook
+ice-keeper is a service that automates Iceberg table mainenance. ice-keeper is scheduled to run every night in Airflow
 
 ice-keeper can:
 - expire old snapshots
 - find and remove orphan files (not tracked by Iceberg)
-- run an optimization on un-healthy partitions to improve search performances
+- run an optimization on unhealthy partitions to improve search performance
 
 
 

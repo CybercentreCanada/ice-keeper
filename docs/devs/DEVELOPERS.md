@@ -2,20 +2,20 @@
 
 The Iceberg library provides stored procedures in Spark for table maintenance. Most of the time, these operations are the responsibility of data platform administrators.
 
-ice-keeper is a CLI tool to automate Iceberg table mainenance of Iceberg tables.
+ice-keeper is a CLI tool to automate Iceberg table maintenance of Iceberg tables.
 
 ice-keeper can:
 
 - discover new tables to manage
 - expire old snapshots
 - find and remove orphan files (not tracked by Iceberg)
-- run an optimization on un-healthy partitions to improve search performances
+- run an optimization on unhealthy partitions to improve search performance
 
 ice-keeper is designed to run maintenance on hundreds of tables concurrently and make better use of our spark resources.
 
-ice-keeper is scheduled to run every night in Airflow/Spellboook
+ice-keeper is scheduled to run every night in Airflow
 
-ice-keeper was inspired by this article [Automated Table Maintenance for Apache Iceberg Tables](https://www.starburst.io/blog/automated-table-maintenance-for-apache-iceberg/) and the associcated [github script](https://github.com/mdesmet/trino-iceberg-maintenance/blob/main/trino_iceberg_maintenance/__main__.py).
+ice-keeper was inspired by this article [Automated Table Maintenance for Apache Iceberg Tables](https://www.starburst.io/blog/automated-table-maintenance-for-apache-iceberg/) and the associated [GitHub script](https://github.com/mdesmet/trino-iceberg-maintenance/blob/main/trino_iceberg_maintenance/__main__.py).
 
 ## Getting started
 
