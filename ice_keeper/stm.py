@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from pyspark.sql import DataFrame, SparkSession
 from sqlparse import format as sql_format
 
+from ice_keeper import quote_literal_value
+
 logger = logging.getLogger("ice-keeper")
 
 
@@ -73,11 +75,11 @@ class Scope:
     def make_scoping_stmt(self) -> str:
         filters = []
         if self.catalog:
-            filters.append(f"(catalog = '{self.catalog}')")
+            filters.append(f"(catalog = {quote_literal_value(self.catalog)})")
         if self.schema:
-            filters.append(f"(schema = '{self.schema}')")
+            filters.append(f"(schema = {quote_literal_value(self.schema)})")
         if self.table_name:
-            filters.append(f"(table_name = '{self.table_name}')")
+            filters.append(f"(table_name = {quote_literal_value(self.table_name)})")
         if self.where:
             filters.append(f"({self.where})")
         if len(filters) > 0:

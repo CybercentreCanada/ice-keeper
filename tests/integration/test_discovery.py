@@ -1,10 +1,12 @@
 import pytest
 
+from ice_keeper import escape_identifier
 from ice_keeper.pool import TaskExecutor
 from ice_keeper.stm import STL, Scope
 from ice_keeper.table import MaintenanceSchedule
 from ice_keeper.table.schedule_entry import IceKeeperTblProperty
 from ice_keeper.task import DiscoveryTask
+from ice_keeper.task.discovery import list_table_names_in_schema
 from tests.test_common import (
     ONE_EXPECTED,
     SCOPE_SCHEMA,
@@ -13,7 +15,7 @@ from tests.test_common import (
     get_admin_catalog_and_schema,
     set_tblproperties,
 )
-from tests.utils import create_test_table
+from tests.utils import create_test_table, discover_tables
 
 
 @pytest.mark.integration
@@ -109,3 +111,58 @@ def test_discovery_changed_properties(executor: TaskExecutor) -> None:
     assert new_entry.retention_days_snapshots == expected_snapshot_retention_days
     assert new_entry.optimization_strategy == "id ASC NULLS LAST"
     assert new_entry.should_optimize is True
+
+
+@pytest.mark.integration
+def test_discovery_of_table_name_with_special_characters(executor: TaskExecutor) -> None:
+    schema = "test1"
+    table_name = "table'name\\\\with\\quote-dash"
+    STL.sql(
+        f"""
+            create table {TEST_CATALOG_NAME}.{escape_identifier(schema)}.{escape_identifier(table_name)}
+            (id int)
+            using iceberg
+        """,
+    )
+    table_names = list_table_names_in_schema(TEST_CATALOG_NAME, schema)
+    assert table_name in table_names, "Should find the table name with special characters."
+
+    discover_tables(executor, Scope(TEST_CATALOG_NAME))
+    maintenance_schedule = MaintenanceSchedule(Scope())
+    schemas = maintenance_schedule.list_schemas_in_catalog(TEST_CATALOG_NAME)  # to load schemas in cache
+    assert schema in schemas
+    table_names = maintenance_schedule.list_table_names_in_schema(TEST_CATALOG_NAME, schema)  # to load tables in cache
+    assert table_name in table_names
+
+    maintenance_schedule = MaintenanceSchedule(Scope(TEST_CATALOG_NAME, schema, table_name))
+    entries = maintenance_schedule.entries()
+    assert len(entries) == ONE_EXPECTED
+    assert entries[0].catalog == TEST_CATALOG_NAME
+    assert entries[0].schema == schema
+    assert entries[0].table_name == table_name
+
+
+@pytest.mark.integration
+def test_discovery_of_schema_with_special_characters(executor: TaskExecutor) -> None:
+    schema = "schema'name'with\\quote-dash"
+    table_name = "table1"
+    STL.sql(
+        f"""
+            create table {TEST_CATALOG_NAME}.{escape_identifier(schema)}.{escape_identifier(table_name)}
+            (id int)
+            using iceberg
+        """,
+    )
+    discover_tables(executor, Scope(TEST_CATALOG_NAME))
+    maintenance_schedule = MaintenanceSchedule(Scope())
+    schemas = maintenance_schedule.list_schemas_in_catalog(TEST_CATALOG_NAME)  # to load schemas in cache
+    assert schema in schemas
+    table_names = maintenance_schedule.list_table_names_in_schema(TEST_CATALOG_NAME, schema)  # to load tables in cache
+    assert table_name in table_names
+
+    maintenance_schedule = MaintenanceSchedule(Scope(TEST_CATALOG_NAME, schema, table_name))
+    entries = maintenance_schedule.entries()
+    assert len(entries) == ONE_EXPECTED
+    assert entries[0].catalog == TEST_CATALOG_NAME
+    assert entries[0].schema == schema
+    assert entries[0].table_name == table_name

@@ -34,7 +34,7 @@ def add_maintenance_entry(other_table_location: str) -> None:
     row = Row(catalog="x", schema="y", table_name="y", full_name="x.y.z", table_location=other_table_location)
     record = MaintenanceScheduleRecord.from_row(row)
     schedule = MaintenanceSchedule(Scope())
-    schedule.merge([record.to_entry()])
+    schedule.merge_an_entry(record.to_entry())
 
 
 @pytest.mark.integration
