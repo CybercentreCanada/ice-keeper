@@ -159,7 +159,7 @@ class Journal:
         """
         try:
             rows = [entry.to_row() for entry in entries]
-            journal_df = STL.get().createDataFrame(rows, self.journal_entry_schema)
+            journal_df = STL.get().createDataFrame(rows, JournalEntry.get_ddl())
             journal_df.writeTo(Config.instance().journal_table_name).append()
             self.total_written += len(entries)  # Update the written counter after success
         except Exception:
@@ -174,8 +174,6 @@ class Journal:
         """
         STL.set(spark.newSession(), "journal-writer-thread")  # Assign a new session for the consumer thread
         STL.get().sparkContext.setJobGroup("Journal Writer", "Saving journal entries")
-        journal_df = STL.get().createDataFrame([JournalEntry().to_row()])
-        self.journal_entry_schema = journal_df.schema  # Schema used for writing
 
         while not self.asked_to_stop.is_set():
             entries = self._drain_queue()

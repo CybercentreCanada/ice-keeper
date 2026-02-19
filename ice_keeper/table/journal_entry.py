@@ -18,11 +18,11 @@ MAX_STATUS_LENGTH = 1024 * 1024
 
 
 class JournalEntry(BaseModel):
-    full_name: str = ""
-    catalog: str = ""
+    full_name: str
+    catalog: str
     # Use an alias to avoid conflict with .schema()
-    schema_: str = Field(alias="schema", default="")
-    table_name: str = ""
+    schema_: str = Field(alias="schema")
+    table_name: str
     start_time: datetime = Field(default_factory=TimeProvider.current_datetime)
     end_time: datetime = Field(default_factory=TimeProvider.current_datetime)
     exec_time_seconds: float = 0.0
@@ -111,11 +111,30 @@ class JournalEntry(BaseModel):
         return cls(**row.asDict())
 
     def apply_dict(self, **kwargs: dict[str, Any]) -> None:
+        """Apply values return from mainenance procedures.
+
+        The table name, start_time, status should be set using the apply dict method.
+        """
+        for key in kwargs:
+            assert key not in {
+                "full_name",
+                "catalog",
+                "schema",
+                "table_name",
+                "start_time",
+                "end_time",
+                "exec_time_seconds",
+                "sql_stm",
+                "status",
+                "status_details",
+                "executed_by",
+                "action",
+            }, f"The given key {key} should not be applied using apply dict."
         for key, value in kwargs.items():
             if hasattr(self, key):
                 setattr(self, key, value)
             else:
-                msg = f"The provided key [{key}] does not match any of the JouralEntry fields {JournalEntry.model_fields}"
+                msg = f"The provided key [{key}] does not match any of the JournalEntry fields {JournalEntry.model_fields}"
                 logger.error(msg)
 
     @classmethod
