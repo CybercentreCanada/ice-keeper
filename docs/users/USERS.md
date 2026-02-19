@@ -61,7 +61,7 @@ See the Iceberg [documentation](https://iceberg.apache.org/docs/latest/spark-ddl
 | ice-keeper.lifecycle-ingestion-time-column     | None               | Specifies the column to be used as the ingestion timestamp for lifecycle operations. For example, when set to `ingestion_time`, ice-keeper deletes rows older than the retention period using a condition like `DELETE FROM table WHERE ingestion_time < current_date() - INTERVAL '330' DAY`.
 | ice-keeper.widening.rule.src.partition              | None          | The name of the source partition to be widened (e.g., `partition.timestamp_day`).
 | ice-keeper.widening.rule.dst.partition              | None          | The name of the destination (widened) partition (e.g., `partition.timestamp_month`).
-| ice-keeper.widening.rule.min.age.to.widen           | None          | The minimum age (in units of the destination partition) for a data files to qualify for widening. 
+| ice-keeper.widening.rule.min.age.to.widen           | None          | The minimum age (in units of the destination partition) for data files to qualify for widening. 
 | ice-keeper.widening.rule.select.criteria            | None          | Specifies the criteria for selecting rows used when widening.   (e.g., `partition.category in ('leading', 'lagging')`
 | ice-keeper.widening.rule.required_partition_columns | None          | A list of column names that must not contain NULL values before the partition can be widened. Ensures data integrity. (e.g., `partition._lag`).
 ------
