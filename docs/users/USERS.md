@@ -21,7 +21,7 @@ ice-keeper is a service that automates Iceberg table maintenance. ice-keeper is 
 ice-keeper can:
 - expire old snapshots
 - find and remove orphan files (not tracked by Iceberg)
-- run an optimization on un-healthy partitions to improve search performances
+- run an optimization on unhealthy partitions to improve search performance
 
 
 ## Configuring ice-keeper via Table Properties
