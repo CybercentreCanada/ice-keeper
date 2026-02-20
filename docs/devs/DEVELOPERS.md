@@ -9,11 +9,11 @@ ice-keeper can:
 - discover new tables to manage
 - expire old snapshots
 - find and remove orphan files (not tracked by Iceberg)
-- run an optimization on unhealthy partitions to improve search performance
+- run an optimization on unhealthy partitions to improve search performance.
 
 ice-keeper is designed to run maintenance on hundreds of tables concurrently and make better use of our spark resources.
 
-ice-keeper is scheduled to run every night in Airflow
+ice-keeper is scheduled to run every night in Airflow.
 
 ice-keeper was inspired by this article [Automated Table Maintenance for Apache Iceberg Tables](https://www.starburst.io/blog/automated-table-maintenance-for-apache-iceberg/) and the associated [GitHub script](https://github.com/mdesmet/trino-iceberg-maintenance/blob/main/trino_iceberg_maintenance/__main__.py).
 
@@ -193,8 +193,8 @@ order by
 This will show the changes to the column `retention_days_snapshots`
 |last_updated_by| retention_days_snapshots| \_change_type| \_change_ordinal| \_commit_snapshot_id
 |-|-|-|-|-|
-|jupyhub/Jean-Claude.Cote@cyber.gc.ca| 91| UPDATE_BEFORE| 0| 4563331490714018710
-|jupyhub/Jean-Claude.Cote@cyber.gc.ca| 90 |UPDATE_AFTER| 0 |4563331490714018710
+|jupyhub/jcc| 91| UPDATE_BEFORE| 0| 4563331490714018710
+|jupyhub/jcc| 90 |UPDATE_AFTER| 0 |4563331490714018710
 
 The create_changelog_view adds 3 additional columns (`_change_type`, `_change_ordinal`, `_commit_snapshot_id`) which are explained in details [here](https://iceberg.apache.org/docs/nightly/spark-procedures/#create_changelog_view).
 

@@ -168,8 +168,8 @@ Cela affichera les modifications apportées à la colonne `retention_days_snapsh
 
 | last_updated_by                          | retention_days_snapshots | _change_type   | _change_ordinal | _commit_snapshot_id |
 | --------------------------------------- | ------------------------ | -------------- | ---------------- | -------------------- |
-| jupyhub/Jean-Claude.Cote@cyber.gc.ca    | 91                       | UPDATE_BEFORE  | 0                | 4563331490714018710  |
-| jupyhub/Jean-Claude.Cote@cyber.gc.ca    | 90                       | UPDATE_AFTER   | 0                | 4563331490714018710  |
+| jupyhub/jcc    | 91                       | UPDATE_BEFORE  | 0                | 4563331490714018710  |
+| jupyhub/jcc    | 90                       | UPDATE_AFTER   | 0                | 4563331490714018710  |
 
 La procédure `create_changelog_view` ajoute 3 colonnes supplémentaires (`_change_type`, `_change_ordinal`, `_commit_snapshot_id`) qui sont expliquées en détail [ici](https://iceberg.apache.org/docs/nightly/spark-procedures/#create_changelog_view).
 
