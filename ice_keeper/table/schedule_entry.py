@@ -32,7 +32,7 @@ DEFAULTS = {
     "should_remove_orphan_files": True,
     "retention_days_orphan_files": 5,
     "last_updated_by": "",
-    "retention_num_snapshots": 60,
+    "retention_num_snapshots": 1,
     "should_rewrite_manifest": False,
     "notification_email": "",
     "should_apply_lifecycle": False,
