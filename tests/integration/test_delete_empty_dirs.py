@@ -274,17 +274,16 @@ def test_delete_empty_dir_with_empty_branch(executor: TaskExecutor) -> None:
 
 
 @pytest.mark.integration
-def test_select_files_and_empty_folders_from_inventory_stmt(executor: TaskExecutor) -> None:
+def test_select_files_and_empty_folders_from_inventory_stmt_abfss() -> None:
     TimeProvider.set(datetime.datetime(2025, 1, 12, 0, 0, 0, tzinfo=datetime.timezone.utc))
-    create_test_table(executor)
-    table_location = load_test_table().location().replace("file:///", "")
+    table_location = "abfss://warehouse@storage_account_name.dfs.core.windows.net/iceberg/test/test"
     loaded_at = "date '2025-01-01'"
     last_modified = "timestamp '2025-01-01'"
     sql = f"""
         select *
         from (
         values
-            ({loaded_at}, {last_modified}, "", "", '{table_location}/data/sub_1', 0),
+            ({loaded_at}, {last_modified}, 'storage_account_name', 'warehouse', 'warehouse/iceberg/test/test/data/sub_1', 0)
         )
         as t(loaded_at, last_modified, storage_account, container, file_path, file_size_in_bytes)
     """
@@ -292,13 +291,19 @@ def test_select_files_and_empty_folders_from_inventory_stmt(executor: TaskExecut
     df.createOrReplaceGlobalTempView("inventory_report")
     Config.instance().storage_inventory_report_table_name = "global_temp.inventory_report"
 
-    mnt_props = MaintenanceSchedule(Scope()).get_maintenance_entry(TEST_FULL_NAME)
-    assert mnt_props, "Should find our table"
+    record = MaintenanceScheduleRecord(
+        full_name=TEST_FULL_NAME,
+        catalog=TEST_CATALOG_NAME,
+        schema=TEST_SCHEMA_NAME,
+        table_name=TEST_TABLE_NAME,
+        table_location=table_location,
+    )
+    mnt_props = MaintenanceScheduleEntry(record)
     inventory = StorageInventoryReport(mnt_props)
     sql = inventory.select_files_and_empty_folders_from_inventory_stmt(older_than=TimeProvider.current_date())
     empty_folders = [row.file_path for row in STL.sql(sql).collect()]
     assert len(empty_folders) == ONE_EXPECTED, "There are one folders to delete"
-    assert empty_folders[0] == "file:///test/data/sub_1"
+    assert empty_folders[0] == "abfss://warehouse@storage_account_name.dfs.core.windows.net/iceberg/test/test/data/sub_1"
 
 
 @pytest.mark.integration
