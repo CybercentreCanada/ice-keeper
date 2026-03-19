@@ -34,7 +34,7 @@ def test_expire_snapshots_default(executor: TaskExecutor) -> None:
         call local.system.expire_snapshots(
                 table => 'test.test',
                 older_than => timestamp '2023-02-24 15:00:00+00:00',
-                retain_last => 60,
+                retain_last => 1,
                 stream_results => true)
     """
     diff, details = compare_multiline_strings(expected_output, actual_output)
