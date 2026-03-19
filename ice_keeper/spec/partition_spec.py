@@ -363,10 +363,6 @@ class PartitionSpecifications:
         """
         table = load_table(catalog, schema, table_name)
         default_spec_id = table.spec().spec_id
-        if table.spec().is_unpartitioned():
-            partition_spec_list = [PartitionSpecification.from_pyiceberg(catalog, table.spec(), table.schema())]
-            partition_specs = {s.spec_id: s for s in partition_spec_list}
-            return PartitionSpecifications(0, partition_specs)
         partition_spec_list = [
             PartitionSpecification.from_pyiceberg(catalog, spec, table.schema()) for spec in table.specs().values()
         ]
