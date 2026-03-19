@@ -192,20 +192,14 @@ class RemoveOrphanFilesStrategy(ActionStrategy):
         if self.storage_inventory_report is None:
             return False
 
-        file_list_view_sql = self.storage_inventory_report.select_iceberg_files_from_inventory(self.older_than)
+        file_list_view_sql = self.storage_inventory_report.select_iceberg_files_from_inventory_stmt(self.older_than)
         sample_inventory = STL.sql_and_log(file_list_view_sql, "Sampling inventory").take(3)
         if len(sample_inventory) == 0:
             logger.debug("No files found in inventory, falling back to full directory listing.")
             return False
 
         rows_log_debug(sample_inventory, "Inventory Files")
-        empty_dirs_sql = self.storage_inventory_report.select_empty_folders_from_inventory(self.older_than)
-        union_sql = f"""
-            select file_path, last_modified from ({empty_dirs_sql})
-            union all
-            select file_path, last_modified from ({file_list_view_sql})
-            """
-        STL.sql(union_sql, "Create inventory file list view including empty dirs").createOrReplaceTempView(
-            self.name_of_file_list_view
-        )
+
+        sql = self.storage_inventory_report.select_files_and_empty_folders_from_inventory_stmt(self.older_than)
+        STL.sql(sql, "Create inventory file list view including empty dirs").createOrReplaceTempView(self.name_of_file_list_view)
         return True

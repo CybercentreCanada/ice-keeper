@@ -124,18 +124,39 @@ class StorageInventoryReport:
             )
             """
 
-    def select_iceberg_files_from_inventory(self, older_than: date) -> str:
-        location_base_abfss = f"abfss://{self.location_container}@{self.location_storage_account}.dfs.core.windows.net"
-        container_name_num_chars = len(self.location_container)
+    def get_base_path_with_scheme_stmt(self) -> str:
+        if self.filesystem_scheme == FileScheme.ABFSS:
+            return f"'abfss://{self.location_container}@{self.location_storage_account}.dfs.core.windows.net' || substr(file_path, length('{self.location_container}') + 1)"
+        if self.filesystem_scheme == FileScheme.FILE:
+            return "'file:///' || file_path"
+        msg = f"Filesystem scheme not supported [{self.filesystem_scheme}]."
+        raise ActionFailed(msg)
+
+    def select_files_and_empty_folders_from_inventory_stmt(self, older_than: date) -> str:
+        file_list_view_sql = self.select_iceberg_files_from_inventory_stmt(older_than)
+        empty_dirs_sql = self.select_empty_folders_from_inventory_stmt(older_than)
+        base_path_with_scheme_sql = self.get_base_path_with_scheme_stmt()
+        return f"""
+            -- the remove_orphan_files procedure needs a view with 2 columns: file_path and last_modified.
+            select
+                {base_path_with_scheme_sql} as file_path,
+                last_modified
+            from (
+                select file_path, last_modified from ({empty_dirs_sql})
+                union all
+                select file_path, last_modified from ({file_list_view_sql})
+            )
+            """
+
+    def select_iceberg_files_from_inventory_stmt(self, older_than: date) -> str:
         full_name = Config.instance().storage_inventory_report_table_name
         if not full_name:
             msg = "Storage inventory report table name is not configured."
             raise Exception(msg)
 
         return f"""
-            -- the remove_orphan_files procedure needs a view with 2 columns: file_path and last_modified.
             select
-                '{location_base_abfss}' || substr(file_path, {container_name_num_chars} + 1) as file_path,
+                file_path,
                 last_modified
             from
                 {full_name}
@@ -144,7 +165,7 @@ class StorageInventoryReport:
                 and {StorageInventoryReport.ICEBERG_FILE_CRITERION}
             """
 
-    def select_empty_folders_from_inventory(self, older_than: date) -> str:
+    def select_empty_folders_from_inventory_stmt(self, older_than: date) -> str:
         full_name = Config.instance().storage_inventory_report_table_name
         if not full_name:
             msg = "Storage inventory report table name is not configured."
