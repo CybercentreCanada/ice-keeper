@@ -302,7 +302,7 @@ def test_select_files_and_empty_folders_from_inventory_stmt_abfss() -> None:
     inventory = StorageInventoryReport(mnt_props)
     sql = inventory.select_files_and_empty_folders_from_inventory_stmt(older_than=TimeProvider.current_date())
     empty_folders = [row.file_path for row in STL.sql(sql).collect()]
-    assert len(empty_folders) == ONE_EXPECTED, "There are one folders to delete"
+    assert len(empty_folders) == ONE_EXPECTED, "There is one folder to delete"
     assert empty_folders[0] == "abfss://warehouse@storage_account_name.dfs.core.windows.net/iceberg/test/test/data/sub_1"
 
 
@@ -335,5 +335,5 @@ def test_select_files_and_empty_folders_from_inventory_stmt_file() -> None:
     inventory = StorageInventoryReport(mnt_props)
     sql = inventory.select_files_and_empty_folders_from_inventory_stmt(older_than=TimeProvider.current_date())
     empty_folders = [row.file_path for row in STL.sql(sql).collect()]
-    assert len(empty_folders) == ONE_EXPECTED, "There are one folders to delete"
+    assert len(empty_folders) == ONE_EXPECTED, "There is one folder to delete"
     assert empty_folders[0] == "file:///iceberg/test/test/data/sub_1"
