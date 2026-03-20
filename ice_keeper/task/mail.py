@@ -22,7 +22,10 @@ class Emailer:
 
     @classmethod
     def notification_email_fallback(cls) -> str:
-        return Config.instance().notification_email_fallback
+        email_fallback = Config.instance().notification_email_fallback
+        if email_fallback:
+            return email_fallback
+        return ""
 
     def _get_failed_journal_entries_df(
         self,
@@ -105,7 +108,7 @@ class Emailer:
                         and j.start_time = f.start_time
                     )
             ),
-            final as (
+            failed_journal_entries_with_email as (
                 select
                     if(len(s.notification_email) > 0, s.notification_email, '{self.notification_email_fallback()}') as notification_email,
                     f.full_name,
@@ -118,6 +121,19 @@ class Emailer:
                 from
                     failed_journal_entries as f
                     join ({maintenance_sql}) as s on (f.full_name = s.full_name)
+                ),
+            final as (
+                select
+                    notification_email,
+                    full_name,
+                    action,
+                    start_time,
+                    sql_stm,
+                    status
+                from
+                    failed_journal_entries_with_email
+                where
+                    length(notification_email) > 0
                 order by
                     1,
                     2,

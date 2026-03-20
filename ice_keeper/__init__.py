@@ -76,12 +76,19 @@ def get_log_level(level_str: str) -> int:
 
 
 def configure_logger() -> None:
-    with Path(Config.instance().logging_config_file).open("r") as file:
-        content = file.read()
-        # This will replace ALL ${VAR} and ${VAR:-default} in the text
-        expanded_content = envsubst.envsubst(content)
-        config = yaml.safe_load(expanded_content)
-        logging.config.dictConfig(config)
+    if config_file := Config.instance().logging_config_file:
+        with Path(config_file).open("r") as file:
+            content = file.read()
+            # This will replace ALL ${VAR} and ${VAR:-default} in the text
+            expanded_content = envsubst.envsubst(content)
+            config = yaml.safe_load(expanded_content)
+            logging.config.dictConfig(config)
+    else:
+        # Default logging configuration if no config file is provided
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        )
 
 
 class FileScheme(Enum):
