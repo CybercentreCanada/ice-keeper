@@ -201,5 +201,6 @@ class RemoveOrphanFilesStrategy(ActionStrategy):
         rows_log_debug(sample_inventory, "Inventory Files")
 
         sql = self.storage_inventory_report.select_files_and_empty_folders_from_inventory_stmt(self.older_than)
-        STL.sql(sql, "Create inventory file list view including empty dirs").createOrReplaceTempView(self.name_of_file_list_view)
+        df = STL.sql_and_log(sql, "Create inventory file list view including empty dirs")
+        df.createOrReplaceTempView(self.name_of_file_list_view)
         return True
