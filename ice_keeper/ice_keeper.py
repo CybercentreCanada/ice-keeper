@@ -260,23 +260,36 @@ def reset(force: bool) -> None:  # noqa: FBT001
     PartitionHealth.reset()
 
 
-def run_diagnose_command(
+@cli.command(
+    short_help="Diagnose table health by analyzing its partitions.",
+)
+@click.option("--full_name", required=True, help="Fully qualified name of table to diagnose.")
+@click.option("--min_age_to_diagnose", default=1, help="Minimum snapshot age (in partition rank) to diagnose (default: 1).")
+@click.option("--max_age_to_diagnose", default=72, help="Maximum snapshot age (in partition rank) to diagnose (default: 72).")
+@click.option("--optimization_strategy", help="Optional optimization strategy to use during diagnosis.")
+def diagnose(
     full_name: str,
     min_age_to_diagnose: int,
     max_age_to_diagnose: int,
     optimization_strategy: str | None,
-) -> None:
-    # """Run the diagnose command."""
+) -> int:
+    """Diagnose table health by analyzing its partitions.
+
+    This command processes partitions of the table to identify opportunities
+    for optimization. It uses a specified optimization strategy to calculate and display
+    a detailed summary of the partition state before any intervention.
+    """
     maintenance_schedule = MaintenanceSchedule(Scope())
     entry = maintenance_schedule.get_maintenance_entry(full_name)
     if entry:
         record = entry.record
-        # Use table's pre-configured optimization strategy if not provided.
+        # Make a copy of the record before mutating
+        record_copy = record.model_copy()
         if optimization_strategy:
-            record.optimization_strategy = optimization_strategy
-        record.min_age_to_optimize = min_age_to_diagnose
-        record.max_age_to_optimize = max_age_to_diagnose
-        row = Row(**record.model_dump())
+            record_copy.optimization_strategy = optimization_strategy
+        record_copy.min_age_to_optimize = min_age_to_diagnose
+        record_copy.max_age_to_optimize = max_age_to_diagnose
+        row = Row(**record_copy.model_dump(by_alias=True))
         entry = MaintenanceScheduleRecord.from_row(row).to_entry()
         spec_id_rows = STL.sql(f"select distinct spec_id from {entry.full_name}.data_files", "Distinct spec_id").collect()
         for spec_id in [row.spec_id for row in spec_id_rows]:
@@ -294,30 +307,9 @@ def run_diagnose_command(
     else:
         # Preserve expected CLI behavior: emit an error and non-zero exit
         # when the table is not present in the maintenance schedule.
-        raise click.ClickException(
-            f"Table '{full_name}' not found in maintenance schedule."
-        )
-@cli.command(
-    short_help="Diagnose table health by analyzing its partitions.",
-)
-@click.option("--full_name", required=True, help="Fully qualified name of table to diagnose.")
-@click.option("--min_age_to_diagnose", default=1, help="Minimum snapshot age (in partition rank) to diagnose (default: 1).")
-@click.option("--max_age_to_diagnose", default=72, help="Maximum snapshot age (in partition rank) to diagnose (default: 72).")
-@click.option("--optimization_strategy", help="Optional optimization strategy to use during diagnosis.")
-def diagnose(
-    full_name: str,
-    min_age_to_diagnose: int,
-    max_age_to_diagnose: int,
-    optimization_strategy: str | None,
-) -> None:
-    """Diagnose table health by analyzing its partitions.
-
-    This command processes partitions of the table to identify opportunities
-    for optimization. It uses a specified optimization strategy to calculate and display
-    a detailed summary of the partition state before any intervention.
-    """
-    # """Run the diagnose command."""
-    run_diagnose_command(full_name, min_age_to_diagnose, max_age_to_diagnose, optimization_strategy)
+        msg = f"Table '{full_name}' not found in maintenance schedule."
+        raise click.ClickException(msg)
+    return 0
 
 
 def optimize_maintenance_schedule(executor: TaskExecutor) -> None:

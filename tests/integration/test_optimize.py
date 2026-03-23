@@ -4,9 +4,10 @@ from datetime import timezone
 
 import humanfriendly
 import pytest
+from click.testing import CliRunner
 
 from ice_keeper import Action, Status
-from ice_keeper.ice_keeper import run_diagnose_command
+from ice_keeper.ice_keeper import diagnose
 from ice_keeper.pool import TaskExecutor
 from ice_keeper.stm import STL, Scope
 from ice_keeper.table import MaintenanceSchedule, PartitionHealth
@@ -946,4 +947,22 @@ def test_diagnose(executor: TaskExecutor) -> None:
     # add table to maintenance schedule
     discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
     full_name = TEST_FULL_NAME
-    run_diagnose_command(full_name, 1, 14, "id ASC")
+
+    # Use CliRunner to invoke the diagnose command
+    runner = CliRunner()
+    result = runner.invoke(
+        diagnose,
+        [
+            "--full_name",
+            full_name,
+            "--min_age_to_diagnose",
+            "1",
+            "--max_age_to_diagnose",
+            "14",
+            "--optimization_strategy",
+            "id ASC",
+        ],
+    )
+
+    # Assert the command executed successfully
+    assert result.exit_code == 0, f"CliRunner failed: {result.output}"
