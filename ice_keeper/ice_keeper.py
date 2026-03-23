@@ -291,8 +291,12 @@ def run_diagnose_command(
                 bold=True,
             )
             summary.show(10000)
-
-
+    else:
+        # Preserve expected CLI behavior: emit an error and non-zero exit
+        # when the table is not present in the maintenance schedule.
+        raise click.ClickException(
+            f"Table '{full_name}' not found in maintenance schedule."
+        )
 @cli.command(
     short_help="Diagnose table health by analyzing its partitions.",
 )
