@@ -9,7 +9,7 @@ import click
 from pyspark.sql import SparkSession
 
 from ice_keeper import Action, Command, configure_logger
-from ice_keeper.table.schedule_entry import MaintenanceScheduleRecord
+from ice_keeper.table.schedule_entry import MaintenanceScheduleRecord, Row
 
 from .config import ICEKEEPER_CONFIG, Config
 from .pool import TaskExecutor
@@ -260,6 +260,39 @@ def reset(force: bool) -> None:  # noqa: FBT001
     PartitionHealth.reset()
 
 
+def run_diagnose_command(
+    full_name: str,
+    min_age_to_diagnose: int,
+    max_age_to_diagnose: int,
+    optimization_strategy: str | None,
+) -> None:
+    # """Run the diagnose command."""
+    maintenance_schedule = MaintenanceSchedule(Scope())
+    entry = maintenance_schedule.get_maintenance_entry(full_name)
+    if entry:
+        record = entry.record
+        # Use table's pre-configured optimization strategy if not provided.
+        if optimization_strategy:
+            record.optimization_strategy = optimization_strategy
+        record.min_age_to_optimize = min_age_to_diagnose
+        record.max_age_to_optimize = max_age_to_diagnose
+        row = Row(**record.model_dump())
+        entry = MaintenanceScheduleRecord.from_row(row).to_entry()
+        spec_id_rows = STL.sql(f"select distinct spec_id from {entry.full_name}.data_files", "Distinct spec_id").collect()
+        for spec_id in [row.spec_id for row in spec_id_rows]:
+            # Validate we have the spec_id discovered in our partition spec list.
+            if spec_id < 0 or spec_id >= len(entry.partition_specs.get_specifications()):
+                msg = f"Partition spec id found: {spec_id} does not exists in list of partition specs in metadata."
+                raise Exception(msg)
+            summary = PartitionSummary(entry, spec_id)
+            # Show all rows of the summary
+            click.secho(
+                f"Running diagnostic on spec_id {spec_id} using the following optimization strategy: {entry.optimization_strategy}",
+                bold=True,
+            )
+            summary.show(10000)
+
+
 @cli.command(
     short_help="Diagnose table health by analyzing its partitions.",
 )
@@ -280,31 +313,7 @@ def diagnose(
     a detailed summary of the partition state before any intervention.
     """
     # """Run the diagnose command."""
-    maintenance_schedule = MaintenanceSchedule(Scope())
-    entry = maintenance_schedule.get_maintenance_entry(full_name)
-    if entry:
-        row = entry.record.to_row()
-        # Use table's pre-configured optimization strategy if not provided.
-        if optimization_strategy:
-            row.optimization_strategy = optimization_strategy
-        row.min_age_to_optimize = min_age_to_diagnose
-        row.max_age_to_diagnose = max_age_to_diagnose
-        entry = MaintenanceScheduleRecord.from_row(row).to_entry()
-        spec_id_rows = STL.sql(f"select distinct spec_id from {entry.full_name}.data_files", "Distinct spec_id").collect()
-        for spec_id in [row.spec_id for row in spec_id_rows]:
-            # Validate we have the spec_id discovered in our partition spec list.
-            if spec_id < 0 or spec_id >= len(entry.partition_specs.get_specifications()):
-                msg = f"Partition spec id found: {spec_id} does not exists in list of partition specs in metadata."
-                raise Exception(msg)
-            summary = PartitionSummary(entry, spec_id)
-            # Show all rows of the summary
-            click.secho(
-                f"Running diagnostic on spec_id {spec_id} using the following optimization strategy: {entry.optimization_strategy}",
-                bold=True,
-            )
-            summary.show(10000)
-    else:
-        click.secho(f"Error, no entry for table {full_name} in maintenance schedule.", fg="red", err=True)
+    run_diagnose_command(full_name, min_age_to_diagnose, max_age_to_diagnose, optimization_strategy)
 
 
 def optimize_maintenance_schedule(executor: TaskExecutor) -> None:

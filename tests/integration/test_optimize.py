@@ -6,6 +6,7 @@ import humanfriendly
 import pytest
 
 from ice_keeper import Action, Status
+from ice_keeper.ice_keeper import run_diagnose_command
 from ice_keeper.pool import TaskExecutor
 from ice_keeper.stm import STL, Scope
 from ice_keeper.table import MaintenanceSchedule, PartitionHealth
@@ -932,3 +933,17 @@ def test_optimize_null_category(executor: TaskExecutor) -> None:
     # df = STL.sql_and_log(f"select partition, count(*) as num_files from {full_name}.data_files group by partition")
     # rows = df.collect()
     # print(rows)
+
+
+@pytest.mark.integration
+def test_diagnose(executor: TaskExecutor) -> None:
+    partitioned_by = "days(ts)"
+    optimization_strategy = "id ASC"
+    properties = {IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "1"}
+    create_empty_test_table(partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties)
+    dt = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
+    insert_data(event_time=dt, num_inserts=5)
+    # add table to maintenance schedule
+    discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
+    full_name = TEST_FULL_NAME
+    run_diagnose_command(full_name, 1, 14, "id ASC")
