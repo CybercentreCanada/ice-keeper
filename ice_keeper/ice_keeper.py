@@ -6,10 +6,10 @@ import time
 from datetime import datetime, timezone
 
 import click
-from pyspark.sql import SparkSession
+from pyspark.sql import Row, SparkSession
 
 from ice_keeper import Action, Command, configure_logger
-from ice_keeper.table.schedule_entry import MaintenanceScheduleRecord, Row
+from ice_keeper.table.schedule_entry import MaintenanceScheduleRecord
 
 from .config import ICEKEEPER_CONFIG, Config
 from .pool import TaskExecutor
