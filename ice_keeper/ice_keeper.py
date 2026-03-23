@@ -6,7 +6,7 @@ import time
 from datetime import datetime, timezone
 
 import click
-from pyspark.sql import SparkSession
+from pyspark.sql import Row, SparkSession
 
 from ice_keeper import Action, Command, configure_logger
 from ice_keeper.table.schedule_entry import MaintenanceScheduleRecord
@@ -272,23 +272,24 @@ def diagnose(
     min_age_to_diagnose: int,
     max_age_to_diagnose: int,
     optimization_strategy: str | None,
-) -> None:
+) -> int:
     """Diagnose table health by analyzing its partitions.
 
     This command processes partitions of the table to identify opportunities
     for optimization. It uses a specified optimization strategy to calculate and display
     a detailed summary of the partition state before any intervention.
     """
-    # """Run the diagnose command."""
     maintenance_schedule = MaintenanceSchedule(Scope())
     entry = maintenance_schedule.get_maintenance_entry(full_name)
     if entry:
-        row = entry.record.to_row()
-        # Use table's pre-configured optimization strategy if not provided.
+        record = entry.record
+        # Make a copy of the record before mutating
+        record_copy = record.model_copy()
         if optimization_strategy:
-            row.optimization_strategy = optimization_strategy
-        row.min_age_to_optimize = min_age_to_diagnose
-        row.max_age_to_diagnose = max_age_to_diagnose
+            record_copy.optimization_strategy = optimization_strategy
+        record_copy.min_age_to_optimize = min_age_to_diagnose
+        record_copy.max_age_to_optimize = max_age_to_diagnose
+        row = Row(**record_copy.model_dump(by_alias=True))
         entry = MaintenanceScheduleRecord.from_row(row).to_entry()
         spec_id_rows = STL.sql(f"select distinct spec_id from {entry.full_name}.data_files", "Distinct spec_id").collect()
         for spec_id in [row.spec_id for row in spec_id_rows]:
@@ -304,7 +305,11 @@ def diagnose(
             )
             summary.show(10000)
     else:
-        click.secho(f"Error, no entry for table {full_name} in maintenance schedule.", fg="red", err=True)
+        # Preserve expected CLI behavior: emit an error and non-zero exit
+        # when the table is not present in the maintenance schedule.
+        msg = f"Table '{full_name}' not found in maintenance schedule."
+        raise click.ClickException(msg)
+    return 0
 
 
 def optimize_maintenance_schedule(executor: TaskExecutor) -> None:
