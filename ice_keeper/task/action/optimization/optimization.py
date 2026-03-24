@@ -132,7 +132,7 @@ class OptimizationStrategy(ActionStrategy):
             logger.debug("START Optimizing spec_id: %s -> %s", spec_id, self.mnt_props.partition_specs[spec_id])
             did_some_optimizations = False
             # Collect partition summary for the spec_id
-            summary = PartitionSummary(self.mnt_props, spec_id)
+            summary = PartitionSummary(self.mnt_props, spec_id, self.get_widening_rule(spec_id))
             if sub_executor:
                 summary.show(100)
             else:
