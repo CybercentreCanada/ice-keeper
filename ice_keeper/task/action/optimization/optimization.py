@@ -115,6 +115,12 @@ class OptimizationStrategy(ActionStrategy):
         Returns:
             dict[str, Any]: An empty dictionary as the parent does not require journaling.
         """
+        self.find_and_optimize_specs(sub_executor)
+        # Disable parent journaling if all tasks were successfully executed
+        self.disable_journaling()
+        return {}
+
+    def find_and_optimize_specs(self, sub_executor: SubTaskExecutor | None) -> None:
         # Register UDF in this new Spark session. We might use it to diagnose the table.
 
         udf = pandas_udf(zorder2Tuple, returnType=BinaryType())  # type: ignore[call-overload]
@@ -127,7 +133,11 @@ class OptimizationStrategy(ActionStrategy):
             did_some_optimizations = False
             # Collect partition summary for the spec_id
             summary = PartitionSummary(self.mnt_props, spec_id, self.get_widening_rule(spec_id))
-            summary.show(100)
+            if sub_executor:
+                summary.show(100)
+            else:
+                # In diagnostic mode, we want to show the full summary in logs for debugging purposes
+                summary.show(10000)
 
             try:
                 # Diagnose the partitions for optimization opportunities
@@ -137,20 +147,18 @@ class OptimizationStrategy(ActionStrategy):
                 if len(rows) > 0:
                     rows_log_debug(rows, f"Partitions to optimize in {self.mnt_props.full_name}")
                     did_some_optimizations = True
-                    self._execute_sub_tasks(sub_executor, rows, spec_id)
+                    if sub_executor:
+                        self._execute_sub_tasks(sub_executor, rows, spec_id)
                 else:
                     logger.debug("All partitions in spec_id: %s are healthy", spec_id)
 
-                # Save diagnostic results
-                partition_health = PartitionHealth()
-                summary.save_diff(partition_health, did_some_optimizations=did_some_optimizations)
+                if sub_executor:
+                    # In the context of executing optimization, we want to save the results back to the partition health table
+                    partition_health = PartitionHealth()
+                    summary.save_diff(partition_health, did_some_optimizations=did_some_optimizations)
             finally:
                 logger.debug("END Optimizing spec_id: %s", spec_id)
                 summary.uncache_views(did_some_optimizations=did_some_optimizations)
-
-        # Disable parent journaling if all tasks were successfully executed
-        self.disable_journaling()
-        return {}
 
     def create_widening_rule_if_any(self) -> None | WideningRule:
         """Attach a widening rule to the partition specs, if defined in the table configuration.

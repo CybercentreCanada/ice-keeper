@@ -10,6 +10,7 @@ from pyspark.sql import Row, SparkSession
 
 from ice_keeper import Action, Command, configure_logger
 from ice_keeper.table.schedule_entry import MaintenanceScheduleRecord
+from ice_keeper.task.action.optimization.optimization import OptimizationStrategy
 
 from .config import ICEKEEPER_CONFIG, Config
 from .pool import TaskExecutor
@@ -19,7 +20,6 @@ from .task import (
     ActionTaskFactory,
     DiscoveryTask,
     Emailer,
-    PartitionSummary,
     SequentialTask,
     Task,
     get_ordered_tasks_by_execution_time,
@@ -291,19 +291,8 @@ def diagnose(
         record_copy.max_age_to_optimize = max_age_to_diagnose
         row = Row(**record_copy.model_dump(by_alias=True))
         entry = MaintenanceScheduleRecord.from_row(row).to_entry()
-        spec_id_rows = STL.sql(f"select distinct spec_id from {entry.full_name}.data_files", "Distinct spec_id").collect()
-        for spec_id in [row.spec_id for row in spec_id_rows]:
-            # Validate we have the spec_id discovered in our partition spec list.
-            if spec_id < 0 or spec_id >= len(entry.partition_specs.get_specifications()):
-                msg = f"Partition spec id found: {spec_id} does not exists in list of partition specs in metadata."
-                raise Exception(msg)
-            summary = PartitionSummary(entry, spec_id)
-            # Show all rows of the summary
-            click.secho(
-                f"Running diagnostic on spec_id {spec_id} using the following optimization strategy: {entry.optimization_strategy}",
-                bold=True,
-            )
-            summary.show(10000)
+        strategy = OptimizationStrategy(entry)
+        strategy.find_and_optimize_specs(None)
     else:
         # Preserve expected CLI behavior: emit an error and non-zero exit
         # when the table is not present in the maintenance schedule.
