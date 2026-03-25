@@ -211,8 +211,8 @@ class OptimizationStrategy(ActionStrategy):
         The function collects spec IDs from the table's data files and combines them
         with any spec IDs that are defined in widening rules.
 
-        This function makes sure to process partition specs which have a widening rule first.
-        This is important to pickup unsorted files from the source partition and move them to the destination.
+        This function makes sure to process partition specs that have a widening rule first.
+        This is important to pick up unsorted files from the source partition and move them to the destination.
 
         Returns:
             list[int]: A list of unique spec IDs to optimize.
