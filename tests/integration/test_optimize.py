@@ -44,6 +44,7 @@ default_sort_rewrite_data_files_options = f"""options => map(
                 'target-file-size-bytes', '536870912',
                 'output-spec-id', '0',
                 'rewrite-all', 'true',
+                'min-input-files', '1',
                 'shuffle-partitions-per-file', '8')"""
 
 default_binpack_rewrite_data_files_options = f"""options => map(
@@ -54,7 +55,8 @@ default_binpack_rewrite_data_files_options = f"""options => map(
                 'max-file-group-size-bytes', '{humanfriendly.parse_size("200 GB", binary=True)!s}',
                 'target-file-size-bytes', '536870912',
                 'output-spec-id', '0',
-                'rewrite-all', 'false')"""
+                'rewrite-all', 'false',
+                'min-input-files', '1')"""
 
 
 @dataclass
@@ -502,6 +504,7 @@ def test_optimize_two_partitions(executor: TaskExecutor) -> None:
                     'target-file-size-bytes', '536870912',
                     'output-spec-id', '0',
                     'rewrite-all', 'true',
+                    'min-input-files', '1',
                     'shuffle-partitions-per-file', '8')
                 , strategy => 'sort'
                 , where => " ( ts >= date('2020-01-01') and ts < date('2020-01-01') + interval 1 day ) "
