@@ -110,13 +110,16 @@ class SubOptimizationStrategy(ActionStrategy):
         # Define rewrite options and parameters
         options: dict[str, str] = {
             "max-concurrent-file-group-rewrites": "100",
-            "partial-progress.enabled": "true",
+            "partial-progress.enabled": "true"
+            if not self.widening_rule
+            else "false",  # When widening a partition partial progress fails.
             "delete-file-threshold": "1",
             "remove-dangling-deletes": "true",
             "max-file-group-size-bytes": str(humanfriendly.parse_size("200 GB", binary=True)),
             "target-file-size-bytes": str(self.mnt_props.target_file_size_bytes),
             "output-spec-id": str(self.spec_id),
             "rewrite-all": "true" if not self.optimization_spec.is_binpack() else "false",
+            "min-input-files": "1",  # The diagnosis process checks if we have the necessary number of files to trigger an optimization of the partition. No need to check minimum here.
         }
 
         # Add additional options when optimizing sorted data

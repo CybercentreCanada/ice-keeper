@@ -18,7 +18,6 @@ from ice_keeper.table.journal import Journal
 from ice_keeper.table.schedule_entry import IceKeeperTblProperty, MaintenanceScheduleEntry
 from ice_keeper.task.action.factory import ActionTaskFactory
 from tests.test_common import (
-    FIVE_EXPECTED,
     ONE_EXPECTED,
     SCOPE_SCHEMA,
     SCOPE_WHERE_FULL_NAME,
@@ -557,13 +556,14 @@ def test_widening_success(executor: TaskExecutor) -> None:
             table => 'test.test'
            , options => map(
            'max-concurrent-file-group-rewrites', '100',
-           'partial-progress.enabled', 'true',
+           'partial-progress.enabled', 'false',
            'delete-file-threshold', '1',
            'remove-dangling-deletes', 'true',
            'max-file-group-size-bytes', '214748364800',
            'target-file-size-bytes', '500000',
            'output-spec-id', '4',
            'rewrite-all', 'true',
+           'min-input-files', '1',
            'shuffle-partitions-per-file', '1')
            , strategy => 'sort'
            , where => " ( ts >= date('2025-10-01') and ts < date('2025-10-01') + interval 1 month ) and ( _lag = 'leading' ) "
@@ -584,12 +584,10 @@ def test_widening_success(executor: TaskExecutor) -> None:
             group by partition
         )
         where
-        partition.ts_day is not null and partition._lag='leading'
+        partition.ts_day is not null
         """).collect()
-    assert len(rows) > ZERO_EXPECTED
-    for row in rows:
-        print(row)
-        assert row.num_files < FIVE_EXPECTED, "Verify that none of the day partitions have more than 5 data files."
+    # print(rows)
+    assert len(rows) == ZERO_EXPECTED, "Verify that none of the day partitions have files."
 
     # Verify that we have data in the 10th month
     rows = STL.sql(f"""
@@ -605,7 +603,7 @@ def test_widening_success(executor: TaskExecutor) -> None:
     assert len(rows) > ZERO_EXPECTED
     for row in rows:
         print(row)
-        assert row.num_files > ONE_EXPECTED, "Verify that the 10th month now has data."
+        assert row.num_files >= ONE_EXPECTED, "Verify that the 10th month now has data."
 
 
 @pytest.mark.integration
