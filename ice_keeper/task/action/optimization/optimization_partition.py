@@ -119,7 +119,7 @@ class SubOptimizationStrategy(ActionStrategy):
             "target-file-size-bytes": str(self.mnt_props.target_file_size_bytes),
             "output-spec-id": str(self.spec_id),
             "rewrite-all": "true" if not self.optimization_spec.is_binpack() else "false",
-            "min-input-files": "1",  # The diagnosys process checks if we have the necessary number of files to trigger an optimization of the partition. No need to check minimum here.
+            "min-input-files": "1",  # The diagnosis process checks if we have the necessary number of files to trigger an optimization of the partition. No need to check minimum here.
         }
 
         # Add additional options when optimizing sorted data
