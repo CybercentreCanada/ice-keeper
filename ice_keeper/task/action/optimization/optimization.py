@@ -211,6 +211,9 @@ class OptimizationStrategy(ActionStrategy):
         The function collects spec IDs from the table's data files and combines them
         with any spec IDs that are defined in widening rules.
 
+        This function makes sure to process partition specs which have a widening rule first.
+        This is important to pickup unsorted files from the source partition and move them to the destination.
+
         Returns:
             list[int]: A list of unique spec IDs to optimize.
         """
@@ -218,18 +221,22 @@ class OptimizationStrategy(ActionStrategy):
         spec_id_rows = STL.sql(sql, "Finding spec IDs to optimize").collect()
 
         spec_ids_with_data_files = {row.spec_id for row in spec_id_rows}
-        rule = self.create_widening_rule_if_any()
-        if rule:
-            spec_ids_with_data_files.add(rule.spec_id)
-
         unique_spec_ids = list(spec_ids_with_data_files)
 
-        # Ensure the default spec ID is included first
-        if self.mnt_props.partition_specs.default_spec_id not in unique_spec_ids:
-            unique_spec_ids.insert(0, self.mnt_props.partition_specs.default_spec_id)
-        else:
+        rule = self.create_widening_rule_if_any()
+        widening_rule_dst_spec_id = None
+        if rule:
+            widening_rule_dst_spec_id = rule.spec_id
+
+        # Ensure the widening rule's destination spec id is first, if there is no widening rule then make sure the default spec ID is included first
+        if self.mnt_props.partition_specs.default_spec_id in unique_spec_ids:
             unique_spec_ids.remove(self.mnt_props.partition_specs.default_spec_id)
-            unique_spec_ids.insert(0, self.mnt_props.partition_specs.default_spec_id)
+        if widening_rule_dst_spec_id in unique_spec_ids:
+            unique_spec_ids.remove(widening_rule_dst_spec_id)
+
+        unique_spec_ids.insert(0, self.mnt_props.partition_specs.default_spec_id)
+        if widening_rule_dst_spec_id and widening_rule_dst_spec_id not in unique_spec_ids:
+            unique_spec_ids.insert(0, widening_rule_dst_spec_id)
 
         logger.debug("Partition specs to optimize: %s", unique_spec_ids)
 
