@@ -368,7 +368,10 @@ class DataFilesSummary:
                     max(case when content = 0 then file_size_in_bytes end) as max_file_size,
                     sum(case when content = 0 then file_size_in_bytes end) as sum_file_size,
 
-                    count_if(is_data_file_from_widening_src_partition = true) as num_files_to_widen,
+                    count_if(
+                        content = 0 and
+                        is_data_file_from_widening_src_partition = true
+                    ) as num_files_to_widen,
 
                     -- Calculate correlation factor; defaulting null values to 1
                     -- if only a single file in partition, set corr to 1
