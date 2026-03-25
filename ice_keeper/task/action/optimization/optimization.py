@@ -211,8 +211,8 @@ class OptimizationStrategy(ActionStrategy):
         The function collects spec IDs from the table's data files and combines them
         with any spec IDs that are defined in widening rules.
 
-        This function makes sure to process partition specs which have a widening rule first.
-        This is important to pickup unsorted files from the source partition and move them to the destination.
+        This function makes sure to process partition specs that have a widening rule first.
+        This is important to pick up unsorted files from the source partition and move them to the destination.
 
         Returns:
             list[int]: A list of unique spec IDs to optimize.
@@ -235,7 +235,7 @@ class OptimizationStrategy(ActionStrategy):
             unique_spec_ids.remove(widening_rule_dst_spec_id)
 
         unique_spec_ids.insert(0, self.mnt_props.partition_specs.default_spec_id)
-        if widening_rule_dst_spec_id and widening_rule_dst_spec_id not in unique_spec_ids:
+        if widening_rule_dst_spec_id is not None and widening_rule_dst_spec_id not in unique_spec_ids:
             unique_spec_ids.insert(0, widening_rule_dst_spec_id)
 
         logger.debug("Partition specs to optimize: %s", unique_spec_ids)
