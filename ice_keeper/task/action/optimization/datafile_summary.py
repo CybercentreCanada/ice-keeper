@@ -63,7 +63,8 @@ class DataFilesBinpack(DataFiles):
                 content,
                 record_count,
                 file_size_in_bytes,
-                readable_metrics
+                readable_metrics,
+                false as is_data_file_from_widening_src_partition
             from
                 {self.mnt_props.full_name}.files
         """
@@ -93,7 +94,8 @@ class DataFilesSort(DataFiles):
                 content,
                 record_count,
                 file_size_in_bytes,
-                readable_metrics
+                readable_metrics,
+                false as is_data_file_from_widening_src_partition
             from
                 {self.mnt_props.full_name}.files
         """
@@ -178,7 +180,8 @@ class DataFilesWideningSort(DataFiles):
                     content,
                     record_count,
                     file_size_in_bytes,
-                    readable_metrics
+                    readable_metrics,
+                    false as is_data_file_from_widening_src_partition
                 from
                     {self.mnt_props.full_name}.files
             )
@@ -190,7 +193,8 @@ class DataFilesWideningSort(DataFiles):
                     content,
                     record_count,
                     file_size_in_bytes,
-                    readable_metrics
+                    readable_metrics,
+                    true as is_data_file_from_widening_src_partition
                 from
                     {self.mnt_props.full_name}.files
                 where
@@ -307,7 +311,8 @@ class DataFilesSummary:
                     content,
                     record_count,
                     file_size_in_bytes,
-                    readable_metrics
+                    readable_metrics,
+                    is_data_file_from_widening_src_partition
                 from
                     ({data_files_stmt})
             ),
@@ -319,7 +324,8 @@ class DataFilesSummary:
                     record_count,
                     file_size_in_bytes,
                     {lower_bounds_expr} as the_lower_bound,
-                    {upper_bounds_expr} as the_upper_bound
+                    {upper_bounds_expr} as the_upper_bound,
+                    is_data_file_from_widening_src_partition
                 from
                     data_files
             ),
@@ -331,7 +337,8 @@ class DataFilesSummary:
                     record_count,
                     file_size_in_bytes,
                     row_number() over (partition by {grouping_stmt} order by the_lower_bound) rn1,
-                    row_number() over (partition by {grouping_stmt} order by the_upper_bound) rn2
+                    row_number() over (partition by {grouping_stmt} order by the_upper_bound) rn2,
+                    is_data_file_from_widening_src_partition
                 from
                     data_files_with_bounds
                 where
@@ -361,7 +368,13 @@ class DataFilesSummary:
                     max(case when content = 0 then file_size_in_bytes end) as max_file_size,
                     sum(case when content = 0 then file_size_in_bytes end) as sum_file_size,
 
+                    count_if(
+                        content = 0 and
+                        is_data_file_from_widening_src_partition = true
+                    ) as num_files_to_widen,
+
                     -- Calculate correlation factor; defaulting null values to 1
+                    -- if only a single file in partition, set corr to 1
                     cast(
                         case when count_if(content = 0) <= 1 then 1
                         else coalesce(corr(rn1, rn2), 1)
@@ -391,12 +404,13 @@ class DataFilesSummary:
                     min_file_size,
                     max_file_size,
                     sum_file_size,
+                    num_files_to_widen,
                     corr,
                     corr_threshold,
                     n_delete_files,
                     n_delete_records,
                     -- Determine necessity for sorting based on correlation threshold or delete files
-                    (corr < corr_threshold or n_delete_files > 0) as should_sort,
+                    (corr < corr_threshold or n_delete_files > 0 or num_files_to_widen > 0) as should_sort,
                     -- Determine necessity for binpacking based on number of rewritten files or delete files
                     (num_files_targetted_for_rewrite > {num_files_targetted_for_rewrite_threshold} or n_delete_files > 0) as should_binpack
                 from
