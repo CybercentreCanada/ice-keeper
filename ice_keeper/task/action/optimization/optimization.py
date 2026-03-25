@@ -235,7 +235,7 @@ class OptimizationStrategy(ActionStrategy):
             unique_spec_ids.remove(widening_rule_dst_spec_id)
 
         unique_spec_ids.insert(0, self.mnt_props.partition_specs.default_spec_id)
-        if widening_rule_dst_spec_id and widening_rule_dst_spec_id not in unique_spec_ids:
+        if widening_rule_dst_spec_id is not None and widening_rule_dst_spec_id not in unique_spec_ids:
             unique_spec_ids.insert(0, widening_rule_dst_spec_id)
 
         logger.debug("Partition specs to optimize: %s", unique_spec_ids)
