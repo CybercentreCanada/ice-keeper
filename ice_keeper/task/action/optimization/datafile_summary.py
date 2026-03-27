@@ -277,7 +277,14 @@ class DataFilesSummary:
 
         return filter_stmt
 
-    def create_summary_stmt(self) -> str:
+    def _format_bytes_stmt(self, bytes_column: str) -> str:
+        return f"""CONCAT(
+            ROUND({bytes_column} / POWER(1024, FLOOR(LOG(1024, GREATEST({bytes_column}, 1)))), 2),
+            ' ',
+            ELEMENT_AT(ARRAY('B', 'KB', 'MB', 'GB', 'TB', 'PB'), CAST(FLOOR(LOG(1024, GREATEST({bytes_column}, 1))) AS INT) + 1)
+        )"""
+
+    def create_summary_stmt(self, *, estimate_optimization_results: bool = False) -> str:
         """Generate an SQL query for creating a partition diagnostics summary.
 
         This summary includes metrics such as correlation factors, number of files
@@ -286,8 +293,18 @@ class DataFilesSummary:
         Returns:
             str: SQL query for analyzing partition health and optimization readiness.
         """
-        min_file_size_bytes = int(self.mnt_props.target_file_size_bytes * 0.75)
-        max_file_size_bytes = int(self.mnt_props.target_file_size_bytes * 1.8)
+        target_file_size_stmt = str(self.mnt_props.target_file_size_bytes)
+        if self.mnt_props.target_file_size_bytes <= 0:
+            target_file_size_stmt = """
+            case
+            when sum_file_size < 16L * 16 * 1048576 then 16L * 1048576
+            when sum_file_size < 32L * 32 * 1048576 then 32L * 1048576
+            when sum_file_size < 64L * 64 * 1048576 then 64L * 1048576
+            when sum_file_size < 128L * 128 * 1048576 then 128L * 1048576
+            when sum_file_size < 256L * 256 * 1048576 then 256L * 1048576
+            when sum_file_size < 512L * 512 * 1048576 then 512L * 1048576
+            else 1024L end
+            """
 
         num_files_targetted_for_rewrite_threshold = 5
 
@@ -301,6 +318,8 @@ class DataFilesSummary:
         max_age_to_optimize = self.mnt_props.max_age_to_optimize
         order_by = self.spec.make_order_stmt()
         age_filter_stmt = self.make_age_filter_stmt(min_age_to_optimize, max_age_to_optimize)
+
+        cte_to_use = "final_decision" if not estimate_optimization_results else "final_estimate"
 
         return f"""
             -- Diagnosing partitioned table '{self.mnt_props.full_name}' for optimization
@@ -344,6 +363,44 @@ class DataFilesSummary:
                 where
                     spec_id = {self.spec_id}
             ),
+            file_stats_per_partition as (
+                select
+                    {grouping_stmt},
+                    content,
+                    record_count,
+                    file_size_in_bytes,
+                    rn1,
+                    rn2,
+                    is_data_file_from_widening_src_partition,
+                    -- Aggregations for content = 0 (data files)
+                    count_if(content = 0) over (partition by {grouping_stmt}) as n_files,
+                    sum(case when content = 0 then record_count end) over (partition by {grouping_stmt}) as n_records,
+                    avg(case when content = 0 then file_size_in_bytes end) over (partition by {grouping_stmt}) as avg_file_size,
+                    min(case when content = 0 then file_size_in_bytes end) over (partition by {grouping_stmt}) as min_file_size,
+                    max(case when content = 0 then file_size_in_bytes end) over (partition by {grouping_stmt}) as max_file_size,
+                    sum(case when content = 0 then file_size_in_bytes end) over (partition by {grouping_stmt}) as sum_file_size
+                from
+                    ranked_data_files
+            ),
+            target_file_size_per_partition as (
+                select
+                    {grouping_stmt},
+                    content,
+                    record_count,
+                    file_size_in_bytes,
+                    rn1,
+                    rn2,
+                    is_data_file_from_widening_src_partition,
+                    n_files,
+                    n_records,
+                    avg_file_size,
+                    min_file_size,
+                    max_file_size,
+                    sum_file_size,
+                    {target_file_size_stmt} as target_file_size
+                from
+                    file_stats_per_partition
+            ),
             -- Aggregate the metrics per partition.
             agg_data_files as (
                 select
@@ -354,19 +411,21 @@ class DataFilesSummary:
                     {self.spec.make_to_json_stmt()} as partition_desc,
 
                     -- Aggregations for content = 0 (data files)
-                    count_if(content = 0) as n_files,
+                    first(n_files) as n_files,
+
+                    first(n_records) as n_records,
+                    first(avg_file_size) as avg_file_size,
+                    first(min_file_size) as min_file_size,
+                    first(max_file_size) as max_file_size,
+                    first(sum_file_size) as sum_file_size,
+
+                    first(target_file_size) as target_file_size,
 
                     count_if(
                         content = 0 and
-                        (file_size_in_bytes < {min_file_size_bytes}
-                         or file_size_in_bytes > {max_file_size_bytes})
+                        (file_size_in_bytes < int(target_file_size * 0.75)
+                         or file_size_in_bytes > int(target_file_size * 1.8))
                     ) as num_files_targetted_for_rewrite,
-
-                    sum(case when content = 0 then record_count end) as n_records,
-                    avg(case when content = 0 then file_size_in_bytes end) as avg_file_size,
-                    min(case when content = 0 then file_size_in_bytes end) as min_file_size,
-                    max(case when content = 0 then file_size_in_bytes end) as max_file_size,
-                    sum(case when content = 0 then file_size_in_bytes end) as sum_file_size,
 
                     count_if(
                         content = 0 and
@@ -387,12 +446,12 @@ class DataFilesSummary:
 
                     sum(case when content > 0 then record_count else 0 end) as n_delete_records
                 from
-                    ranked_data_files
+                    target_file_size_per_partition
                 group by
                     {grouping_stmt}
             ),
             -- Add should optimize flags to the aggregate.
-            final as (
+            final_decision as (
                 select
                     {grouping_stmt},
                     partition_age,
@@ -400,6 +459,7 @@ class DataFilesSummary:
                     n_files,
                     num_files_targetted_for_rewrite,
                     n_records,
+                    target_file_size,
                     avg_file_size,
                     min_file_size,
                     max_file_size,
@@ -419,7 +479,27 @@ class DataFilesSummary:
                     {age_filter_stmt}
                 order by
                     {order_by}
+            ),
+            final_estimate as (
+                select
+                    {grouping_stmt},
+                    partition_age,
+                    {self._format_bytes_stmt("sum_file_size")} as partition_size,
+                    {self._format_bytes_stmt("avg_file_size")} as avg_file_size,
+                    {self._format_bytes_stmt("target_file_size")} as target_file_size,
+                    n_files as partition_num_files,
+                    int(sum_file_size / target_file_size) as partition_target_num_files,
+                    sum(n_files) over(partition by partition_age) as num_files_per_age,
+                    sum(int(sum_file_size / target_file_size)) over(partition by partition_age) as target_num_files_per_age
+                from
+                    agg_data_files
+                where
+                    {age_filter_stmt}
+                order by
+                    partition_age asc,
+                    n_files desc,
+                    avg_file_size desc
             )
 
-            select * from final
+            select * from {cte_to_use}
         """
