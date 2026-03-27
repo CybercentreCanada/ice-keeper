@@ -12,7 +12,7 @@ from ice_keeper.stm import STL
 from ice_keeper.table import PartitionHealth
 from ice_keeper.task import SparkTask
 from ice_keeper.task.action.action import ActionStrategy, ActionTask
-from ice_keeper.task.action.optimization.partition_summary import DataFilesSummary
+from ice_keeper.task.action.optimization.datafile_summary import DataFilesSummary
 from ice_keeper.task.task import SubTaskExecutor
 from ice_keeper.zorder_udf import zorder2Tuple
 

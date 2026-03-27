@@ -267,7 +267,7 @@ def reset(force: bool) -> None:  # noqa: FBT001
 @click.option("--min_age_to_diagnose", default=1, help="Minimum snapshot age (in partition rank) to diagnose (default: 1).")
 @click.option("--max_age_to_diagnose", default=72, help="Maximum snapshot age (in partition rank) to diagnose (default: 72).")
 @click.option("--optimization_strategy", help="Optional optimization strategy to use during diagnosis.")
-@click.option("--target_file_size_bytes", help="Optional target data file size.")
+@click.option("--target_file_size_bytes", type=int, default=None, help="Optional target data file size.")
 @click.option(
     "--mode",
     type=click.Choice(["simulate", "dry_run"], case_sensitive=False),
@@ -297,7 +297,7 @@ def diagnose(
         record_copy = record.model_copy()
         if optimization_strategy:
             record_copy.optimization_strategy = optimization_strategy
-        if target_file_size_bytes:
+        if target_file_size_bytes is not None:
             record_copy.target_file_size_bytes = target_file_size_bytes
         record_copy.min_age_to_optimize = min_age_to_diagnose
         record_copy.max_age_to_optimize = max_age_to_diagnose

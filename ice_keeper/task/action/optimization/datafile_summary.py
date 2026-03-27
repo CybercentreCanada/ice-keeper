@@ -303,7 +303,7 @@ class DataFilesSummary:
             when sum_file_size < 128L * 128 * 1048576 then 128L * 1048576
             when sum_file_size < 256L * 256 * 1048576 then 256L * 1048576
             when sum_file_size < 512L * 512 * 1048576 then 512L * 1048576
-            else 1024L end
+            else 1024L * 1048576 end
             """
 
         num_files_targetted_for_rewrite_threshold = 5
@@ -478,9 +478,9 @@ class DataFilesSummary:
                     {self._format_bytes_stmt("avg_file_size")} as avg_file_size,
                     {self._format_bytes_stmt("target_file_size")} as target_file_size,
                     n_files as partition_num_files,
-                    int(sum_file_size / target_file_size) as partition_target_num_files,
+                    ceil(sum_file_size / target_file_size) as partition_target_num_files,
                     sum(n_files) over(partition by partition_age) as num_files_per_age,
-                    sum(int(sum_file_size / target_file_size)) over(partition by partition_age) as target_num_files_per_age
+                    sum(ceil(sum_file_size / target_file_size)) over(partition by partition_age) as target_num_files_per_age
                 from
                     agg_data_files
                 where
