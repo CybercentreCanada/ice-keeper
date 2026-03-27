@@ -295,6 +295,18 @@ class DataFilesSummary:
         """
         target_file_size_stmt = str(self.mnt_props.target_file_size_bytes)
         if self.mnt_props.target_file_size_bytes <= 0:
+            # Target file size based on size of partition from 16MB files up to 1GB.
+            # +-----------------------+----------------+----------------------+------------------------+-----------------------------+----------------------------+
+            # |num_partitions_in_table|table_total_size|table_total_file_count|partition_size_threshold|partition_num_files_threshold|recommended_target_file_size|
+            # +-----------------------+----------------+----------------------+------------------------+-----------------------------+----------------------------+
+            # |300                    |75.0 GB         |4800                  |256.0 MB                |16                           |16.0 MB                     |
+            # |300                    |300.0 GB        |9600                  |1.0 GB                  |32                           |32.0 MB                     |
+            # |300                    |1.17 TB         |19200                 |4.0 GB                  |64                           |64.0 MB                     |
+            # |300                    |4.69 TB         |38400                 |16.0 GB                 |128                          |128.0 MB                    |
+            # |300                    |18.75 TB        |76800                 |64.0 GB                 |256                          |256.0 MB                    |
+            # |300                    |75.0 TB         |153600                |256.0 GB                |512                          |512.0 MB                    |
+            # |300                    |300.0 TB        |307200                |1.0 TB                  |1024                         |1.0 GB                      |
+            # +-----------------------+----------------+----------------------+------------------------+-----------------------------+----------------------------+
             target_file_size_stmt = """
             case
             when sum_file_size < 16L * 16 * 1048576 then 16L * 1048576
