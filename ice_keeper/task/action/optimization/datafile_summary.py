@@ -374,10 +374,6 @@ class DataFilesSummary:
                     is_data_file_from_widening_src_partition,
                     -- Aggregations for content = 0 (data files)
                     count_if(content = 0) over (partition by {grouping_stmt}) as n_files,
-                    sum(case when content = 0 then record_count end) over (partition by {grouping_stmt}) as n_records,
-                    avg(case when content = 0 then file_size_in_bytes end) over (partition by {grouping_stmt}) as avg_file_size,
-                    min(case when content = 0 then file_size_in_bytes end) over (partition by {grouping_stmt}) as min_file_size,
-                    max(case when content = 0 then file_size_in_bytes end) over (partition by {grouping_stmt}) as max_file_size,
                     sum(case when content = 0 then file_size_in_bytes end) over (partition by {grouping_stmt}) as sum_file_size
                 from
                     ranked_data_files
@@ -392,12 +388,9 @@ class DataFilesSummary:
                     rn2,
                     is_data_file_from_widening_src_partition,
                     n_files,
-                    n_records,
-                    avg_file_size,
-                    min_file_size,
-                    max_file_size,
                     sum_file_size,
-                    {target_file_size_stmt} as target_file_size
+                    {target_file_size_stmt} as target_file_size,
+                    {corr_threshold_expr} as corr_threshold
                 from
                     file_stats_per_partition
             ),
@@ -412,15 +405,14 @@ class DataFilesSummary:
 
                     -- Aggregations for content = 0 (data files)
                     first(n_files) as n_files,
-
-                    first(n_records) as n_records,
-                    first(avg_file_size) as avg_file_size,
-                    first(min_file_size) as min_file_size,
-                    first(max_file_size) as max_file_size,
+                    sum(case when content = 0 then record_count end) as n_records,
+                    avg(case when content = 0 then file_size_in_bytes end) as avg_file_size,
+                    min(case when content = 0 then file_size_in_bytes end) as min_file_size,
+                    max(case when content = 0 then file_size_in_bytes end) as max_file_size,
                     first(sum_file_size) as sum_file_size,
 
                     first(target_file_size) as target_file_size,
-
+                    first(corr_threshold) as corr_threshold,
                     count_if(
                         content = 0 and
                         (file_size_in_bytes < int(target_file_size * 0.75)
@@ -438,8 +430,6 @@ class DataFilesSummary:
                         case when count_if(content = 0) <= 1 then 1
                         else coalesce(corr(rn1, rn2), 1)
                     end as float) as corr,
-
-                    {corr_threshold_expr} as corr_threshold,
 
                     -- Aggregations for content > 0 (delete files)
                     count_if(content > 0) as n_delete_files,
