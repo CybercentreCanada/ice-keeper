@@ -267,13 +267,26 @@ def reset(force: bool) -> None:  # noqa: FBT001
 @click.option("--min_age_to_diagnose", default=1, help="Minimum snapshot age (in partition rank) to diagnose (default: 1).")
 @click.option("--max_age_to_diagnose", default=72, help="Maximum snapshot age (in partition rank) to diagnose (default: 72).")
 @click.option("--optimization_strategy", help="Optional optimization strategy to use during diagnosis.")
-@click.option("--target_file_size_bytes", type=int, default=None, help="Optional target data file size.")
+@click.option(
+    "--target_file_size_bytes",
+    type=int,
+    default=None,
+    help=(
+        "Optional target data file size in bytes. If omitted or set to a value <= 0, "
+        "ice-keeper automatically chooses an appropriate target size based on table "
+        "characteristics."
+    ),
+)
 @click.option(
     "--mode",
     type=click.Choice(["simulate", "dry_run"], case_sensitive=False),
     default="simulate",
     show_default=True,
-    help="Mode choosing either dry_run or simulate.",
+    help=(
+        "Execution mode. 'simulate' runs the optimizer logic and prints a detailed "
+        "decision summary without applying any changes. 'dry_run' prints only a "
+        "high-level estimate of potential changes, also without applying them."
+    ),
 )
 def diagnose(
     full_name: str,
