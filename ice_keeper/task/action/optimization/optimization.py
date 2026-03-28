@@ -170,9 +170,7 @@ class OptimizationStrategy(ActionStrategy):
             spec = self.mnt_props.partition_specs[spec_id]
             widening_rule = self.get_widening_rule(spec_id)
             datafiles_summary = DataFilesSummary(self.mnt_props, spec, spec_id, widening_rule)
-            sql = datafiles_summary.create_summary_stmt(
-                estimate_optimization_results=estimate_optimization_results
-            )
+            sql = datafiles_summary.create_summary_stmt(estimate_optimization_results=estimate_optimization_results)
             rows = STL.sql_and_log(sql, "Retrieve rows from partition summary").take(10000)
             rows_log_debug(rows, f"Diagnostic Partition Summary of {self.mnt_props.full_name}, spec: {spec}")
 
@@ -181,6 +179,7 @@ class OptimizationStrategy(ActionStrategy):
 
     def estimate_optimization_results_partition_specs(self) -> None:
         self._run_partition_spec_diagnostics(estimate_optimization_results=True)
+
     def create_widening_rule_if_any(self) -> None | WideningRule:
         """Attach a widening rule to the partition specs, if defined in the table configuration.
 
