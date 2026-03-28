@@ -155,36 +155,32 @@ class OptimizationStrategy(ActionStrategy):
                 logger.debug("END Optimizing spec_id: %s", spec_id)
                 summary.uncache_views(did_some_optimizations=did_some_optimizations)
 
-    def diagnose_partition_specs(self) -> None:
+    def _run_partition_spec_diagnostics(self, *, estimate_optimization_results: bool) -> None:
         # Register UDF in this new Spark session. We might use it to diagnose the table.
         udf = pandas_udf(zorder2Tuple, returnType=BinaryType())  # type: ignore[call-overload]
         STL.get().udf.register("zorder2Tuple", udf)
 
         unique_spec_ids = self._find_specs_to_optimize()
         for spec_id in unique_spec_ids:
-            logger.debug("START Diagnosing spec_id: %s -> %s", spec_id, self.mnt_props.partition_specs[spec_id])
+            logger.debug(
+                "START Diagnosing spec_id: %s -> %s",
+                spec_id,
+                self.mnt_props.partition_specs[spec_id],
+            )
             spec = self.mnt_props.partition_specs[spec_id]
             widening_rule = self.get_widening_rule(spec_id)
             datafiles_summary = DataFilesSummary(self.mnt_props, spec, spec_id, widening_rule)
-            sql = datafiles_summary.create_summary_stmt()
+            sql = datafiles_summary.create_summary_stmt(
+                estimate_optimization_results=estimate_optimization_results
+            )
             rows = STL.sql_and_log(sql, "Retrieve rows from partition summary").take(10000)
             rows_log_debug(rows, f"Diagnostic Partition Summary of {self.mnt_props.full_name}, spec: {spec}")
+
+    def diagnose_partition_specs(self) -> None:
+        self._run_partition_spec_diagnostics(estimate_optimization_results=False)
 
     def estimate_optimization_results_partition_specs(self) -> None:
-        # Register UDF in this new Spark session. We might use it to diagnose the table.
-        udf = pandas_udf(zorder2Tuple, returnType=BinaryType())  # type: ignore[call-overload]
-        STL.get().udf.register("zorder2Tuple", udf)
-
-        unique_spec_ids = self._find_specs_to_optimize()
-        for spec_id in unique_spec_ids:
-            logger.debug("START Diagnosing spec_id: %s -> %s", spec_id, self.mnt_props.partition_specs[spec_id])
-            spec = self.mnt_props.partition_specs[spec_id]
-            widening_rule = self.get_widening_rule(spec_id)
-            datafiles_summary = DataFilesSummary(self.mnt_props, spec, spec_id, widening_rule)
-            sql = datafiles_summary.create_summary_stmt(estimate_optimization_results=True)
-            rows = STL.sql_and_log(sql, "Retrieve rows from partition summary").take(10000)
-            rows_log_debug(rows, f"Diagnostic Partition Summary of {self.mnt_props.full_name}, spec: {spec}")
-
+        self._run_partition_spec_diagnostics(estimate_optimization_results=True)
     def create_widening_rule_if_any(self) -> None | WideningRule:
         """Attach a widening rule to the partition specs, if defined in the table configuration.
 
