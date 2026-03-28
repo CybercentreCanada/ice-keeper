@@ -278,10 +278,10 @@ class DataFilesSummary:
         return filter_stmt
 
     def _format_bytes_stmt(self, bytes_column: str) -> str:
-        return f"""CONCAT(
-            ROUND({bytes_column} / POWER(1024, FLOOR(LOG(1024, GREATEST({bytes_column}, 1)))), 2),
+        return f"""concat(
+            round({bytes_column} / power(1024, floor(log(1024, greatest({bytes_column}, 1)))), 2),
             ' ',
-            ELEMENT_AT(ARRAY('B', 'KB', 'MB', 'GB', 'TB', 'PB'), CAST(FLOOR(LOG(1024, GREATEST({bytes_column}, 1))) AS INT) + 1)
+            element_at(array('B', 'KB', 'MB', 'GB', 'TB', 'PB'), cast(floor(log(1024, greatest({bytes_column}, 1))) as int) + 1)
         )"""
 
     def create_summary_stmt(self, *, estimate_optimization_results: bool = False) -> str:
@@ -441,8 +441,7 @@ class DataFilesSummary:
                     first(corr_threshold) as corr_threshold,
                     count_if(
                         content = 0 and
-                        (file_size_in_bytes < target_file_size * 0.75L
-                         or file_size_in_bytes > target_file_size * 1.8L)
+                        (file_size_in_bytes < target_file_size * 0.75 or file_size_in_bytes > target_file_size * 1.8)
                     ) as num_files_targetted_for_rewrite,
 
                     count_if(
