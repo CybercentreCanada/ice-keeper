@@ -66,7 +66,7 @@ class PartitionDiagnosis:
                 select
                     partition_age,
                     {grouping_stmt},
-                    target_file_size
+                    first(target_file_size) as target_file_size -- all values are the same per partition
                 from
                     {summary.summary_before_view_name}
                 where
