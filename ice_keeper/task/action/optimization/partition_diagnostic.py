@@ -65,7 +65,8 @@ class PartitionDiagnosis:
                 -- Identifying partitions to optimize for table {self.mnt_props.full_name}
                 select
                     partition_age,
-                    {grouping_stmt}
+                    {grouping_stmt},
+                    target_file_size
                 from
                     {summary.summary_before_view_name}
                 where

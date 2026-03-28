@@ -28,6 +28,7 @@ class SubOptimizationStrategy(ActionStrategy):
         """Initialize the strategy for optimizing a specific partition."""
         super().__init__(mnt_props)
         self.row = row
+        self.target_file_size = self.row.target_file_size
         self.spec_id = spec_id
         self.spec = self.mnt_props.partition_specs[self.spec_id]
         self.optimization_spec = self.mnt_props.optimization_spec
@@ -116,7 +117,7 @@ class SubOptimizationStrategy(ActionStrategy):
             "delete-file-threshold": "1",
             "remove-dangling-deletes": "true",
             "max-file-group-size-bytes": str(humanfriendly.parse_size("200 GB", binary=True)),
-            "target-file-size-bytes": str(self.mnt_props.target_file_size_bytes),
+            "target-file-size-bytes": str(self.target_file_size),
             "output-spec-id": str(self.spec_id),
             "rewrite-all": "true" if not self.optimization_spec.is_binpack() else "false",
             "min-input-files": "1",  # The diagnosis process checks if we have the necessary number of files to trigger an optimization of the partition. No need to check minimum here.
@@ -124,7 +125,7 @@ class SubOptimizationStrategy(ActionStrategy):
 
         # Add additional options when optimizing sorted data
         if self.optimization_spec.is_sorted():
-            per_file = self._evaluate_shuffle_partitions_per_file(self.mnt_props.target_file_size_bytes)
+            per_file = self._evaluate_shuffle_partitions_per_file(self.target_file_size)
             options["shuffle-partitions-per-file"] = str(per_file)
 
         self._sanity_check_partition_field_values()
@@ -147,19 +148,19 @@ class SubOptimizationStrategy(ActionStrategy):
             options=options,
         )
 
-    def _evaluate_shuffle_partitions_per_file(self, target_file_size_bytes: int) -> int:
+    def _evaluate_shuffle_partitions_per_file(self, target_file_size: int) -> int:
         """Determine the number of shuffle partitions per output file.
 
         Uses a heuristic based on file size to optimize shuffle partitions.
 
         Args:
-            target_file_size_bytes (int): Target file size in bytes.
+            target_file_size (int): Target file size in bytes.
 
         Returns:
             int: Number of shuffle partitions to use for each file.
         """
         # Use more partitions for files greater than 64 MB
-        n = int(target_file_size_bytes / (64 * 1024 * 1024))
+        n = int(target_file_size / (64 * 1024 * 1024))
         return max(1, n)
 
     def _sanity_check_partition_field_values(self) -> None:
