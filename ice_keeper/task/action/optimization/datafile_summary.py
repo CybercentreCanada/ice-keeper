@@ -400,7 +400,10 @@ class DataFilesSummary:
                     is_data_file_from_widening_src_partition,
                     -- Aggregations for content = 0 (data files)
                     count_if(content = 0) over (partition by {grouping_stmt}) as n_files,
-                    sum(case when content = 0 then file_size_in_bytes end) over (partition by {grouping_stmt}) as sum_file_size
+                    coalesce(
+                        sum(case when content = 0 then file_size_in_bytes end) over (partition by {grouping_stmt}),
+                        0
+                    ) as sum_file_size
                 from
                     ranked_data_files
             ),
