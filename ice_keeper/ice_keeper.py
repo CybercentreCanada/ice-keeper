@@ -267,11 +267,34 @@ def reset(force: bool) -> None:  # noqa: FBT001
 @click.option("--min_age_to_diagnose", default=1, help="Minimum snapshot age (in partition rank) to diagnose (default: 1).")
 @click.option("--max_age_to_diagnose", default=72, help="Maximum snapshot age (in partition rank) to diagnose (default: 72).")
 @click.option("--optimization_strategy", help="Optional optimization strategy to use during diagnosis.")
+@click.option(
+    "--target_file_size_bytes",
+    type=int,
+    default=None,
+    help=(
+        "Optional target data file size in bytes. If omitted or set to a value <= 0, "
+        "ice-keeper automatically chooses an appropriate target size based on table "
+        "characteristics."
+    ),
+)
+@click.option(
+    "--mode",
+    type=click.Choice(["simulate", "dry_run"], case_sensitive=False),
+    default="simulate",
+    show_default=True,
+    help=(
+        "Execution mode. 'simulate' runs the optimizer logic and prints a detailed "
+        "decision summary without applying any changes. 'dry_run' prints only a "
+        "high-level estimate of potential changes, also without applying them."
+    ),
+)
 def diagnose(
     full_name: str,
     min_age_to_diagnose: int,
     max_age_to_diagnose: int,
+    mode: str,
     optimization_strategy: str | None,
+    target_file_size_bytes: int | None,
 ) -> int:
     """Diagnose table health by analyzing its partitions.
 
@@ -287,12 +310,22 @@ def diagnose(
         record_copy = record.model_copy()
         if optimization_strategy:
             record_copy.optimization_strategy = optimization_strategy
+        if target_file_size_bytes is not None:
+            record_copy.target_file_size_bytes = target_file_size_bytes
         record_copy.min_age_to_optimize = min_age_to_diagnose
         record_copy.max_age_to_optimize = max_age_to_diagnose
         row = Row(**record_copy.model_dump(by_alias=True))
         entry = MaintenanceScheduleRecord.from_row(row).to_entry()
         strategy = OptimizationStrategy(entry)
-        strategy.find_and_optimize_specs(None)
+        try:
+            if mode == "dry_run":
+                strategy.diagnose_partition_specs()
+            else:
+                strategy.estimate_optimization_results_partition_specs()
+        except Exception as e:  # noqa: BLE001
+            msg = f"An error occurred while diagnosing table '{full_name}': {e}"
+            raise click.ClickException(msg)  # noqa: B904
+
     else:
         # Preserve expected CLI behavior: emit an error and non-zero exit
         # when the table is not present in the maintenance schedule.

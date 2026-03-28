@@ -964,6 +964,8 @@ def test_diagnose(executor: TaskExecutor) -> None:
             "14",
             "--optimization_strategy",
             "id ASC",
+            "--target_file_size_bytes",
+            "-1",
         ],
     )
 

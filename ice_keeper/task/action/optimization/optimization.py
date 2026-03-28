@@ -12,6 +12,7 @@ from ice_keeper.stm import STL
 from ice_keeper.table import PartitionHealth
 from ice_keeper.task import SparkTask
 from ice_keeper.task.action.action import ActionStrategy, ActionTask
+from ice_keeper.task.action.optimization.datafile_summary import DataFilesSummary
 from ice_keeper.task.task import SubTaskExecutor
 from ice_keeper.zorder_udf import zorder2Tuple
 
@@ -120,7 +121,7 @@ class OptimizationStrategy(ActionStrategy):
         self.disable_journaling()
         return {}
 
-    def find_and_optimize_specs(self, sub_executor: SubTaskExecutor | None) -> None:
+    def find_and_optimize_specs(self, sub_executor: SubTaskExecutor) -> None:
         # Register UDF in this new Spark session. We might use it to diagnose the table.
 
         udf = pandas_udf(zorder2Tuple, returnType=BinaryType())  # type: ignore[call-overload]
@@ -133,11 +134,7 @@ class OptimizationStrategy(ActionStrategy):
             did_some_optimizations = False
             # Collect partition summary for the spec_id
             summary = PartitionSummary(self.mnt_props, spec_id, self.get_widening_rule(spec_id))
-            if sub_executor:
-                summary.show(100)
-            else:
-                # In diagnostic mode, we want to show the full summary in logs for debugging purposes
-                summary.show(10000)
+            summary.show(100)
 
             try:
                 # Diagnose the partitions for optimization opportunities
@@ -147,18 +144,41 @@ class OptimizationStrategy(ActionStrategy):
                 if len(rows) > 0:
                     rows_log_debug(rows, f"Partitions to optimize in {self.mnt_props.full_name}")
                     did_some_optimizations = True
-                    if sub_executor:
-                        self._execute_sub_tasks(sub_executor, rows, spec_id)
+                    self._execute_sub_tasks(sub_executor, rows, spec_id)
                 else:
                     logger.debug("All partitions in spec_id: %s are healthy", spec_id)
 
-                if sub_executor:
-                    # In the context of executing optimization, we want to save the results back to the partition health table
-                    partition_health = PartitionHealth()
-                    summary.save_diff(partition_health, did_some_optimizations=did_some_optimizations)
+                # In the context of executing optimization, we want to save the results back to the partition health table
+                partition_health = PartitionHealth()
+                summary.save_diff(partition_health, did_some_optimizations=did_some_optimizations)
             finally:
                 logger.debug("END Optimizing spec_id: %s", spec_id)
                 summary.uncache_views(did_some_optimizations=did_some_optimizations)
+
+    def _run_partition_spec_diagnostics(self, *, estimate_optimization_results: bool) -> None:
+        # Register UDF in this new Spark session. We might use it to diagnose the table.
+        udf = pandas_udf(zorder2Tuple, returnType=BinaryType())  # type: ignore[call-overload]
+        STL.get().udf.register("zorder2Tuple", udf)
+
+        unique_spec_ids = self._find_specs_to_optimize()
+        for spec_id in unique_spec_ids:
+            logger.debug(
+                "START Diagnosing spec_id: %s -> %s",
+                spec_id,
+                self.mnt_props.partition_specs[spec_id],
+            )
+            spec = self.mnt_props.partition_specs[spec_id]
+            widening_rule = self.get_widening_rule(spec_id)
+            datafiles_summary = DataFilesSummary(self.mnt_props, spec, spec_id, widening_rule)
+            sql = datafiles_summary.create_summary_stmt(estimate_optimization_results=estimate_optimization_results)
+            rows = STL.sql_and_log(sql, "Retrieve rows from partition summary").take(10000)
+            rows_log_debug(rows, f"Diagnostic Partition Summary of {self.mnt_props.full_name}, spec: {spec}")
+
+    def diagnose_partition_specs(self) -> None:
+        self._run_partition_spec_diagnostics(estimate_optimization_results=False)
+
+    def estimate_optimization_results_partition_specs(self) -> None:
+        self._run_partition_spec_diagnostics(estimate_optimization_results=True)
 
     def create_widening_rule_if_any(self) -> None | WideningRule:
         """Attach a widening rule to the partition specs, if defined in the table configuration.

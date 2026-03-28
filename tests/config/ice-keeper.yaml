@@ -4,4 +4,4 @@ partition_health_table_name: local.admin_test.partition_health
 journal_table_name: local.admin_test.journal
 storage_inventory_report_table_name: local.admin_test.storage_inventory_report
 notification_email_fallback: admin@hostname.com
-logging_config_file: ./config/logging_config.yaml
+logging_config_file: ./tests/config/logging_config.yaml
