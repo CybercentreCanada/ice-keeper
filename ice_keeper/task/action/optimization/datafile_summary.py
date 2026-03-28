@@ -287,11 +287,25 @@ class DataFilesSummary:
     def create_summary_stmt(self, *, estimate_optimization_results: bool = False) -> str:
         """Generate an SQL query for creating a partition diagnostics summary.
 
-        This summary includes metrics such as correlation factors, number of files
-        to optimize and provides flags to determine optimization needs.
+        This method generates a complex SQL query to analyze the health and optimization
+        readiness of partitions in a table. The query includes metrics such as correlation
+        factors, the number of files to optimize, and flags to determine optimization needs.
+
+        Args:
+            estimate_optimization_results (bool, optional): If True, generates an estimate
+                of optimization results instead of the final decision. Defaults to False.
 
         Returns:
-            str: SQL query for analyzing partition health and optimization readiness.
+            str: The generated SQL query for analyzing partition health and optimization readiness.
+
+        Notes:
+            - The query uses multiple Common Table Expressions (CTEs) to structure the analysis.
+            - The `final_decision` CTE is used for the final optimization decision, while
+              `final_estimate` is used for estimating optimization results.
+            - The target file size is dynamically calculated based on partition size thresholds
+              if not explicitly set.
+            - The method relies on several helper methods to generate specific SQL fragments,
+              such as grouping, bounds, and age filters.
         """
         target_file_size_stmt = str(self.mnt_props.target_file_size_bytes)
         if self.mnt_props.target_file_size_bytes <= 0:
