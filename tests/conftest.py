@@ -2,8 +2,8 @@ import os
 
 import pytest
 
+from ice_keeper import configure_logger
 from ice_keeper.config import ICEKEEPER_CONFIG, Config
-from ice_keeper.ice_keeper import configure_logger
 
 
 @pytest.fixture(autouse=True)

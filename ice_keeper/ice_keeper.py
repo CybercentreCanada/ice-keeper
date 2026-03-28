@@ -273,7 +273,7 @@ def reset(force: bool) -> None:  # noqa: FBT001
     type=click.Choice(["simulate", "dry_run"], case_sensitive=False),
     default="simulate",
     show_default=True,
-    help="Mandatory mode choosing either dry_run or simulate.",
+    help="Mode choosing either dry_run or simulate.",
 )
 def diagnose(
     full_name: str,
@@ -307,11 +307,8 @@ def diagnose(
         try:
             if mode == "dry_run":
                 strategy.diagnose_partition_specs()
-            elif mode == "simulate":
-                strategy.estimate_optimization_results_partition_specs()
             else:
-                msg = f"Invalid option for mode: {mode}"
-                raise Exception(msg)
+                strategy.estimate_optimization_results_partition_specs()
         except Exception as e:  # noqa: BLE001
             msg = f"An error occurred while diagnosing table '{full_name}': {e}"
             raise click.ClickException(msg)  # noqa: B904

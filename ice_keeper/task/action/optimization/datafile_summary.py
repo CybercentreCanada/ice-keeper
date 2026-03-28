@@ -427,8 +427,8 @@ class DataFilesSummary:
                     first(corr_threshold) as corr_threshold,
                     count_if(
                         content = 0 and
-                        (file_size_in_bytes < int(target_file_size * 0.75)
-                         or file_size_in_bytes > int(target_file_size * 1.8))
+                        (file_size_in_bytes < target_file_size * 0.75L
+                         or file_size_in_bytes > target_file_size * 1.8L)
                     ) as num_files_targetted_for_rewrite,
 
                     count_if(
