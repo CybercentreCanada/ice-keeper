@@ -58,6 +58,8 @@ class Partition(BaseModel):
 
     def is_temporal_column(self) -> bool:
         # Use the field (column) type to determine if it is temporal.
+        if self.is_temporal_transformation():
+            return True
         if isinstance(self.transformation, IdentityTransformation):
             return self.source_field_type in [TimestampType(), TimestamptzType(), TimeType(), DateType()]
         return False
@@ -189,7 +191,7 @@ class PartitionSpecification:
         Returns:
             str: Alias statement representing the partition columns.
         """
-        alias_stmts = []
+        alias_stmts: list[str] = []
         if self.is_partitioned:
             alias_stmts.extend(
                 f"partition.{partition.transformation.partition_field_escaped} as {partition.partition_field_alias}"
