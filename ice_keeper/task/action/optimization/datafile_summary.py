@@ -291,25 +291,25 @@ class DataFilesSummary:
         )"""
 
     def _partition_time_stmt(self) -> str | None:
+        if not self.spec.is_partitioned:
+            return None
         partition_time_stmt: str | None = None
-        if self.spec.is_partitioned:
-            if self.spec.get_base_partition().is_temporal_transformation():
-                partition_field = f"partition.{self.spec.get_base_partition().partition_field_alias}"
-                if isinstance(self.spec.get_base_partition().transformation, YearTransformation):
-                    partition_time_stmt = f"timestamp '1970-01-01 00:00:00' + ({partition_field} * interval '1' year)"
-                elif isinstance(self.spec.get_base_partition().transformation, MonthTransformation):
-                    partition_time_stmt = f"timestamp '1970-01-01 00:00:00' + ({partition_field} * interval '1' month)"
-                elif isinstance(self.spec.get_base_partition().transformation, DayTransformation):
-                    # Spark represents this as a date already when returning partitions by day.
-                    partition_time_stmt = partition_field
-                elif isinstance(self.spec.get_base_partition().transformation, HourTransformation):
-                    partition_time_stmt = f"timestamp '1970-01-01 00:00:00' + ({partition_field} * interval '1' hour)"
-                else:
-                    msg = f"Unsupported temporal transformation: {type(self.spec.get_base_partition().transformation)}"
-                    raise ValueError(msg)
-            elif self.spec.get_base_partition().is_temporal_column():
-                partition_field = f"partition.{self.spec.get_base_partition().partition_field_alias}"
+        partition_field = self.spec.get_base_partition().partition_field_alias
+        if self.spec.get_base_partition().is_temporal_transformation():
+            if isinstance(self.spec.get_base_partition().transformation, YearTransformation):
+                partition_time_stmt = f"timestamp '1970-01-01 00:00:00' + ({partition_field} * interval '1' year)"
+            elif isinstance(self.spec.get_base_partition().transformation, MonthTransformation):
+                partition_time_stmt = f"timestamp '1970-01-01 00:00:00' + ({partition_field} * interval '1' month)"
+            elif isinstance(self.spec.get_base_partition().transformation, DayTransformation):
+                # Spark represents this as a date already when returning partitions by day.
                 partition_time_stmt = partition_field
+            elif isinstance(self.spec.get_base_partition().transformation, HourTransformation):
+                partition_time_stmt = f"timestamp '1970-01-01 00:00:00' + ({partition_field} * interval '1' hour)"
+            else:
+                msg = f"Unsupported temporal transformation: {type(self.spec.get_base_partition().transformation)}"
+                raise ValueError(msg)
+        elif self.spec.get_base_partition().is_temporal_column():
+            partition_time_stmt = partition_field
 
         return partition_time_stmt
 
