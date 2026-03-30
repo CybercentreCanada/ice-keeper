@@ -503,7 +503,7 @@ class DataFilesSummary:
                 from
                     target_file_size_per_partition
                 group by
-                    {grouping_with_partition_time_stmt},
+                    {grouping_with_partition_time_stmt}
             ),
             -- Add should optimize flags to the aggregate.
             final_decision as (
