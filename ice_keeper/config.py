@@ -43,7 +43,7 @@ class Config(BaseModel):
     storage_inventory_report_table_name: str | None = None
     # If no notification email provided by a table owner, use this fallback email for admin alerts about failed maintenance tasks.
     notification_email_fallback: str = ""
-    # Regarless if a notification email is provided or not, add these email addresses to the cc field of the email notification.
+    # Regardless if a notification email is provided or not, add these email addresses to the cc field of the email notification.
     notification_email_cc: str = ""
     # Location of the logging configuration file, which will be used to configure logging for ice-keeper.
     logging_config_file: str | None = None

@@ -214,7 +214,8 @@ class Emailer:
         email_msg["Subject"] = subject
         email_msg["From"] = from_address
         email_msg["To"] = recipient_emails
-        email_msg["Cc"] = cc_emails
+        if cc_emails:
+            email_msg["Cc"] = cc_emails
 
         email_msg.set_content(html_body, subtype="html")
 
