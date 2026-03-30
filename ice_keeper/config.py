@@ -42,7 +42,9 @@ class Config(BaseModel):
     # If not set, orphan file procedure will default back to using Spark APIs to list files, which may be less efficient at scale.
     storage_inventory_report_table_name: str | None = None
     # If no notification email provided by a table owner, use this fallback email for admin alerts about failed maintenance tasks.
-    notification_email_fallback: str | None = None
+    notification_email_fallback: str = ""
+    # Regarless if a notification email is provided or not, add these email addresses to the cc field of the email notification.
+    notification_email_cc: str = ""
     # Location of the logging configuration file, which will be used to configure logging for ice-keeper.
     logging_config_file: str | None = None
 
