@@ -172,8 +172,11 @@ class PartitionSpecification:
             str: A SQL 'GROUP BY' expression that includes the `spec_id` and
                  all partition identifiers.
         """
-        partition_stmts = ",".join([partition.partition_field_alias for partition in self.partition_list])
-        return f"spec_id, {partition_stmts}"
+        grouping_stmts = ["spec_id"]
+        if self.get_base_partition().is_temporal_transformation() or self.get_base_partition().is_temporal_column():
+            grouping_stmts.append("partition_time")
+        grouping_stmts.extend([partition.partition_field_alias for partition in self.partition_list])
+        return ", ".join(grouping_stmts)
 
     def make_alias_stmt(self) -> str:
         """Generate an SQL alias statement for partitions.
@@ -185,15 +188,39 @@ class PartitionSpecification:
         Returns:
             str: Alias statement representing the partition columns.
         """
+        alias_stmts = []
         if self.is_partitioned:
-            stmt = ",".join(
+            if self.get_base_partition().is_temporal_transformation():
+                partition_field = f"partition.{self.get_base_partition().transformation.partition_field_escaped}"
+                if isinstance(self.get_base_partition().transformation, YearTransformation):
+                    partition_time_stmt = f"timestampadd('YEAR', {partition_field}, timestamp '1970-01-01 00:00:00')"
+                    alias_stmts.append(f"{partition_time_stmt} as partition_time")
+                elif isinstance(self.get_base_partition().transformation, MonthTransformation):
+                    partition_time_stmt = f"timestampadd('MONTH', {partition_field}, timestamp '1970-01-01 00:00:00')"
+                    alias_stmts.append(f"{partition_time_stmt} as partition_time")
+                elif isinstance(self.get_base_partition().transformation, DayTransformation):
+                    partition_time_stmt = partition_field
+                    alias_stmts.append(f"{partition_time_stmt} as partition_time")
+                elif isinstance(self.get_base_partition().transformation, HourTransformation):
+                    partition_time_stmt = f"timestamp_seconds({partition_field} * 3600)"
+                    alias_stmts.append(f"{partition_time_stmt} as partition_time")
+                else:
+                    msg = f"Unsupported temporal transformation: {type(self.get_base_partition().transformation)}"
+                    raise ValueError(msg)
+            elif self.get_base_partition().is_temporal_column():
+                partition_field = f"partition.{self.get_base_partition().transformation.partition_field_escaped}"
+                partition_time_stmt = partition_field
+                alias_stmts.append(f"{partition_time_stmt} as partition_time")
+
+            alias_stmts.extend(
                 f"partition.{partition.transformation.partition_field_escaped} as {partition.partition_field_alias}"
                 for partition in self.partition_list
             )
         else:
             partition = self.get_base_partition()
             stmt = f"'fix_val' as {partition.partition_field_alias}"
-        return stmt
+            alias_stmts.append(stmt)
+        return ", ".join(alias_stmts)
 
     def make_diagnosis_grouping_stmt(self, optimize_partition_depth: int) -> str:
         """Generate an SQL expression for grouping partitions for optimization.
