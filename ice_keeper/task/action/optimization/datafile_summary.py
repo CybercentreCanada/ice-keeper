@@ -1,16 +1,11 @@
 import logging
 from abc import ABC, abstractmethod
 
+from jinja2 import Template
 from typing_extensions import override
 
 from ice_keeper import IceKeeperTblProperty
 from ice_keeper.spec import PartitionSpecification, WideningRule
-from ice_keeper.spec.transformation import (
-    DayTransformation,
-    HourTransformation,
-    MonthTransformation,
-    YearTransformation,
-)
 from ice_keeper.table import MaintenanceScheduleEntry
 
 from .datafiles_bounds import Bounds, BoundsBinpack, BoundsSort, BoundsZorderSort
@@ -290,28 +285,33 @@ class DataFilesSummary:
             element_at(array('B', 'KB', 'MB', 'GB', 'TB', 'PB'), cast(floor(log(1024, greatest({bytes_column}, 1))) as int) + 1)
         )"""
 
-    def _partition_time_stmt(self) -> str | None:
-        if not self.spec.is_partitioned:
-            return None
-        partition_time_stmt: str | None = None
-        partition_field = self.spec.get_base_partition().partition_field_alias
-        if self.spec.get_base_partition().is_temporal_transformation():
-            if isinstance(self.spec.get_base_partition().transformation, YearTransformation):
-                partition_time_stmt = f"timestamp '1970-01-01 00:00:00' + ({partition_field} * interval '1' year)"
-            elif isinstance(self.spec.get_base_partition().transformation, MonthTransformation):
-                partition_time_stmt = f"timestamp '1970-01-01 00:00:00' + ({partition_field} * interval '1' month)"
-            elif isinstance(self.spec.get_base_partition().transformation, DayTransformation):
-                # Spark represents this as a date already when returning partitions by day.
-                partition_time_stmt = partition_field
-            elif isinstance(self.spec.get_base_partition().transformation, HourTransformation):
-                partition_time_stmt = f"timestamp '1970-01-01 00:00:00' + ({partition_field} * interval '1' hour)"
-            else:
-                msg = f"Unsupported temporal transformation: {type(self.spec.get_base_partition().transformation)}"
-                raise ValueError(msg)
-        elif self.spec.get_base_partition().is_temporal_column():
-            partition_time_stmt = partition_field
+    def _make_target_file_size_stmt(self) -> str:
+        """Generate the SQL case statement for target file size based on partition size thresholds."""
+        if self.mnt_props.target_file_size_bytes > 0:
+            return str(self.mnt_props.target_file_size_bytes)
 
-        return partition_time_stmt
+        # Target file size based on size of partition from 16MB files up to 1GB.
+        # +-----------------------+----------------+----------------------+------------------------+-----------------------------+----------------------------+
+        # |num_partitions_in_table|table_total_size|table_total_file_count|partition_size_threshold|partition_num_files_threshold|recommended_target_file_size|
+        # +-----------------------+----------------+----------------------+------------------------+-----------------------------+----------------------------+
+        # |300                    |75.0 GB         |4800                  |256.0 MB                |16                           |16.0 MB                     |
+        # |300                    |300.0 GB        |9600                  |1.0 GB                  |32                           |32.0 MB                     |
+        # |300                    |1.17 TB         |19200                 |4.0 GB                  |64                           |64.0 MB                     |
+        # |300                    |4.69 TB         |38400                 |16.0 GB                 |128                          |128.0 MB                    |
+        # |300                    |18.75 TB        |76800                 |64.0 GB                 |256                          |256.0 MB                    |
+        # |300                    |75.0 TB         |153600                |256.0 GB                |512                          |512.0 MB                    |
+        # |300                    |300.0 TB        |307200                |1.0 TB                  |1024                         |1.0 GB                      |
+        # +-----------------------+----------------+----------------------+------------------------+-----------------------------+----------------------------+
+        return """
+        case
+        when sum_file_size < 16L * 16 * 1048576 then 16L * 1048576
+        when sum_file_size < 32L * 32 * 1048576 then 32L * 1048576
+        when sum_file_size < 64L * 64 * 1048576 then 64L * 1048576
+        when sum_file_size < 128L * 128 * 1048576 then 128L * 1048576
+        when sum_file_size < 256L * 256 * 1048576 then 256L * 1048576
+        when sum_file_size < 512L * 512 * 1048576 then 512L * 1048576
+        else 1024L * 1048576 end
+        """
 
     def create_summary_stmt(self, *, estimate_optimization_results: bool = False) -> str:
         """Generate an SQL query for creating a partition diagnostics summary.
@@ -336,77 +336,32 @@ class DataFilesSummary:
             - The method relies on several helper methods to generate specific SQL fragments,
               such as grouping, bounds, and age filters.
         """
-        target_file_size_stmt = str(self.mnt_props.target_file_size_bytes)
-        if self.mnt_props.target_file_size_bytes <= 0:
-            # Target file size based on size of partition from 16MB files up to 1GB.
-            # +-----------------------+----------------+----------------------+------------------------+-----------------------------+----------------------------+
-            # |num_partitions_in_table|table_total_size|table_total_file_count|partition_size_threshold|partition_num_files_threshold|recommended_target_file_size|
-            # +-----------------------+----------------+----------------------+------------------------+-----------------------------+----------------------------+
-            # |300                    |75.0 GB         |4800                  |256.0 MB                |16                           |16.0 MB                     |
-            # |300                    |300.0 GB        |9600                  |1.0 GB                  |32                           |32.0 MB                     |
-            # |300                    |1.17 TB         |19200                 |4.0 GB                  |64                           |64.0 MB                     |
-            # |300                    |4.69 TB         |38400                 |16.0 GB                 |128                          |128.0 MB                    |
-            # |300                    |18.75 TB        |76800                 |64.0 GB                 |256                          |256.0 MB                    |
-            # |300                    |75.0 TB         |153600                |256.0 GB                |512                          |512.0 MB                    |
-            # |300                    |300.0 TB        |307200                |1.0 TB                  |1024                         |1.0 GB                      |
-            # +-----------------------+----------------+----------------------+------------------------+-----------------------------+----------------------------+
-            target_file_size_stmt = """
-            case
-            when sum_file_size < 16L * 16 * 1048576 then 16L * 1048576
-            when sum_file_size < 32L * 32 * 1048576 then 32L * 1048576
-            when sum_file_size < 64L * 64 * 1048576 then 64L * 1048576
-            when sum_file_size < 128L * 128 * 1048576 then 128L * 1048576
-            when sum_file_size < 256L * 256 * 1048576 then 256L * 1048576
-            when sum_file_size < 512L * 512 * 1048576 then 512L * 1048576
-            else 1024L * 1048576 end
-            """
-
-        num_files_targetted_for_rewrite_threshold = 5
-
-        grouping_stmt = self.spec.make_grouping_stmt()
-        data_files_stmt = self.datafiles.make_data_files_stmt()
-
-        partition_time_alias_stmt = ""
-        grouping_with_partition_time_stmt = grouping_stmt
-        if self._partition_time_stmt():
-            partition_time_alias_stmt = f"{self._partition_time_stmt()} as partition_time,"
-            grouping_with_partition_time_stmt = "partition_time, " + grouping_stmt
-
-        lower_bounds_expr = self.bounds.make_lower_bounds_expr_stmt()
-        upper_bounds_expr = self.bounds.make_upper_bounds_expr_stmt()
-        base_column_name_stmt = self.spec.get_base_partition().partition_field_alias
-        corr_threshold_expr = self.bounds.make_corr_threshold_expr_stmt()
-        min_age_to_optimize = self.datafiles.get_min_age_to_optimize()
-        max_age_to_optimize = self.mnt_props.max_age_to_optimize
-        order_by = self.spec.make_order_stmt()
-        age_filter_stmt = self.make_age_filter_stmt(min_age_to_optimize, max_age_to_optimize)
-
-        cte_to_use = "final_decision" if not estimate_optimization_results else "final_estimate"
-
-        return f"""
-            -- Diagnosing partitioned table '{self.mnt_props.full_name}' for optimization
+        # Define the SQL template
+        sql_template = Template("""
+            -- Diagnosing partitioned table '{{ table_name }}' for optimization
             -- All data files to consider for optimization.
             with data_files as (
                 select
-                    {partition_time_alias_stmt}
-                    {grouping_stmt},
+                    {% if partition_time_alias_stmt %} {{ partition_time_alias_stmt }}, {% endif %}
+                    {{ grouping_stmt }},
                     content,
                     record_count,
                     file_size_in_bytes,
                     readable_metrics,
                     is_data_file_from_widening_src_partition
                 from
-                    ({data_files_stmt})
+                    ({{ data_files_stmt }})
             ),
             -- Add the lower/upper bound to each data file. Note these bounds are dependent on the optimization strategy sort/zorder.
             data_files_with_bounds as (
                 select
-                    {grouping_with_partition_time_stmt},
+                    {% if partition_time_alias_stmt %} partition_time, {% endif %}
+                    {{ grouping_stmt }},
                     content,
                     record_count,
                     file_size_in_bytes,
-                    {lower_bounds_expr} as the_lower_bound,
-                    {upper_bounds_expr} as the_upper_bound,
+                    {{ lower_bounds_expr }} as the_lower_bound,
+                    {{ upper_bounds_expr }} as the_upper_bound,
                     is_data_file_from_widening_src_partition
                 from
                     data_files
@@ -414,21 +369,23 @@ class DataFilesSummary:
             -- Give data files a rank number based on the ordering of their bounds.
             ranked_data_files as (
                 select
-                    {grouping_with_partition_time_stmt},
+                    {% if partition_time_alias_stmt %} partition_time, {% endif %}
+                    {{ grouping_stmt }},
                     content,
                     record_count,
                     file_size_in_bytes,
-                    row_number() over (partition by {grouping_stmt} order by the_lower_bound) rn1,
-                    row_number() over (partition by {grouping_stmt} order by the_upper_bound) rn2,
+                    row_number() over (partition by {{ grouping_stmt }} order by the_lower_bound) rn1,
+                    row_number() over (partition by {{ grouping_stmt }} order by the_upper_bound) rn2,
                     is_data_file_from_widening_src_partition
                 from
                     data_files_with_bounds
                 where
-                    spec_id = {self.spec_id}
+                    spec_id = {{ spec_id }}
             ),
             file_stats_per_partition as (
                 select
-                    {grouping_with_partition_time_stmt},
+                    {% if partition_time_alias_stmt %} partition_time, {% endif %}
+                    {{ grouping_stmt }},
                     content,
                     record_count,
                     file_size_in_bytes,
@@ -436,9 +393,9 @@ class DataFilesSummary:
                     rn2,
                     is_data_file_from_widening_src_partition,
                     -- Aggregations for content = 0 (data files)
-                    count_if(content = 0) over (partition by {grouping_stmt}) as n_files,
+                    count_if(content = 0) over (partition by {{ grouping_stmt }}) as n_files,
                     coalesce(
-                        sum(case when content = 0 then file_size_in_bytes end) over (partition by {grouping_stmt}),
+                        sum(case when content = 0 then file_size_in_bytes end) over (partition by {{ grouping_stmt }}),
                         0
                     ) as sum_file_size
                 from
@@ -446,7 +403,8 @@ class DataFilesSummary:
             ),
             target_file_size_per_partition as (
                 select
-                    {grouping_with_partition_time_stmt},
+                    {% if partition_time_alias_stmt %} partition_time, {% endif %}
+                    {{ grouping_stmt }},
                     content,
                     record_count,
                     file_size_in_bytes,
@@ -455,19 +413,20 @@ class DataFilesSummary:
                     is_data_file_from_widening_src_partition,
                     n_files,
                     sum_file_size,
-                    {target_file_size_stmt} as target_file_size,
-                    {corr_threshold_expr} as corr_threshold
+                    {{ target_file_size_stmt }} as target_file_size,
+                    {{ corr_threshold_expr }} as corr_threshold
                 from
                     file_stats_per_partition
             ),
             -- Aggregate the metrics per partition.
             agg_data_files as (
                 select
-                    {grouping_with_partition_time_stmt},
+                    {% if partition_time_alias_stmt %} partition_time, {% endif %}
+                    {{ grouping_stmt }},
 
-                    dense_rank() over(order by {base_column_name_stmt} desc) as partition_age,
+                    dense_rank() over(order by {{ base_column_name_stmt }} desc) as partition_age,
 
-                    {self.spec.make_to_json_stmt()} as partition_desc,
+                    {{ to_json_stmt }} as partition_desc,
 
                     -- Aggregations for content = 0 (data files)
                     first(n_files) as n_files,
@@ -503,12 +462,37 @@ class DataFilesSummary:
                 from
                     target_file_size_per_partition
                 group by
-                    {grouping_with_partition_time_stmt}
+                    {% if partition_time_alias_stmt %} partition_time, {% endif %}
+                    {{ grouping_stmt }}
             ),
             -- Add should optimize flags to the aggregate.
-            final_decision as (
+            {% if estimate_optimization_results %}
+            final as (
                 select
-                    {grouping_with_partition_time_stmt},
+                    {% if partition_time_alias_stmt %} partition_time, {% endif %}
+                   {{ grouping_stmt }},
+                    partition_age,
+                    {{ format_sum_file_size }} as partition_size,
+                    {{ format_avg_file_size }} as avg_file_size,
+                    {{ format_target_file_size }} as target_file_size,
+                    n_files as partition_num_files,
+                    ceil(sum_file_size / target_file_size) as partition_target_num_files,
+                    sum(n_files) over(partition by partition_age) as num_files_per_age,
+                    sum(ceil(sum_file_size / target_file_size)) over(partition by partition_age) as target_num_files_per_age
+                from
+                    agg_data_files
+                where
+                    {{ age_filter_stmt }}
+                order by
+                    partition_age asc,
+                    n_files desc,
+                    avg_file_size desc
+            )
+            {% else %}
+            final as (
+                select
+                    {% if partition_time_alias_stmt %} partition_time, {% endif %}
+                    {{ grouping_stmt }},
                     partition_age,
                     partition_desc,
                     n_files,
@@ -527,34 +511,41 @@ class DataFilesSummary:
                     -- Determine necessity for sorting based on correlation threshold or delete files
                     (corr < corr_threshold or n_delete_files > 0 or num_files_to_widen > 0) as should_sort,
                     -- Determine necessity for binpacking based on number of rewritten files or delete files
-                    (num_files_targetted_for_rewrite > {num_files_targetted_for_rewrite_threshold} or n_delete_files > 0) as should_binpack
+                    (num_files_targetted_for_rewrite > {{ num_files_targetted_for_rewrite_threshold }} or n_delete_files > 0) as should_binpack
                 from
                     agg_data_files
                 where
-                    {age_filter_stmt}
+                    {{ age_filter_stmt }}
                 order by
-                    {order_by}
-            ),
-            final_estimate as (
-                select
-                   {grouping_with_partition_time_stmt},
-                    partition_age,
-                    {self._format_bytes_stmt("sum_file_size")} as partition_size,
-                    {self._format_bytes_stmt("avg_file_size")} as avg_file_size,
-                    {self._format_bytes_stmt("target_file_size")} as target_file_size,
-                    n_files as partition_num_files,
-                    ceil(sum_file_size / target_file_size) as partition_target_num_files,
-                    sum(n_files) over(partition by partition_age) as num_files_per_age,
-                    sum(ceil(sum_file_size / target_file_size)) over(partition by partition_age) as target_num_files_per_age
-                from
-                    agg_data_files
-                where
-                    {age_filter_stmt}
-                order by
-                    partition_age asc,
-                    n_files desc,
-                    avg_file_size desc
+                    {{ order_by }}
             )
+            {% endif %}
 
-            select * from {cte_to_use}
-        """
+            select * from final
+        """)
+
+        min_age_to_optimize = self.datafiles.get_min_age_to_optimize()
+        max_age_to_optimize = self.mnt_props.max_age_to_optimize
+        age_filter_stmt = self.make_age_filter_stmt(min_age_to_optimize, max_age_to_optimize)
+
+        # Render the SQL query with all required variables
+        return sql_template.render(
+            spec_id=self.spec_id,
+            to_json_stmt=self.spec.make_to_json_stmt(),
+            table_name=self.mnt_props.full_name,
+            partition_time_alias_stmt=self.spec.make_partition_time_alias_stmt(),
+            grouping_stmt=self.spec.make_grouping_stmt(),
+            corr_threshold_expr=self.bounds.make_corr_threshold_expr_stmt(),
+            data_files_stmt=self.datafiles.make_data_files_stmt(),
+            lower_bounds_expr=self.bounds.make_lower_bounds_expr_stmt(),
+            upper_bounds_expr=self.bounds.make_upper_bounds_expr_stmt(),
+            target_file_size_stmt=self._make_target_file_size_stmt(),
+            base_column_name_stmt=self.spec.get_base_partition().partition_field_alias,
+            num_files_targetted_for_rewrite_threshold=5,
+            age_filter_stmt=age_filter_stmt,
+            order_by=self.spec.make_order_stmt(),
+            estimate_optimization_results=estimate_optimization_results,
+            format_sum_file_size=self._format_bytes_stmt("sum_file_size"),
+            format_avg_file_size=self._format_bytes_stmt("avg_file_size"),
+            format_target_file_size=self._format_bytes_stmt("target_file_size"),
+        )

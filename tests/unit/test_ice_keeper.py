@@ -153,7 +153,7 @@ def test_month_partition_spec() -> None:
 
     # The diagnosis uses these statements
     assert ps.make_alias_stmt() == "partition.ts_month as ts_month"
-    assert ps.make_grouping_stmt() == "spec_id, ts_month"
+    assert ps.make_grouping_stmt() == "spec_id, partition_time, ts_month"
     assert ps.make_order_stmt() == "ts_month desc"
 
     # Running the diagnosis and finding the partitions to optimize will return us a resulset like this one:
@@ -193,7 +193,7 @@ def test_day_partition_spec() -> None:
 
     # The diagnosis uses these statements
     assert ps.make_alias_stmt() == "partition.ts_day as ts_day"
-    assert ps.make_grouping_stmt() == "spec_id, ts_day"
+    assert ps.make_grouping_stmt() == "spec_id, partition_time, ts_day"
     assert ps.make_order_stmt() == "ts_day desc"
 
     # Once we find partitions to optimize we will feed those values to a function to make a filter expression for the rewrite_data_files procedure:
@@ -224,7 +224,7 @@ def test_hour_partition_spec() -> None:
 
     # The diagnosis uses these statements
     assert ps.make_alias_stmt() == "partition.ts_hour as ts_hour"
-    assert ps.make_grouping_stmt() == "spec_id, ts_hour"
+    assert ps.make_grouping_stmt() == "spec_id, partition_time, ts_hour"
     assert ps.make_order_stmt() == "ts_hour desc"
 
     # Running the diagnosis and finding the partitions to optimize will return us a resulset like this one:

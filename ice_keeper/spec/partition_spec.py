@@ -153,11 +153,6 @@ class PartitionSpecification:
         partition_name_escaped = escape_identifier(partition_name)
         return next((p for p in self.partition_list if p.transformation.partition_field_escaped == partition_name_escaped), None)
 
-    # @classmethod
-    # def make_not_partitioned_spec(cls, spec_id: int = 0) -> "PartitionSpecification":
-    #     PartitionSpecification.from_pyiceberg()
-    #     return PartitionSpecification([Partition(NotPartitionedTransformation())], spec_id, is_partitioned=False)
-
     def make_order_stmt(self) -> str:
         """Generate an SQL statement for ordering partitions.
 
@@ -178,8 +173,38 @@ class PartitionSpecification:
                  all partition identifiers.
         """
         grouping_stmts = ["spec_id"]
+        if self._is_time_partitioned():
+            grouping_stmts.append("partition_time")
         grouping_stmts.extend([partition.partition_field_alias for partition in self.partition_list])
         return ", ".join(grouping_stmts)
+
+    def _is_time_partitioned(self) -> bool:
+        """Check if the partition specification includes any temporal partitions."""
+        return self.get_base_partition().is_temporal_transformation() or self.get_base_partition().is_temporal_column()
+
+    def make_partition_time_alias_stmt(self) -> str:
+        if not self._is_time_partitioned():
+            return ""
+
+        partition_time_stmt = ""
+        partition_field = self.get_base_partition().partition_field_alias
+        if self.get_base_partition().is_temporal_transformation():
+            if isinstance(self.get_base_partition().transformation, YearTransformation):
+                partition_time_stmt = f"timestamp '1970-01-01 00:00:00' + ({partition_field} * interval '1' year)"
+            elif isinstance(self.get_base_partition().transformation, MonthTransformation):
+                partition_time_stmt = f"timestamp '1970-01-01 00:00:00' + ({partition_field} * interval '1' month)"
+            elif isinstance(self.get_base_partition().transformation, DayTransformation):
+                # Spark represents this as a date already when returning partitions by day.
+                partition_time_stmt = partition_field
+            elif isinstance(self.get_base_partition().transformation, HourTransformation):
+                partition_time_stmt = f"timestamp '1970-01-01 00:00:00' + ({partition_field} * interval '1' hour)"
+            else:
+                msg = f"Unsupported temporal transformation: {type(self.get_base_partition().transformation)}"
+                raise ValueError(msg)
+        elif self.get_base_partition().is_temporal_column():
+            partition_time_stmt = partition_field
+
+        return f"{partition_time_stmt} as partition_time"
 
     def make_alias_stmt(self) -> str:
         """Generate an SQL alias statement for partitions.
