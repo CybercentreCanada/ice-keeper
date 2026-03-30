@@ -20,13 +20,6 @@ class Emailer:
         self.maintenance = maintenance
         self.should_send_emails = should_send_emails
 
-    @classmethod
-    def notification_email_fallback(cls) -> str:
-        email_fallback = Config.instance().notification_email_fallback
-        if email_fallback:
-            return email_fallback
-        return ""
-
     def _get_failed_journal_entries_df(
         self,
         scope: Scope,
@@ -110,7 +103,7 @@ class Emailer:
             ),
             failed_journal_entries_with_email as (
                 select
-                    if(len(s.notification_email) > 0, s.notification_email, '{self.notification_email_fallback()}') as notification_email,
+                    if(len(s.notification_email) > 0, s.notification_email, '{Config.instance().notification_email_fallback}') as notification_email,
                     f.full_name,
                     f.action,
                     from_unixtime(
@@ -170,8 +163,12 @@ class Emailer:
             previous_user_rows = rows[start_idx : len(rows)]
             self._send_notification(previous_email, previous_user_rows)
 
-    def _send_notification(self, email: str, rows: list[Row]) -> None:
-        logger.debug("Executing _send_notification with email: %s; and rows: %s", email, rows)
+    def _send_notification(self, recipient_emails: str, rows: list[Row]) -> None:
+        logger.debug(
+            "Executing _send_notification with recipient_emails: %s, and rows: %s",
+            recipient_emails,
+            rows,
+        )
         subject = "ice-keeper failed tasks"
 
         max_failed_tasks_in_preview = len(rows)
@@ -189,21 +186,19 @@ class Emailer:
 
         logger.debug("Configured with should_send_emails: %s", self.should_send_emails)
         if self.should_send_emails:
-            emails = email.split(",")
-            for email_address in emails:
-                logger.debug("Sending email to: %s", email_address)
-                self.send_email(email_address.strip(), subject, html_body)
+            logger.debug("Sending email recipient_emails: %s", recipient_emails)
+            self.send_email(recipient_emails, subject, html_body)
         else:
-            self.print_email(email, subject, html_body)
+            self.print_email(recipient_emails, subject, html_body)
 
-    def send_email(self, email: str, subject: str, html_body: str) -> None:
+    def send_email(self, recipient_emails: str, subject: str, html_body: str) -> None:
         server = Config.instance().smtp_server
         port = Config.instance().smtp_port
         username = Config.instance().smtp_username
         password = Config.instance().smtp_password
         from_address = Config.instance().smtp_email_from
         tls = Config.instance().smtp_tls
-
+        cc_emails = Config.instance().notification_email_cc
         missing_fields = []
         if not server:
             missing_fields.append("server")
@@ -218,7 +213,9 @@ class Emailer:
         email_msg = EmailMessage()
         email_msg["Subject"] = subject
         email_msg["From"] = from_address
-        email_msg["To"] = email
+        email_msg["To"] = recipient_emails
+        if cc_emails:
+            email_msg["Cc"] = cc_emails
 
         email_msg.set_content(html_body, subtype="html")
 
@@ -231,9 +228,12 @@ class Emailer:
                 if username and password:
                     smtp.login(username, password)
                 smtp.send_message(email_msg)
-                logger.debug("Email sent successfully to %s", email)
+                logger.debug("Email sent successfully to %s", recipient_emails)
         except Exception as e:  # noqa: BLE001
             logger.error("Error sending email: %s", e)
 
-    def print_email(self, email: str, subject: str, body: str) -> None:
-        logger.debug("Would send email: %s, subject: %s, body: %s", email, subject, body)
+    def print_email(self, recipient_emails: str, subject: str, body: str) -> None:
+        cc_emails = Config.instance().notification_email_cc
+        logger.debug(
+            "Would send recipient_emails: %s, cc_emails: %s, subject: %s, body: %s", recipient_emails, cc_emails, subject, body
+        )
