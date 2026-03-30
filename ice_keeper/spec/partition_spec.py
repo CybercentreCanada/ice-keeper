@@ -16,6 +16,7 @@ from ice_keeper.catalog import load_table
 from .transformation import (
     DayTransformation,
     HourTransformation,
+    IdentityTransformation,
     MonthTransformation,
     Transformation,
     YearTransformation,
@@ -57,7 +58,9 @@ class Partition(BaseModel):
 
     def is_temporal_column(self) -> bool:
         # Use the field (column) type to determine if it is temporal.
-        return self.source_field_type in [TimestampType(), TimestamptzType(), TimeType(), DateType()]
+        if isinstance(self.transformation, IdentityTransformation):
+            return self.source_field_type in [TimestampType(), TimestamptzType(), TimeType(), DateType()]
+        return False
 
     def applies_to_diagnosis_row(self, row: Row) -> bool:
         return self.partition_field_alias in row
@@ -173,8 +176,6 @@ class PartitionSpecification:
                  all partition identifiers.
         """
         grouping_stmts = ["spec_id"]
-        if self.get_base_partition().is_temporal_transformation() or self.get_base_partition().is_temporal_column():
-            grouping_stmts.append("partition_time")
         grouping_stmts.extend([partition.partition_field_alias for partition in self.partition_list])
         return ", ".join(grouping_stmts)
 
@@ -190,29 +191,6 @@ class PartitionSpecification:
         """
         alias_stmts = []
         if self.is_partitioned:
-            if self.get_base_partition().is_temporal_transformation():
-                partition_field = f"partition.{self.get_base_partition().transformation.partition_field_escaped}"
-                if isinstance(self.get_base_partition().transformation, YearTransformation):
-                    partition_time_stmt = f"timestamp '1970-01-01 00:00:00' + ({partition_field} * interval '1' year)"
-                    alias_stmts.append(f"{partition_time_stmt} as partition_time")
-                elif isinstance(self.get_base_partition().transformation, MonthTransformation):
-                    partition_time_stmt = f"timestamp '1970-01-01 00:00:00' + ({partition_field} * interval '1' month)"
-                    alias_stmts.append(f"{partition_time_stmt} as partition_time")
-                elif isinstance(self.get_base_partition().transformation, DayTransformation):
-                    # Spark represents this as a date already when returning partitions by day.
-                    partition_time_stmt = partition_field
-                    alias_stmts.append(f"{partition_time_stmt} as partition_time")
-                elif isinstance(self.get_base_partition().transformation, HourTransformation):
-                    partition_time_stmt = f"timestamp '1970-01-01 00:00:00' + ({partition_field} * interval '1' hour)"
-                    alias_stmts.append(f"{partition_time_stmt} as partition_time")
-                else:
-                    msg = f"Unsupported temporal transformation: {type(self.get_base_partition().transformation)}"
-                    raise ValueError(msg)
-            elif self.get_base_partition().is_temporal_column():
-                partition_field = f"partition.{self.get_base_partition().transformation.partition_field_escaped}"
-                partition_time_stmt = partition_field
-                alias_stmts.append(f"{partition_time_stmt} as partition_time")
-
             alias_stmts.extend(
                 f"partition.{partition.transformation.partition_field_escaped} as {partition.partition_field_alias}"
                 for partition in self.partition_list

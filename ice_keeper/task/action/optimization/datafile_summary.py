@@ -5,6 +5,12 @@ from typing_extensions import override
 
 from ice_keeper import IceKeeperTblProperty
 from ice_keeper.spec import PartitionSpecification, WideningRule
+from ice_keeper.spec.transformation import (
+    DayTransformation,
+    HourTransformation,
+    MonthTransformation,
+    YearTransformation,
+)
 from ice_keeper.table import MaintenanceScheduleEntry
 
 from .datafiles_bounds import Bounds, BoundsBinpack, BoundsSort, BoundsZorderSort
@@ -284,6 +290,29 @@ class DataFilesSummary:
             element_at(array('B', 'KB', 'MB', 'GB', 'TB', 'PB'), cast(floor(log(1024, greatest({bytes_column}, 1))) as int) + 1)
         )"""
 
+    def _partition_time_stmt(self) -> str | None:
+        partition_time_stmt: str | None = None
+        if self.spec.is_partitioned:
+            if self.spec.get_base_partition().is_temporal_transformation():
+                partition_field = f"partition.{self.spec.get_base_partition().partition_field_alias}"
+                if isinstance(self.spec.get_base_partition().transformation, YearTransformation):
+                    partition_time_stmt = f"timestamp '1970-01-01 00:00:00' + ({partition_field} * interval '1' year)"
+                elif isinstance(self.spec.get_base_partition().transformation, MonthTransformation):
+                    partition_time_stmt = f"timestamp '1970-01-01 00:00:00' + ({partition_field} * interval '1' month)"
+                elif isinstance(self.spec.get_base_partition().transformation, DayTransformation):
+                    # Spark represents this as a date already when returning partitions by day.
+                    partition_time_stmt = partition_field
+                elif isinstance(self.spec.get_base_partition().transformation, HourTransformation):
+                    partition_time_stmt = f"timestamp '1970-01-01 00:00:00' + ({partition_field} * interval '1' hour)"
+                else:
+                    msg = f"Unsupported temporal transformation: {type(self.spec.get_base_partition().transformation)}"
+                    raise ValueError(msg)
+            elif self.spec.get_base_partition().is_temporal_column():
+                partition_field = f"partition.{self.spec.get_base_partition().partition_field_alias}"
+                partition_time_stmt = partition_field
+
+        return partition_time_stmt
+
     def create_summary_stmt(self, *, estimate_optimization_results: bool = False) -> str:
         """Generate an SQL query for creating a partition diagnostics summary.
 
@@ -336,6 +365,13 @@ class DataFilesSummary:
 
         grouping_stmt = self.spec.make_grouping_stmt()
         data_files_stmt = self.datafiles.make_data_files_stmt()
+
+        partition_time_alias_stmt = ""
+        grouping_with_partition_time_stmt = grouping_stmt
+        if self._partition_time_stmt():
+            partition_time_alias_stmt = f"{self._partition_time_stmt()} as partition_time,"
+            grouping_with_partition_time_stmt = "partition_time, " + grouping_stmt
+
         lower_bounds_expr = self.bounds.make_lower_bounds_expr_stmt()
         upper_bounds_expr = self.bounds.make_upper_bounds_expr_stmt()
         base_column_name_stmt = self.spec.get_base_partition().partition_field_alias
@@ -352,6 +388,7 @@ class DataFilesSummary:
             -- All data files to consider for optimization.
             with data_files as (
                 select
+                    {partition_time_alias_stmt}
                     {grouping_stmt},
                     content,
                     record_count,
@@ -361,10 +398,21 @@ class DataFilesSummary:
                 from
                     ({data_files_stmt})
             ),
+            data_files_with_partition_time as (
+                select
+                    {grouping_with_partition_time_stmt},
+                    content,
+                    record_count,
+                    file_size_in_bytes,
+                    readable_metrics,
+                    is_data_file_from_widening_src_partition
+                from
+                    data_files
+            ),
             -- Add the lower/upper bound to each data file. Note these bounds are dependent on the optimization strategy sort/zorder.
             data_files_with_bounds as (
                 select
-                    {grouping_stmt},
+                    {grouping_with_partition_time_stmt},
                     content,
                     record_count,
                     file_size_in_bytes,
@@ -372,12 +420,12 @@ class DataFilesSummary:
                     {upper_bounds_expr} as the_upper_bound,
                     is_data_file_from_widening_src_partition
                 from
-                    data_files
+                    data_files_with_partition_time
             ),
             -- Give data files a rank number based on the ordering of their bounds.
             ranked_data_files as (
                 select
-                    {grouping_stmt},
+                    {grouping_with_partition_time_stmt},
                     content,
                     record_count,
                     file_size_in_bytes,
@@ -391,7 +439,7 @@ class DataFilesSummary:
             ),
             file_stats_per_partition as (
                 select
-                    {grouping_stmt},
+                    {grouping_with_partition_time_stmt},
                     content,
                     record_count,
                     file_size_in_bytes,
@@ -409,7 +457,7 @@ class DataFilesSummary:
             ),
             target_file_size_per_partition as (
                 select
-                    {grouping_stmt},
+                    {grouping_with_partition_time_stmt},
                     content,
                     record_count,
                     file_size_in_bytes,
@@ -426,7 +474,7 @@ class DataFilesSummary:
             -- Aggregate the metrics per partition.
             agg_data_files as (
                 select
-                    {grouping_stmt},
+                    {grouping_with_partition_time_stmt},
 
                     dense_rank() over(order by {base_column_name_stmt} desc) as partition_age,
 
@@ -466,12 +514,12 @@ class DataFilesSummary:
                 from
                     target_file_size_per_partition
                 group by
-                    {grouping_stmt}
+                    {grouping_with_partition_time_stmt},
             ),
             -- Add should optimize flags to the aggregate.
             final_decision as (
                 select
-                    {grouping_stmt},
+                    {grouping_with_partition_time_stmt},
                     partition_age,
                     partition_desc,
                     n_files,
@@ -500,7 +548,7 @@ class DataFilesSummary:
             ),
             final_estimate as (
                 select
-                    {grouping_stmt},
+                   {grouping_with_partition_time_stmt},
                     partition_age,
                     {self._format_bytes_stmt("sum_file_size")} as partition_size,
                     {self._format_bytes_stmt("avg_file_size")} as avg_file_size,
