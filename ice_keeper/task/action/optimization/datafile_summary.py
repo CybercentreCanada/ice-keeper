@@ -398,17 +398,6 @@ class DataFilesSummary:
                 from
                     ({data_files_stmt})
             ),
-            data_files_with_partition_time as (
-                select
-                    {grouping_with_partition_time_stmt},
-                    content,
-                    record_count,
-                    file_size_in_bytes,
-                    readable_metrics,
-                    is_data_file_from_widening_src_partition
-                from
-                    data_files
-            ),
             -- Add the lower/upper bound to each data file. Note these bounds are dependent on the optimization strategy sort/zorder.
             data_files_with_bounds as (
                 select
@@ -420,7 +409,7 @@ class DataFilesSummary:
                     {upper_bounds_expr} as the_upper_bound,
                     is_data_file_from_widening_src_partition
                 from
-                    data_files_with_partition_time
+                    data_files
             ),
             -- Give data files a rank number based on the ordering of their bounds.
             ranked_data_files as (
