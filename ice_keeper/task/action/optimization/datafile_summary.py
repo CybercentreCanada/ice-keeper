@@ -39,6 +39,14 @@ class DataFiles(ABC):
             int: Minimum age (in days or equivalent units) for optimization eligibility.
         """
 
+    @abstractmethod
+    def get_max_age_to_optimize(self) -> int:
+        """Abstract method to fetch the minimum age for optimization.
+
+        Returns:
+            int: Maximum age (in days or equivalent units) for optimization eligibility.
+        """
+
 
 class DataFilesBinpack(DataFiles):
     @override
@@ -49,6 +57,14 @@ class DataFilesBinpack(DataFiles):
             int: Minimum number of days before files are eligible for optimization.
         """
         return self.mnt_props.min_age_to_optimize
+
+    def get_max_age_to_optimize(self) -> int:
+        """Fetch the maximum age for binpack optimizations.
+
+        Returns:
+            int: Maximum number of days before files are eligible for optimization.
+        """
+        return self.mnt_props.max_age_to_optimize
 
     @override
     def make_data_files_stmt(self) -> str:
@@ -79,6 +95,14 @@ class DataFilesSort(DataFiles):
             int: Minimum number of days before files are eligible for optimization.
         """
         return self.mnt_props.min_age_to_optimize
+
+    def get_max_age_to_optimize(self) -> int:
+        """Fetch the maximum age for binpack optimizations.
+
+        Returns:
+            int: Maximum number of days before files are eligible for optimization.
+        """
+        return self.mnt_props.max_age_to_optimize
 
     @override
     def make_data_files_stmt(self) -> str:
@@ -143,6 +167,14 @@ class DataFilesWideningSort(DataFiles):
             int: Minimum age to optimize based on the widening rule.
         """
         return self.widening_rule.min_age_to_widen
+
+    def get_max_age_to_optimize(self) -> int:
+        """Fetch the maximum age for binpack optimizations.
+
+        Returns:
+            int: Maximum number of days before files are eligible for optimization.
+        """
+        return self.mnt_props.max_age_to_optimize
 
     @override
     def make_data_files_stmt(self) -> str:
@@ -246,7 +278,7 @@ class DataFilesSummary:
             msg = f"Widening partition in table {mnt_props.full_name}, however table is configured to be binpacked which is not supported yet."
             raise Exception(msg)
 
-    def make_age_filter_stmt(self, min_age_to_optimize: int, max_age_to_optimize: int) -> str:
+    def make_partition_filter_stmt(self, min_age_to_optimize: int, max_age_to_optimize: int) -> str:
         """Create a filter to consider only partitions within the specified age range.
 
         This method generates a filter based on the age of temporal partitions in the table, ensuring
@@ -259,6 +291,9 @@ class DataFilesSummary:
         the function raises an exception because this schema is not supported for diagnostics. Temporal sub-partitions
         create ambiguities in determining partition age, which can lead to improper optimizations.
         """
+        min_age_to_optimize = self.datafiles.get_min_age_to_optimize()
+        max_age_to_optimize = self.datafiles.get_max_age_to_optimize()
+
         filter_stmt = "1=1"
         if self.spec.is_partitioned:
             # If the base partition (first-level partition) is temporal (e.g., days or hours),
@@ -547,9 +582,9 @@ class DataFilesSummary:
                     (num_files_targetted_for_rewrite > {{ num_files_targetted_for_rewrite_threshold }} or n_delete_files > 0) as should_binpack
                 from
                     agg_data_files
-                where
-                    {{ age_filter_stmt }}
                 {% if is_partitioned %}
+                where
+                    {{ partition_filter_stmt }}
                 order by
                     {{ order_by }}
                 {% endif %}
@@ -559,9 +594,7 @@ class DataFilesSummary:
             select * from final
         """)
 
-        min_age_to_optimize = self.datafiles.get_min_age_to_optimize()
-        max_age_to_optimize = self.mnt_props.max_age_to_optimize
-        age_filter_stmt = self.make_age_filter_stmt(min_age_to_optimize, max_age_to_optimize)
+        partition_filter_stmt = self.make_partition_filter_stmt()
         base_column_name_stmt = self.spec.get_base_partition().partition_field_alias if self.spec.is_partitioned else ""
 
         # Render the SQL query with all required variables
@@ -578,7 +611,7 @@ class DataFilesSummary:
             target_file_size_stmt=self._make_target_file_size_stmt(),
             base_column_name_stmt=base_column_name_stmt,
             num_files_targetted_for_rewrite_threshold=5,
-            age_filter_stmt=age_filter_stmt,
+            partition_filter_stmt=partition_filter_stmt,
             order_by=self.spec.make_order_stmt(),
             estimate_optimization_results=estimate_optimization_results,
             format_sum_file_size=self._format_bytes_stmt("sum_file_size"),
