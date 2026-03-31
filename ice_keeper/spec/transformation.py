@@ -125,9 +125,7 @@ class Transformation(BaseModel):
                 num_buckets=partition_field.transform.num_buckets,
                 catalog=catalog,
             )
-        return NotPartitionedTransformation(
-            source_field_path_escaped="not_partitioned", partition_field_escaped="not_partitioned"
-        )
+        return NotPartitionedTransformation(source_field_path_escaped="", partition_field_escaped="")
 
 
 class IdentityTransformation(Transformation):

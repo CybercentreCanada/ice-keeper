@@ -66,7 +66,7 @@ def test_identity_partition_spec() -> None:
     assert par_spec.partition_field_alias == "id"
 
     # The diagnosis uses these statements
-    assert ps.make_alias_stmt() == "partition.id as id"
+    assert ps.make_alias_stmt() == "spec_id as spec_id, partition.id as id"
     assert ps.make_grouping_stmt() == "spec_id, id"
     assert ps.make_order_stmt() == "id desc"
 
@@ -94,7 +94,7 @@ def test_identity_partition_spec_need_quotes() -> None:
     assert par_spec.partition_field_alias == "col_plus_pipe"
 
     # The diagnosis uses these statements
-    assert ps.make_alias_stmt() == "partition.`col+plus|pipe` as col_plus_pipe"
+    assert ps.make_alias_stmt() == "spec_id as spec_id, partition.`col+plus|pipe` as col_plus_pipe"
     assert ps.make_grouping_stmt() == "spec_id, col_plus_pipe"
     assert ps.make_order_stmt() == "col_plus_pipe desc"
 
@@ -122,7 +122,7 @@ def test_bucket_partition_spec() -> None:
     assert par_spec.partition_field_alias == "id_bucket"
 
     # The diagnosis uses these statements
-    assert ps.make_alias_stmt() == "partition.id_bucket as id_bucket"
+    assert ps.make_alias_stmt() == "spec_id as spec_id, partition.id_bucket as id_bucket"
     assert ps.make_grouping_stmt() == "spec_id, id_bucket"
     assert ps.make_order_stmt() == "id_bucket desc"
 
@@ -152,7 +152,10 @@ def test_month_partition_spec() -> None:
     assert par_spec.partition_field_alias == "ts_month"
 
     # The diagnosis uses these statements
-    assert ps.make_alias_stmt() == "partition.ts_month as ts_month"
+    assert (
+        ps.make_alias_stmt()
+        == "spec_id as spec_id, timestamp '1970-01-01 00:00:00' + (partition.ts_month * interval '1' month) as partition_time, partition.ts_month as ts_month"
+    )
     assert ps.make_grouping_stmt() == "spec_id, partition_time, ts_month"
     assert ps.make_order_stmt() == "ts_month desc"
 
@@ -192,7 +195,7 @@ def test_day_partition_spec() -> None:
     assert par_spec.partition_field_alias == "ts_day"
 
     # The diagnosis uses these statements
-    assert ps.make_alias_stmt() == "partition.ts_day as ts_day"
+    assert ps.make_alias_stmt() == "spec_id as spec_id, partition.ts_day as partition_time, partition.ts_day as ts_day"
     assert ps.make_grouping_stmt() == "spec_id, partition_time, ts_day"
     assert ps.make_order_stmt() == "ts_day desc"
 
@@ -223,7 +226,10 @@ def test_hour_partition_spec() -> None:
     assert par_spec.partition_field_alias == "ts_hour"
 
     # The diagnosis uses these statements
-    assert ps.make_alias_stmt() == "partition.ts_hour as ts_hour"
+    assert (
+        ps.make_alias_stmt()
+        == "spec_id as spec_id, timestamp '1970-01-01 00:00:00' + (partition.ts_hour * interval '1' hour) as partition_time, partition.ts_hour as ts_hour"
+    )
     assert ps.make_grouping_stmt() == "spec_id, partition_time, ts_hour"
     assert ps.make_order_stmt() == "ts_hour desc"
 
@@ -261,9 +267,9 @@ def test_unpartition_spec() -> None:
     assert par_spec.partition_field_alias == "not_partitioned"
 
     # The diagnosis uses these statements
-    assert ps.make_alias_stmt() == "'fix_val' as not_partitioned"
-    assert ps.make_grouping_stmt() == "spec_id, not_partitioned"
-    assert ps.make_order_stmt() == "not_partitioned desc"
+    assert ps.make_alias_stmt() == "spec_id as spec_id"
+    assert ps.make_grouping_stmt() == "spec_id"
+    assert ps.make_order_stmt() == ""
 
     # Once we find partitions to optimize we will feed those values to a function to make a filter expression for the rewrite_data_files procedure:
     partition_to_optimize = Row(ts_day="2026-01-10 00:00:00")

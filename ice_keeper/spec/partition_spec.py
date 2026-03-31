@@ -3,11 +3,10 @@ import logging
 import re
 
 from pydantic import BaseModel
-from pyiceberg.partitioning import PartitionField, PartitionSpec
+from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
-from pyiceberg.transforms import VoidTransform
-from pyiceberg.types import DateType, IcebergType, StringType, TimestampType, TimestamptzType, TimeType
+from pyiceberg.types import DateType, IcebergType, TimestampType, TimestamptzType, TimeType
 from pyspark.sql.types import Row
 
 from ice_keeper import escape_identifier
@@ -161,6 +160,8 @@ class PartitionSpecification:
         Returns:
             str: SQL statement for ordering partitions by descending order.
         """
+        if not self.is_partitioned:
+            return ""
         return ",".join([f"{partition.partition_field_alias} desc" for partition in self.partition_list])
 
     def make_grouping_stmt(self) -> str:
@@ -175,10 +176,13 @@ class PartitionSpecification:
         grouping_stmts = ["spec_id"]
         if self._is_time_partitioned():
             grouping_stmts.append("partition_time")
-        grouping_stmts.extend([partition.partition_field_alias for partition in self.partition_list])
+        if self.is_partitioned:
+            grouping_stmts.extend([partition.partition_field_alias for partition in self.partition_list])
         return ", ".join(grouping_stmts)
 
     def _is_time_partitioned(self) -> bool:
+        if not self.is_partitioned:
+            return False
         """Check if the partition specification includes any temporal partitions."""
         return self.get_base_partition().is_temporal_transformation() or self.get_base_partition().is_temporal_column()
 
@@ -187,7 +191,7 @@ class PartitionSpecification:
             return ""
 
         partition_time_stmt = ""
-        partition_field = self.get_base_partition().partition_field_alias
+        partition_field = f"partition.{self.get_base_partition().transformation.partition_field_escaped}"
         if self.get_base_partition().is_temporal_transformation():
             if isinstance(self.get_base_partition().transformation, YearTransformation):
                 partition_time_stmt = f"timestamp '1970-01-01 00:00:00' + ({partition_field} * interval '1' year)"
@@ -216,16 +220,16 @@ class PartitionSpecification:
         Returns:
             str: Alias statement representing the partition columns.
         """
-        alias_stmts: list[str] = []
+        alias_stmts: list[str] = ["spec_id as spec_id"]
         if self.is_partitioned:
+            # This is needed to be able to filter by time partitions in the diagnosis.
+            partition_time_alias_stmt = self.make_partition_time_alias_stmt()
+            if partition_time_alias_stmt:
+                alias_stmts.append(partition_time_alias_stmt)
             alias_stmts.extend(
                 f"partition.{partition.transformation.partition_field_escaped} as {partition.partition_field_alias}"
                 for partition in self.partition_list
             )
-        else:
-            partition = self.get_base_partition()
-            stmt = f"'fix_val' as {partition.partition_field_alias}"
-            alias_stmts.append(stmt)
         return ", ".join(alias_stmts)
 
     def make_diagnosis_grouping_stmt(self, optimize_partition_depth: int) -> str:
@@ -300,33 +304,21 @@ class PartitionSpecification:
             PartitionSpecification: The partition specification for the Iceberg table.
         """
         if spec.is_unpartitioned():
-            return cls._create_unpartitioned_spec(catalog, spec)
+            return cls._create_unpartitioned_spec(spec)
 
         return cls._create_partitioned_spec(catalog, spec, schema)
 
     @classmethod
-    def _create_unpartitioned_spec(cls, catalog: str, spec: PartitionSpec) -> "PartitionSpecification":
+    def _create_unpartitioned_spec(cls, spec: PartitionSpec) -> "PartitionSpecification":
         """Create a PartitionSpecification for an unpartitioned table.
 
         Args:
-            catalog (str): The catalog for the table.
             spec (PartitionSpec): PyIceberg PartitionSpec object.
 
         Returns:
             PartitionSpecification: A specification indicating unpartitioned data.
         """
-        partition_field_alias = "not_partitioned"
-        source_field_type: IcebergType = StringType()
-        source_field_path_escaped = "not_partitioned"
-        partition_field = PartitionField(source_id=1, field_id=1000, name="not_partitioned", transform=VoidTransform())
-        ice_keeper_transform = Transformation.from_pyiceberg(source_field_path_escaped, partition_field, catalog)
-        partition_list = [
-            Partition(
-                partition_field_alias=partition_field_alias,
-                source_field_type=source_field_type,
-                transformation=ice_keeper_transform,
-            )
-        ]
+        partition_list: list[Partition] = []
 
         return PartitionSpecification(partition_list, spec.spec_id, is_partitioned=False)
 

@@ -60,7 +60,6 @@ class DataFilesBinpack(DataFiles):
         return f"""
             select
                 {self.spec.make_alias_stmt()},
-                spec_id,
                 content,
                 record_count,
                 file_size_in_bytes,
@@ -91,7 +90,6 @@ class DataFilesSort(DataFiles):
         return f"""
             select
                 {self.spec.make_alias_stmt()},
-                spec_id,
                 content,
                 record_count,
                 file_size_in_bytes,
@@ -177,7 +175,6 @@ class DataFilesWideningSort(DataFiles):
             (
                 select
                     {self.spec.make_alias_stmt()},
-                    spec_id,
                     content,
                     record_count,
                     file_size_in_bytes,
@@ -190,7 +187,6 @@ class DataFilesWideningSort(DataFiles):
             (
                 select
                     {self._make_partition_widening_stmt()},
-                    {self.widening_rule.dst_widening.partition_spec.spec_id} as spec_id,
                     content,
                     record_count,
                     file_size_in_bytes,
@@ -212,15 +208,21 @@ class DataFilesWideningSort(DataFiles):
         """
         dst_widening_expr = self.widening_rule.make_diagnosis_widening_expr_stmt()
         dst_widening_partition = self.widening_rule.dst_widening.partition
-        widening_partition_alias = f"{dst_widening_expr} as {dst_widening_partition.partition_field_alias}"
 
-        partition_alias = [
-            widening_partition_alias
-            if partition == dst_widening_partition
-            else f"partition.{partition.transformation.partition_field_escaped} as {partition.partition_field_alias}"
-            for partition in self.spec.partition_list
-        ]
-        return ",".join(partition_alias)
+        alias_stmts: list[str] = [f"{self.widening_rule.dst_widening.partition_spec.spec_id} as spec_id"]
+        # This is needed to be able to filter by time partitions in the diagnosis.
+        partition_time_alias_stmt = self.spec.make_partition_time_alias_stmt()
+        if partition_time_alias_stmt:
+            alias_stmts.append(partition_time_alias_stmt)
+        alias_stmts.extend(
+            [
+                f"{dst_widening_expr} as {dst_widening_partition.partition_field_alias}"
+                if partition == dst_widening_partition
+                else f"partition.{partition.transformation.partition_field_escaped} as {partition.partition_field_alias}"
+                for partition in self.spec.partition_list
+            ]
+        )
+        return ",".join(alias_stmts)
 
 
 class DataFilesSummary:
@@ -335,31 +337,69 @@ class DataFilesSummary:
               if not explicitly set.
             - The method relies on several helper methods to generate specific SQL fragments,
               such as grouping, bounds, and age filters.
+
+            Example output structure:
+
+            Data file summary: Not partitioned
+            ┏━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+            ┃ spec_id ┃ partition_age ┃ partition_desc  ┃ n_files ┃ num_files_targetted_for_rewrite ┃ n_records ┃ target_file_size ┃ avg_file_size      ┃ min_file_size ┃ max_file_size ┃ sum_file_size ┃ num_files_to_widen ┃ corr ┃ corr_threshold ┃ n_delete_files ┃ n_delete_records ┃ should_sort ┃ should_binpack ┃
+            ┡━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━╇━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+            │ 0       │ 0             │ not partitioned │ 176     │ 176                             │ 79992     │ 536870912        │ 13150.352272727272 │ 13118         │ 13211         │ 2314462       │ 0                  │ 1.0  │ 1.00           │ 0              │ 0                │ False       │ True           │
+            └─────────┴───────────────┴─────────────────┴─────────┴─────────────────────────────────┴───────────┴──────────────────┴────────────────────┴───────────────┴───────────────┴───────────────┴────────────────────┴──────┴────────────────┴────────────────┴──────────────────┴─────────────┴────────────────┘
+
+            Diagnosis result
+            ┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┓
+            ┃ partition_age ┃ target_file_size ┃
+            ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━┩
+            │ 0             │ 536870912        │
+            └───────────────┴──────────────────┘
+
+            Data file summary: Partitioned by hour
+            ┏━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+            ┃ spec_id ┃ partition_time      ┃ submission_ts_hour ┃ partition_age ┃ partition_desc                ┃ n_files ┃ num_files_targetted_for_rewrite ┃ n_records ┃ target_file_size ┃ avg_file_size ┃ min_file_size ┃ max_file_size ┃ sum_file_size ┃ num_files_to_widen ┃ corr ┃ corr_threshold ┃ n_delete_files ┃ n_delete_records ┃ should_sort ┃ should_binpack ┃
+            ┡━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━╇━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+            │ 0       │ 2025-03-03 18:00:00 │ 483618             │ 1             │ {"submission_ts_hour":483618} │ 8       │ 8                               │ 79992     │ 536870912        │ 247131.25     │ 246909        │ 247565        │ 1977050       │ 0                  │ 1.0  │ 1.00           │ 0              │ 0                │ False       │ True           │
+            └─────────┴─────────────────────┴────────────────────┴───────────────┴───────────────────────────────┴─────────┴─────────────────────────────────┴───────────┴──────────────────┴───────────────┴───────────────┴───────────────┴───────────────┴────────────────────┴──────┴────────────────┴────────────────┴──────────────────┴─────────────┴────────────────┘
+
+            Diagnosis result
+            ┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┓
+            ┃ partition_age ┃ submission_ts_hour ┃ target_file_size ┃
+            ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━┩
+            │ 1             │ 483618             │ 536870912        │
+            └───────────────┴────────────────────┴──────────────────┘
+
+            Data file summary: Partitioned by day and bucket
+            ┏━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+            ┃ spec_id ┃ partition_time ┃ ts_day     ┃ id_bucket ┃ partition_age ┃ partition_desc                        ┃ n_files ┃ num_files_targetted_for_rewrite ┃ n_records ┃ target_file_size ┃ avg_file_size ┃ min_file_size ┃ max_file_size ┃ sum_file_size ┃ num_files_to_widen ┃ corr ┃ corr_threshold ┃ n_delete_files ┃ n_delete_records ┃ should_sort ┃ should_binpack ┃
+            ┡━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━╇━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+            │ 0       │ 2025-03-03     │ 2025-03-03 │ 2         │ 1             │ {"ts_day":"2025-03-03","id_bucket":2} │ 8       │ 8                               │ 26801     │ 536870912        │ 86378.125     │ 85472         │ 87719         │ 691025        │ 0                  │ 1.0  │ 1.00           │ 0              │ 0                │ False       │ True           │
+            │ 0       │ 2025-03-03     │ 2025-03-03 │ 1         │ 1             │ {"ts_day":"2025-03-03","id_bucket":1} │ 8       │ 8                               │ 26305     │ 536870912        │ 84802.25      │ 83224         │ 86171         │ 678418        │ 0                  │ 1.0  │ 1.00           │ 0              │ 0                │ False       │ True           │
+            │ 0       │ 2025-03-03     │ 2025-03-03 │ 0         │ 1             │ {"ts_day":"2025-03-03","id_bucket":0} │ 8       │ 8                               │ 26886     │ 536870912        │ 86628.75      │ 83885         │ 88055         │ 693030        │ 0                  │ 1.0  │ 1.00           │ 0              │ 0                │ False       │ True           │
+            └─────────┴────────────────┴────────────┴───────────┴───────────────┴───────────────────────────────────────┴─────────┴─────────────────────────────────┴───────────┴──────────────────┴───────────────┴───────────────┴───────────────┴───────────────┴────────────────────┴──────┴────────────────┴────────────────┴──────────────────┴─────────────┴────────────────┘
+
+            Diagnosis result
+            ┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┓
+            ┃ partition_age ┃ ts_day     ┃ target_file_size ┃
+            ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━┩
+            │ 1             │ 2025-03-03 │ 536870912        │
+            └───────────────┴────────────┴──────────────────┘
+
         """
         # Define the SQL template
         sql_template = Template("""
             -- Diagnosing partitioned table '{{ table_name }}' for optimization
             -- All data files to consider for optimization.
             with data_files as (
+                {{ data_files_stmt }}
+            ),
+            -- Add the lower/upper bound to each data file. Note these bounds are dependent on the optimization strategy sort/zorder.
+            data_files_with_bounds as (
                 select
-                    {% if partition_time_alias_stmt %} {{ partition_time_alias_stmt }}, {% endif %}
                     {{ grouping_stmt }},
                     content,
                     record_count,
                     file_size_in_bytes,
                     readable_metrics,
-                    is_data_file_from_widening_src_partition
-                from
-                    ({{ data_files_stmt }})
-            ),
-            -- Add the lower/upper bound to each data file. Note these bounds are dependent on the optimization strategy sort/zorder.
-            data_files_with_bounds as (
-                select
-                    {% if partition_time_alias_stmt %} partition_time, {% endif %}
-                    {{ grouping_stmt }},
-                    content,
-                    record_count,
-                    file_size_in_bytes,
                     {{ lower_bounds_expr }} as the_lower_bound,
                     {{ upper_bounds_expr }} as the_upper_bound,
                     is_data_file_from_widening_src_partition
@@ -369,7 +409,6 @@ class DataFilesSummary:
             -- Give data files a rank number based on the ordering of their bounds.
             ranked_data_files as (
                 select
-                    {% if partition_time_alias_stmt %} partition_time, {% endif %}
                     {{ grouping_stmt }},
                     content,
                     record_count,
@@ -384,7 +423,6 @@ class DataFilesSummary:
             ),
             file_stats_per_partition as (
                 select
-                    {% if partition_time_alias_stmt %} partition_time, {% endif %}
                     {{ grouping_stmt }},
                     content,
                     record_count,
@@ -403,7 +441,6 @@ class DataFilesSummary:
             ),
             target_file_size_per_partition as (
                 select
-                    {% if partition_time_alias_stmt %} partition_time, {% endif %}
                     {{ grouping_stmt }},
                     content,
                     record_count,
@@ -418,19 +455,20 @@ class DataFilesSummary:
                 from
                     file_stats_per_partition
             ),
-            -- Aggregate the metrics per partition.
             agg_data_files as (
-                select
-                    {% if partition_time_alias_stmt %} partition_time, {% endif %}
+                select -- Aggregate the metrics per partition.
                     {{ grouping_stmt }},
 
+                    {% if is_partitioned %}
                     dense_rank() over(order by {{ base_column_name_stmt }} desc) as partition_age,
-
                     {{ to_json_stmt }} as partition_desc,
+                    {% else %}
+                    0 as partition_age, -- If there are no partitions, we can consider all data files to be in a single partition with age 0.
+                    'not partitioned' as partition_desc,
+                    {% endif %}
 
-                    -- Aggregations for content = 0 (data files)
                     first(n_files) as n_files,
-                    sum(case when content = 0 then record_count end) as n_records,
+                    sum(case when content = 0 then record_count end) as n_records, -- Aggregations of data files (content = 0)
                     avg(case when content = 0 then file_size_in_bytes end) as avg_file_size,
                     min(case when content = 0 then file_size_in_bytes end) as min_file_size,
                     max(case when content = 0 then file_size_in_bytes end) as max_file_size,
@@ -438,6 +476,7 @@ class DataFilesSummary:
 
                     first(target_file_size) as target_file_size,
                     first(corr_threshold) as corr_threshold,
+
                     count_if(
                         content = 0 and
                         (file_size_in_bytes < target_file_size * 0.75 or file_size_in_bytes > target_file_size * 1.8)
@@ -448,29 +487,24 @@ class DataFilesSummary:
                         is_data_file_from_widening_src_partition = true
                     ) as num_files_to_widen,
 
-                    -- Calculate correlation factor; defaulting null values to 1
-                    -- if only a single file in partition, set corr to 1
                     cast(
                         case when count_if(content = 0) <= 1 then 1
                         else coalesce(corr(rn1, rn2), 1)
-                    end as float) as corr,
+                    end as float) as corr, -- Calculate correlation factor. defaulting null values to 1,  if only a single file in partition, set corr to 1
 
-                    -- Aggregations for content > 0 (delete files)
-                    count_if(content > 0) as n_delete_files,
+                    count_if(content > 0) as n_delete_files, -- Aggregations for content > 0 (delete files)
 
                     sum(case when content > 0 then record_count else 0 end) as n_delete_records
                 from
                     target_file_size_per_partition
                 group by
-                    {% if partition_time_alias_stmt %} partition_time, {% endif %}
                     {{ grouping_stmt }}
             ),
             -- Add should optimize flags to the aggregate.
             {% if estimate_optimization_results %}
             final as (
                 select
-                    {% if partition_time_alias_stmt %} partition_time, {% endif %}
-                   {{ grouping_stmt }},
+                    {{ grouping_stmt }},
                     partition_age,
                     {{ format_sum_file_size }} as partition_size,
                     {{ format_avg_file_size }} as avg_file_size,
@@ -491,7 +525,6 @@ class DataFilesSummary:
             {% else %}
             final as (
                 select
-                    {% if partition_time_alias_stmt %} partition_time, {% endif %}
                     {{ grouping_stmt }},
                     partition_age,
                     partition_desc,
@@ -516,8 +549,10 @@ class DataFilesSummary:
                     agg_data_files
                 where
                     {{ age_filter_stmt }}
+                {% if is_partitioned %}
                 order by
                     {{ order_by }}
+                {% endif %}
             )
             {% endif %}
 
@@ -527,20 +562,21 @@ class DataFilesSummary:
         min_age_to_optimize = self.datafiles.get_min_age_to_optimize()
         max_age_to_optimize = self.mnt_props.max_age_to_optimize
         age_filter_stmt = self.make_age_filter_stmt(min_age_to_optimize, max_age_to_optimize)
+        base_column_name_stmt = self.spec.get_base_partition().partition_field_alias if self.spec.is_partitioned else ""
 
         # Render the SQL query with all required variables
         return sql_template.render(
+            is_partitioned=self.spec.is_partitioned,
             spec_id=self.spec_id,
             to_json_stmt=self.spec.make_to_json_stmt(),
             table_name=self.mnt_props.full_name,
-            partition_time_alias_stmt=self.spec.make_partition_time_alias_stmt(),
             grouping_stmt=self.spec.make_grouping_stmt(),
             corr_threshold_expr=self.bounds.make_corr_threshold_expr_stmt(),
             data_files_stmt=self.datafiles.make_data_files_stmt(),
             lower_bounds_expr=self.bounds.make_lower_bounds_expr_stmt(),
             upper_bounds_expr=self.bounds.make_upper_bounds_expr_stmt(),
             target_file_size_stmt=self._make_target_file_size_stmt(),
-            base_column_name_stmt=self.spec.get_base_partition().partition_field_alias,
+            base_column_name_stmt=base_column_name_stmt,
             num_files_targetted_for_rewrite_threshold=5,
             age_filter_stmt=age_filter_stmt,
             order_by=self.spec.make_order_stmt(),
