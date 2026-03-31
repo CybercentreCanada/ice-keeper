@@ -403,7 +403,7 @@ def test_optimize(
     test_name: str, partitioned_by: str, optimization_strategy: str, expected_output: str, executor: TaskExecutor
 ) -> None:
     # Change default min age for testing.
-    properties = {IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "1"}
+    properties = {IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d", IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d"}
     create_test_table_with_data(
         executor, partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties
     )
@@ -458,7 +458,7 @@ def test_optimize(
 def test_optimize_two_partitions(executor: TaskExecutor) -> None:
     partitioned_by = "days(ts)"
     optimization_strategy = "id asc"
-    properties = {IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "1"}
+    properties = {IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d", IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d"}
     create_test_table_with_data(executor, partitioned_by, optimization_strategy, properties)
     dt = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
     insert_data(event_time=dt)
@@ -520,10 +520,59 @@ def test_optimize_two_partitions(executor: TaskExecutor) -> None:
 
 
 @pytest.mark.integration
+def test_optimize_binpack_partition_by_timestamp_day_identity(executor: TaskExecutor) -> None:
+    partitioned_by = "ts"
+    optimization_strategy = "binpack"
+    properties = {
+        IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
+        IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",
+        "write.delete.mode": "merge-on-read",
+    }
+    create_empty_test_table(partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties)
+    dt = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
+    insert_data(event_time=dt, num_inserts=1)
+    sql = f"delete from {TEST_FULL_NAME} where id = (select id from {TEST_FULL_NAME} where ts = '{dt}' limit 1)"
+    STL.get().sql(sql).show(truncate=False)
+    dt = datetime.datetime(2025, 12, 2, 0, 0, 0, tzinfo=timezone.utc)
+    insert_data(event_time=dt, num_inserts=5)
+    dt = datetime.datetime(2025, 12, 3, 0, 0, 0, tzinfo=timezone.utc)
+    insert_data(event_time=dt, num_inserts=5)
+    dt = datetime.datetime(2025, 12, 4, 0, 0, 0, tzinfo=timezone.utc)
+    insert_data(event_time=dt, num_inserts=5)
+    sql = f"delete from {TEST_FULL_NAME} where id = (select id from {TEST_FULL_NAME} where ts = '{dt}' limit 1)"
+    STL.get().sql(sql).show(truncate=False)
+    dt = datetime.datetime(2025, 12, 5, 0, 0, 0, tzinfo=timezone.utc)
+    insert_data(event_time=dt, num_inserts=5)
+
+    # add table to maintenance schedule
+    discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
+
+    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
+    assert len(maintenance_schedule.entries()) == 1, "Scoped to one table, should have one maintenance entry."
+    tasks = ActionTaskFactory.make_tasks(Action.REWRITE_DATA_FILES, maintenance_schedule)
+    assert len(tasks) == 1, "Should find the schedule entry for given table"
+    executor.submit_tasks_and_wait(tasks)
+
+    # rows = executor.get_journal().flush().read(Scope()).collect()
+    # # If we have an expected procedure call.
+    # assert len(rows) == TWO_EXPECTED, "Should have a two log"
+    # status0 = rows[0].status
+    # status_details0 = rows[0].status_details
+    # status1 = rows[1].status
+    # status_details1 = rows[1].status_details
+    # assert status0 == Status.SUCCESS.value
+    # assert status1 == Status.SUCCESS.value
+    # assert status_details0 == ""
+    # assert status_details1 == ""
+    # actual_output0 = rows[0].sql_stm
+    # actual_output1 = rows[1].sql_stm
+
+
+@pytest.mark.integration
 def test_optimize_binpack_correct_hour(executor: TaskExecutor) -> None:
     partitioned_by = "hours(ts)"
     optimization_strategy = "binpack"
-    properties = {IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "2"}
+    properties = {IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "2", IceKeeperTblProperty.MAX_AGE_TO_OPTIMIZE: "200"}
     create_empty_test_table(partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties)
     # 6 files in hour 2025-12-01 00:00:00
     dt = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
@@ -558,7 +607,7 @@ def test_optimize_binpack_correct_hour(executor: TaskExecutor) -> None:
 def test_optimize_binpack_correct_day(executor: TaskExecutor) -> None:
     partitioned_by = "days(ts)"
     optimization_strategy = "binpack"
-    properties = {IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "2"}
+    properties = {IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "2", IceKeeperTblProperty.MAX_AGE_TO_OPTIMIZE: "200"}
     create_empty_test_table(partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties)
     dt = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
     insert_data(event_time=dt, num_inserts=6)
@@ -584,7 +633,7 @@ def test_optimize_binpack_correct_day(executor: TaskExecutor) -> None:
 def test_optimize_binpack_correct_month(executor: TaskExecutor) -> None:
     partitioned_by = "month(ts)"
     optimization_strategy = "binpack"
-    properties = {IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "2"}
+    properties = {IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "2", IceKeeperTblProperty.MAX_AGE_TO_OPTIMIZE: "200"}
     create_empty_test_table(partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties)
     # 6 files in month 2025-12-01
     dt = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
@@ -619,7 +668,7 @@ def test_optimize_binpack_correct_month(executor: TaskExecutor) -> None:
 def test_optimize_binpack_correct_year(executor: TaskExecutor) -> None:
     partitioned_by = "year(ts)"
     optimization_strategy = "binpack"
-    properties = {IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "2"}
+    properties = {IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "2", IceKeeperTblProperty.MAX_AGE_TO_OPTIMIZE: "200"}
     create_empty_test_table(partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties)
     # 6 files in year 2024
     dt = datetime.datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
@@ -654,7 +703,7 @@ def test_optimize_binpack_correct_year(executor: TaskExecutor) -> None:
 def test_optimize_invalid_column(executor: TaskExecutor) -> None:
     partitioned_by = "days(ts)"
     optimization_strategy = "invalid_column_name asc"
-    properties = {IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "1"}
+    properties = {IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d", IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d"}
     create_test_table_with_data(executor, partitioned_by, optimization_strategy, properties)
     dt = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
     insert_data(event_time=dt)
@@ -678,7 +727,7 @@ def test_optimize_invalid_column(executor: TaskExecutor) -> None:
 def test_optimize_binpack_min_num_files(executor: TaskExecutor) -> None:
     partitioned_by = "days(ts)"
     optimization_strategy = "binpack"
-    properties = {IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "1"}
+    properties = {IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d", IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d"}
     create_empty_test_table(partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties)
     dt = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
     insert_data(event_time=dt, num_inserts=5)
@@ -708,7 +757,7 @@ def test_optimize_binpack_min_num_files(executor: TaskExecutor) -> None:
 def test_optimize_partitioned_by_category_sorted_by_id_max_age_2(executor: TaskExecutor) -> None:
     partitioned_by = "category"
     optimization_strategy = "id ASC"
-    properties = {IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "2"}
+    properties = {IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "2", IceKeeperTblProperty.MAX_AGE_TO_OPTIMIZE: "200"}
     create_test_table_with_data(executor, partitioned_by, optimization_strategy, properties)
     dt = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
     insert_data(event_time=dt, num_inserts=5)
@@ -731,7 +780,7 @@ def test_optimize_partitioned_by_category_sorted_by_id_max_age_2(executor: TaskE
 def test_optimize_partitioned_by_category_and_by_day_ts(executor: TaskExecutor) -> None:
     partitioned_by = "category, days(ts)"
     optimization_strategy = "id ASC"
-    properties = {IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "1"}
+    properties = {IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d", IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d"}
     create_empty_test_table(partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties)
     dt = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
     insert_data(event_time=dt, num_inserts=5)

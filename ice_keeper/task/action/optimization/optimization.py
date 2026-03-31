@@ -197,7 +197,6 @@ class OptimizationStrategy(ActionStrategy):
                 self.mnt_props.widening_rule_dst_partition,
                 self.mnt_props.get_widening_rule_required_partition_columns(),
                 self.mnt_props.widening_rule_select_criteria,
-                self.mnt_props.widening_rule_min_age_to_widen,
             )
         return rule
 

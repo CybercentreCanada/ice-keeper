@@ -47,6 +47,22 @@ class DataFiles(ABC):
             int: Maximum age (in days or equivalent units) for optimization eligibility.
         """
 
+    @abstractmethod
+    def get_min_partition_to_optimize(self) -> str:
+        """Abstract method to fetch the minimum age for optimization.
+
+        Returns:
+            int: Minimum age (in days or equivalent units) for optimization eligibility.
+        """
+
+    @abstractmethod
+    def get_max_partition_to_optimize(self) -> str:
+        """Abstract method to fetch the minimum age for optimization.
+
+        Returns:
+            int: Maximum age (in days or equivalent units) for optimization eligibility.
+        """
+
 
 class DataFilesBinpack(DataFiles):
     @override
@@ -58,6 +74,7 @@ class DataFilesBinpack(DataFiles):
         """
         return self.mnt_props.min_age_to_optimize
 
+    @override
     def get_max_age_to_optimize(self) -> int:
         """Fetch the maximum age for binpack optimizations.
 
@@ -65,6 +82,24 @@ class DataFilesBinpack(DataFiles):
             int: Maximum number of days before files are eligible for optimization.
         """
         return self.mnt_props.max_age_to_optimize
+
+    @override
+    def get_min_partition_to_optimize(self) -> str:
+        """Fetch the minimum age for binpack optimizations.
+
+        Returns:
+            str: Minimum partition  before files are eligible for optimization.
+        """
+        return self.mnt_props.min_partition_to_optimize
+
+    @override
+    def get_max_partition_to_optimize(self) -> str:
+        """Fetch the maximum partition  for binpack optimizations.
+
+        Returns:
+            int: Maximum number of days before files are eligible for optimization.
+        """
+        return self.mnt_props.max_partition_to_optimize
 
     @override
     def make_data_files_stmt(self) -> str:
@@ -103,6 +138,24 @@ class DataFilesSort(DataFiles):
             int: Maximum number of days before files are eligible for optimization.
         """
         return self.mnt_props.max_age_to_optimize
+
+    @override
+    def get_min_partition_to_optimize(self) -> str:
+        """Fetch the minimum age for binpack optimizations.
+
+        Returns:
+            str: Minimum partition  before files are eligible for optimization.
+        """
+        return self.mnt_props.min_partition_to_optimize
+
+    @override
+    def get_max_partition_to_optimize(self) -> str:
+        """Fetch the maximum partition  for binpack optimizations.
+
+        Returns:
+            int: Maximum number of days before files are eligible for optimization.
+        """
+        return self.mnt_props.max_partition_to_optimize
 
     @override
     def make_data_files_stmt(self) -> str:
@@ -166,7 +219,7 @@ class DataFilesWideningSort(DataFiles):
         Returns:
             int: Minimum age to optimize based on the widening rule.
         """
-        return self.widening_rule.min_age_to_widen
+        return self.mnt_props.widening_rule_min_age_to_widen
 
     def get_max_age_to_optimize(self) -> int:
         """Fetch the maximum age for binpack optimizations.
@@ -175,6 +228,24 @@ class DataFilesWideningSort(DataFiles):
             int: Maximum number of days before files are eligible for optimization.
         """
         return self.mnt_props.max_age_to_optimize
+
+    @override
+    def get_min_partition_to_optimize(self) -> str:
+        """Fetch the minimum age for binpack optimizations.
+
+        Returns:
+            str: Minimum partition  before files are eligible for optimization.
+        """
+        return self.mnt_props.widening_rule_min_partition_to_widen
+
+    @override
+    def get_max_partition_to_optimize(self) -> str:
+        """Fetch the maximum partition  for binpack optimizations.
+
+        Returns:
+            int: Maximum number of days before files are eligible for optimization.
+        """
+        return self.mnt_props.widening_rule_max_partition_to_widen
 
     @override
     def make_data_files_stmt(self) -> str:
@@ -242,10 +313,6 @@ class DataFilesWideningSort(DataFiles):
         dst_widening_partition = self.widening_rule.dst_widening.partition
 
         alias_stmts: list[str] = [f"{self.widening_rule.dst_widening.partition_spec.spec_id} as spec_id"]
-        # This is needed to be able to filter by time partitions in the diagnosis.
-        partition_time_alias_stmt = self.spec.make_partition_time_alias_stmt()
-        if partition_time_alias_stmt:
-            alias_stmts.append(partition_time_alias_stmt)
         alias_stmts.extend(
             [
                 f"{dst_widening_expr} as {dst_widening_partition.partition_field_alias}"
@@ -278,7 +345,7 @@ class DataFilesSummary:
             msg = f"Widening partition in table {mnt_props.full_name}, however table is configured to be binpacked which is not supported yet."
             raise Exception(msg)
 
-    def make_partition_filter_stmt(self, min_age_to_optimize: int, max_age_to_optimize: int) -> str:
+    def make_partition_filter_stmt(self) -> str:
         """Create a filter to consider only partitions within the specified age range.
 
         This method generates a filter based on the age of temporal partitions in the table, ensuring
@@ -291,15 +358,31 @@ class DataFilesSummary:
         the function raises an exception because this schema is not supported for diagnostics. Temporal sub-partitions
         create ambiguities in determining partition age, which can lead to improper optimizations.
         """
-        min_age_to_optimize = self.datafiles.get_min_age_to_optimize()
-        max_age_to_optimize = self.datafiles.get_max_age_to_optimize()
-
         filter_stmt = "1=1"
         if self.spec.is_partitioned:
             # If the base partition (first-level partition) is temporal (e.g., days or hours),
             # create a filter based on the age range.
             if self.spec.get_base_partition().is_temporal_transformation() or self.spec.get_base_partition().is_temporal_column():
-                filter_stmt = f"partition_age >= {min_age_to_optimize} and partition_age <= ({max_age_to_optimize})"
+                min_age_to_optimize = self.datafiles.get_min_age_to_optimize()
+                max_age_to_optimize = self.datafiles.get_max_age_to_optimize()
+                if min_age_to_optimize >= 0 and max_age_to_optimize >= 0:
+                    filter_stmt = f"partition_age >= {min_age_to_optimize} and partition_age <= ({max_age_to_optimize})"
+                else:
+                    # min/max partition to optimize are strings representing the number of days, hours, months, years
+                    # relative to the current time for example 1d to 7d, 24h to 72h, 1M to 3M, 1Y to 2Y.
+                    min_partition_to_optimize = self.datafiles.get_min_partition_to_optimize()
+                    max_partition_to_optimize = self.datafiles.get_max_partition_to_optimize()
+                    min_unit, min_amount = self._parse_interval(min_partition_to_optimize)
+                    max_unit, max_amount = self._parse_interval(max_partition_to_optimize)
+                    # Round up the reference point to the next unit boundary (ceiling).
+                    # e.g. if max partition_time is 2025-10-15 and unit is 'month',
+                    # the reference becomes 2025-11-01 (start of next month).
+                    max_pt = "(select max(partition_time) from agg_data_files)"
+                    ref_point = f"date_trunc('{min_unit}', {max_pt}) + interval {min_amount} {min_unit}"
+                    filter_stmt = (
+                        f"partition_time <= timestamp({ref_point} - interval {min_amount} {min_unit})"
+                        f" and partition_time >= timestamp({ref_point} - interval {max_amount} {max_unit})"
+                    )
             else:
                 # The first partition is not temporal. Check if any sub-partitions are temporal.
                 # Unsupported case: a temporal partition as a secondary partition.
@@ -314,6 +397,26 @@ class DataFilesSummary:
                 # (e.g., bucket, truncate, or identity). In this case, age filtering does not apply.
 
         return filter_stmt
+
+    @staticmethod
+    def _parse_interval(value: str) -> tuple[str, int]:
+        """Parse a relative time string (e.g. '1d', '24h', '3M', '1Y') into a parsed interval."""
+        unit_map = {
+            "h": "hour",
+            "d": "day",
+            "m": "month",
+            "y": "year",
+        }
+        suffix = value[-1].lower()
+        if suffix not in unit_map:
+            msg = f"Unsupported interval suffix '{suffix}' in '{value}'. Expected one of: {list(unit_map.keys())}"
+            raise ValueError(msg)
+        amount = value[:-1]
+        if not (amount.isdigit() or (amount.startswith("-") and amount[1:].isdigit())):
+            msg = f"Invalid interval amount '{amount}' in '{value}'. Expected an integer."
+            raise ValueError(msg)
+        unit = unit_map[suffix]
+        return (unit, int(amount))
 
     def _format_bytes_stmt(self, bytes_column: str) -> str:
         return f"""concat(
@@ -427,6 +530,15 @@ class DataFilesSummary:
             with data_files as (
                 {{ data_files_stmt }}
             ),
+            data_files_with_partition_time as (
+                select
+                    {% if partition_time_alias_stmt %}
+                    {{ partition_time_alias_stmt }},
+                    {% endif %}
+                    *
+                from
+                    data_files
+            ),
             -- Add the lower/upper bound to each data file. Note these bounds are dependent on the optimization strategy sort/zorder.
             data_files_with_bounds as (
                 select
@@ -439,7 +551,7 @@ class DataFilesSummary:
                     {{ upper_bounds_expr }} as the_upper_bound,
                     is_data_file_from_widening_src_partition
                 from
-                    data_files
+                    data_files_with_partition_time
             ),
             -- Give data files a rank number based on the ordering of their bounds.
             ranked_data_files as (
@@ -596,10 +708,12 @@ class DataFilesSummary:
 
         partition_filter_stmt = self.make_partition_filter_stmt()
         base_column_name_stmt = self.spec.get_base_partition().partition_field_alias if self.spec.is_partitioned else ""
+        partition_time_alias_stmt = self.spec.make_partition_time_alias_stmt()
 
         # Render the SQL query with all required variables
         return sql_template.render(
             is_partitioned=self.spec.is_partitioned,
+            partition_time_alias_stmt=partition_time_alias_stmt,
             spec_id=self.spec_id,
             to_json_stmt=self.spec.make_to_json_stmt(),
             table_name=self.mnt_props.full_name,

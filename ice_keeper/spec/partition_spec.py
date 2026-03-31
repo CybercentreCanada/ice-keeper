@@ -187,11 +187,16 @@ class PartitionSpecification:
         return self.get_base_partition().is_temporal_transformation() or self.get_base_partition().is_temporal_column()
 
     def make_partition_time_alias_stmt(self) -> str:
+        """Create a partition_time alias statement.
+
+        Use the time based partition alias for example ts_day and compute the corresponding timestamp
+        of the partition given that hours, months and year are an integer since epoch.
+        """
         if not self._is_time_partitioned():
             return ""
 
         partition_time_stmt = ""
-        partition_field = f"partition.{self.get_base_partition().transformation.partition_field_escaped}"
+        partition_field = f"{self.get_base_partition().partition_field_alias}"
         if self.get_base_partition().is_temporal_transformation():
             if isinstance(self.get_base_partition().transformation, YearTransformation):
                 partition_time_stmt = f"timestamp '1970-01-01 00:00:00' + ({partition_field} * interval '1' year)"
@@ -214,18 +219,14 @@ class PartitionSpecification:
         """Generate an SQL alias statement for partitions.
 
         The alias assigns a name/alias to the partition columns for easier referencing.
-        If the table is not partitioned, all rows are treated as belonging to a single
-        virtual partition using a fixed value.
+        If the table is not partitioned return an empty string. The statement will not be used.
+
 
         Returns:
             str: Alias statement representing the partition columns.
         """
         alias_stmts: list[str] = ["spec_id as spec_id"]
         if self.is_partitioned:
-            # This is needed to be able to filter by time partitions in the diagnosis.
-            partition_time_alias_stmt = self.make_partition_time_alias_stmt()
-            if partition_time_alias_stmt:
-                alias_stmts.append(partition_time_alias_stmt)
             alias_stmts.extend(
                 f"partition.{partition.transformation.partition_field_escaped} as {partition.partition_field_alias}"
                 for partition in self.partition_list
