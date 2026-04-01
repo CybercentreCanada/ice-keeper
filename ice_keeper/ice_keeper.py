@@ -273,8 +273,20 @@ def reset(force: bool) -> None:  # noqa: FBT001
     short_help="Diagnose table health by analyzing its partitions.",
 )
 @click.option("--full_name", required=True, help="Fully qualified name of table to diagnose.")
-@click.option("--min_age_to_diagnose", default=None, help="Minimum snapshot age (in partition rank) to diagnose (default: 1).")
-@click.option("--max_age_to_diagnose", default=None, help="Maximum snapshot age (in partition rank) to diagnose (default: 72).")
+@click.option(
+    "--min_age_to_diagnose",
+    type=int,
+    default=1,
+    show_default=True,
+    help="Minimum snapshot age (in partition rank) to diagnose.",
+)
+@click.option(
+    "--max_age_to_diagnose",
+    type=int,
+    default=72,
+    show_default=True,
+    help="Maximum snapshot age (in partition rank) to diagnose.",
+)
 @click.option(
     "--min_partition_to_diagnose",
     default=None,
