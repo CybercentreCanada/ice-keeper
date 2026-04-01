@@ -33,72 +33,36 @@ class DataFiles(ABC):
 
     @abstractmethod
     def get_min_age_to_optimize(self) -> int:
-        """Abstract method to fetch the minimum age for optimization.
-
-        Returns:
-            int: Minimum age (in days or equivalent units) for optimization eligibility.
-        """
+        """Abstract method to fetch the minimum age for optimization."""
 
     @abstractmethod
     def get_max_age_to_optimize(self) -> int:
-        """Abstract method to fetch the minimum age for optimization.
-
-        Returns:
-            int: Maximum age (in days or equivalent units) for optimization eligibility.
-        """
+        """Abstract method to fetch the minimum age for optimization."""
 
     @abstractmethod
     def get_min_partition_to_optimize(self) -> str:
-        """Abstract method to fetch the minimum age for optimization.
-
-        Returns:
-            int: Minimum age (in days or equivalent units) for optimization eligibility.
-        """
+        """Abstract method to fetch the minimum age for optimization."""
 
     @abstractmethod
     def get_max_partition_to_optimize(self) -> str:
-        """Abstract method to fetch the minimum age for optimization.
-
-        Returns:
-            int: Maximum age (in days or equivalent units) for optimization eligibility.
-        """
+        """Abstract method to fetch the minimum age for optimization."""
 
 
 class DataFilesBinpack(DataFiles):
     @override
     def get_min_age_to_optimize(self) -> int:
-        """Fetch the minimum age for binpack optimizations.
-
-        Returns:
-            int: Minimum number of days before files are eligible for optimization.
-        """
         return self.mnt_props.min_age_to_optimize
 
     @override
     def get_max_age_to_optimize(self) -> int:
-        """Fetch the maximum age for binpack optimizations.
-
-        Returns:
-            int: Maximum number of days before files are eligible for optimization.
-        """
         return self.mnt_props.max_age_to_optimize
 
     @override
     def get_min_partition_to_optimize(self) -> str:
-        """Fetch the minimum age for binpack optimizations.
-
-        Returns:
-            str: Minimum partition  before files are eligible for optimization.
-        """
         return self.mnt_props.min_partition_to_optimize
 
     @override
     def get_max_partition_to_optimize(self) -> str:
-        """Fetch the maximum partition  for binpack optimizations.
-
-        Returns:
-            int: Maximum number of days before files are eligible for optimization.
-        """
         return self.mnt_props.max_partition_to_optimize
 
     @override
@@ -124,37 +88,17 @@ class DataFilesBinpack(DataFiles):
 class DataFilesSort(DataFiles):
     @override
     def get_min_age_to_optimize(self) -> int:
-        """Fetch the minimum age for sorting-based optimizations.
-
-        Returns:
-            int: Minimum number of days before files are eligible for optimization.
-        """
         return self.mnt_props.min_age_to_optimize
 
     def get_max_age_to_optimize(self) -> int:
-        """Fetch the maximum age for binpack optimizations.
-
-        Returns:
-            int: Maximum number of days before files are eligible for optimization.
-        """
         return self.mnt_props.max_age_to_optimize
 
     @override
     def get_min_partition_to_optimize(self) -> str:
-        """Fetch the minimum age for binpack optimizations.
-
-        Returns:
-            str: Minimum partition  before files are eligible for optimization.
-        """
         return self.mnt_props.min_partition_to_optimize
 
     @override
     def get_max_partition_to_optimize(self) -> str:
-        """Fetch the maximum partition  for binpack optimizations.
-
-        Returns:
-            int: Maximum number of days before files are eligible for optimization.
-        """
         return self.mnt_props.max_partition_to_optimize
 
     @override
@@ -214,37 +158,17 @@ class DataFilesWideningSort(DataFiles):
             raise Exception(msg)
 
     def get_min_age_to_optimize(self) -> int:
-        """Fetch the minimum age required for applying the widening rule.
-
-        Returns:
-            int: Minimum age to optimize based on the widening rule.
-        """
         return self.mnt_props.widening_rule_min_age_to_widen
 
     def get_max_age_to_optimize(self) -> int:
-        """Fetch the maximum age for binpack optimizations.
-
-        Returns:
-            int: Maximum number of days before files are eligible for optimization.
-        """
         return self.mnt_props.max_age_to_optimize
 
     @override
     def get_min_partition_to_optimize(self) -> str:
-        """Fetch the minimum age for binpack optimizations.
-
-        Returns:
-            str: Minimum partition  before files are eligible for optimization.
-        """
         return self.mnt_props.widening_rule_min_partition_to_widen
 
     @override
     def get_max_partition_to_optimize(self) -> str:
-        """Fetch the maximum partition  for binpack optimizations.
-
-        Returns:
-            int: Maximum number of days before files are eligible for optimization.
-        """
         return self.mnt_props.widening_rule_max_partition_to_widen
 
     @override
@@ -365,7 +289,7 @@ class DataFilesSummary:
             if self.spec.get_base_partition().is_temporal_transformation() or self.spec.get_base_partition().is_temporal_column():
                 min_age_to_optimize = self.datafiles.get_min_age_to_optimize()
                 max_age_to_optimize = self.datafiles.get_max_age_to_optimize()
-                if min_age_to_optimize >= 0 or max_age_to_optimize >= 0:
+                if min_age_to_optimize >= 0 and max_age_to_optimize >= 0:
                     filter_stmt = f"partition_age >= {min_age_to_optimize} and partition_age <= ({max_age_to_optimize})"
                 else:
                     # min/max partition to optimize are strings representing the number of days, hours, months, years
@@ -374,6 +298,13 @@ class DataFilesSummary:
                     max_partition_to_optimize = self.datafiles.get_max_partition_to_optimize()
                     min_unit, min_amount = self._parse_interval(min_partition_to_optimize)
                     max_unit, max_amount = self._parse_interval(max_partition_to_optimize)
+                    if min_unit != max_unit:
+                        msg = (
+                            f"min-partition-to-optimize '{min_partition_to_optimize}' and "
+                            f"max-partition-to-optimize '{max_partition_to_optimize}' must use the same unit, "
+                            f"but got '{min_unit}' and '{max_unit}'."
+                        )
+                        raise ValueError(msg)
                     # Round up the reference point to the next unit boundary (ceiling).
                     # e.g. if max partition_time is 2025-10-15 and unit is 'month',
                     # the reference becomes 2025-11-01 (start of next month).

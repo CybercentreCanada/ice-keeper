@@ -18,7 +18,7 @@ def create_test_table_with_one_batch(
     table_name: str = TEST_TABLE_NAME,
     partitioned_by: str | None = None,
     optimization_strategy: str | None = None,
-    properties: dict[str, str] = {},  # noqa: B006
+    properties: dict[str, str] | None = None,
 ) -> None:
     partition_by_stm = ""
     if partitioned_by:
@@ -28,7 +28,9 @@ def create_test_table_with_one_batch(
     if optimization_strategy:
         props[IceKeeperTblProperty.SHOULD_OPTIMIZE] = "true"
         props[IceKeeperTblProperty.OPTIMIZATION_STRATEGY] = optimization_strategy
-    total_props = props | properties
+    total_props = props
+    if properties:
+        total_props = total_props | properties
 
     tblproperties_stm = ""
     if total_props:
@@ -61,7 +63,7 @@ def create_empty_test_table(
     table_name: str = TEST_TABLE_NAME,
     partitioned_by: str | None = None,
     optimization_strategy: str | None = None,
-    properties: dict[str, str] = {},  # noqa: B006
+    properties: dict[str, str] | None = None,
 ) -> None:
     partition_by_stm = ""
     if partitioned_by:
@@ -71,7 +73,9 @@ def create_empty_test_table(
     if optimization_strategy:
         props[IceKeeperTblProperty.SHOULD_OPTIMIZE] = "true"
         props[IceKeeperTblProperty.OPTIMIZATION_STRATEGY] = optimization_strategy
-    total_props = props | properties
+    total_props = props
+    if properties:
+        total_props = total_props | properties
 
     tblproperties_stm = ""
     if total_props:

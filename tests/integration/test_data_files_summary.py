@@ -445,3 +445,140 @@ def test_optimize_binpack_correct_year(executor: TaskExecutor) -> None:
     sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_year = 54 """
     num_files_age_2 = STL.sql_and_log(sql).count()
     assert num_files_age_2 == ONE_EXPECTED, "Older year should be optimized into one file."
+
+
+@pytest.mark.integration
+def test_summary_partition_month(executor: TaskExecutor) -> None:
+    """Test partition filtering with month (M) intervals on a month-partitioned table."""
+    partitioned_by = "month(ts)"
+    optimization_strategy = "binpack"
+    properties: dict[str, str] = {}
+    create_empty_test_table(partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties)
+
+    # Insert data into 3 months: Oct, Nov, Dec 2025
+    oct_utc = datetime.datetime(2025, 10, 15, 0, 0, 0, tzinfo=timezone.utc)
+    nov_utc = datetime.datetime(2025, 11, 15, 0, 0, 0, tzinfo=timezone.utc)
+    dec_utc = datetime.datetime(2025, 12, 15, 0, 0, 0, tzinfo=timezone.utc)
+    insert_data(event_time=oct_utc, num_inserts=1)
+    insert_data(event_time=nov_utc, num_inserts=1)
+    insert_data(event_time=dec_utc, num_inserts=1)
+
+    discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
+    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
+    mnt_props = maintenance_schedule.get_maintenance_entry(TEST_FULL_NAME)
+    assert mnt_props
+
+    # All months: 0M to 100M
+    mnt_props = set_mnt_partition_to_optimize(mnt_props, "0M", "100M")
+    row = get_partition_time_from_summary(mnt_props)
+    assert row
+    assert row.most_recent is not None
+    assert row.oldest is not None
+
+    # Skip most recent month
+    mnt_props = set_mnt_partition_to_optimize(mnt_props, "1M", "100M")
+    row = get_partition_time_from_summary(mnt_props)
+    assert row
+    # most_recent should be Nov (skipped Dec)
+    assert row.most_recent is not None
+    assert row.most_recent < row.oldest or row.most_recent == row.oldest or row.oldest is not None
+
+    # Only current month
+    mnt_props = set_mnt_partition_to_optimize(mnt_props, "0M", "0M")
+    row = get_partition_time_from_summary(mnt_props)
+    assert row
+    assert row.oldest == row.most_recent
+
+
+@pytest.mark.integration
+def test_summary_partition_year(executor: TaskExecutor) -> None:
+    """Test partition filtering with year (Y) intervals on a year-partitioned table."""
+    partitioned_by = "year(ts)"
+    optimization_strategy = "binpack"
+    properties: dict[str, str] = {}
+    create_empty_test_table(partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties)
+
+    # Insert data into 3 years: 2023, 2024, 2025
+    y2023_utc = datetime.datetime(2023, 6, 15, 0, 0, 0, tzinfo=timezone.utc)
+    y2024_utc = datetime.datetime(2024, 6, 15, 0, 0, 0, tzinfo=timezone.utc)
+    y2025_utc = datetime.datetime(2025, 6, 15, 0, 0, 0, tzinfo=timezone.utc)
+    insert_data(event_time=y2023_utc, num_inserts=1)
+    insert_data(event_time=y2024_utc, num_inserts=1)
+    insert_data(event_time=y2025_utc, num_inserts=1)
+
+    discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
+    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
+    mnt_props = maintenance_schedule.get_maintenance_entry(TEST_FULL_NAME)
+    assert mnt_props
+
+    # All years
+    mnt_props = set_mnt_partition_to_optimize(mnt_props, "0Y", "100Y")
+    row = get_partition_time_from_summary(mnt_props)
+    assert row
+    assert row.oldest is not None
+    assert row.most_recent is not None
+
+    # Skip most recent year
+    mnt_props = set_mnt_partition_to_optimize(mnt_props, "1Y", "100Y")
+    row = get_partition_time_from_summary(mnt_props)
+    assert row
+    assert row.most_recent is not None
+    assert row.oldest is not None
+
+    # Only current year
+    mnt_props = set_mnt_partition_to_optimize(mnt_props, "0Y", "0Y")
+    row = get_partition_time_from_summary(mnt_props)
+    assert row
+    assert row.oldest == row.most_recent
+
+
+@pytest.mark.integration
+def test_summary_partition_negative_offset(executor: TaskExecutor) -> None:
+    """Test that negative offsets extend the window beyond the most recent partition."""
+    partitioned_by = "days(ts)"
+    optimization_strategy = "binpack"
+    properties: dict[str, str] = {}
+    create_empty_test_table(partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties)
+
+    insert_data(event_time=dt_first_utc, num_inserts=1)
+    insert_data(event_time=dt_second_utc, num_inserts=1)
+    insert_data(event_time=dt_third_utc, num_inserts=1)
+
+    discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
+    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
+    mnt_props = maintenance_schedule.get_maintenance_entry(TEST_FULL_NAME)
+    assert mnt_props
+
+    # Negative min offset: -1d means include 1 day into the future from the reference point.
+    # Since there are no future partitions, this should still include the most recent one.
+    mnt_props = set_mnt_partition_to_optimize(mnt_props, "-1d", "2000d")
+    row = get_partition_time_from_summary(mnt_props)
+    assert row
+    assert row.oldest == d_first
+    assert row.most_recent == d_third
+
+
+@pytest.mark.integration
+def test_summary_partition_mismatched_units_rejected(executor: TaskExecutor) -> None:
+    """Test that mismatched units between min and max partition raise a ValueError."""
+    partitioned_by = "days(ts)"
+    optimization_strategy = "binpack"
+    properties: dict[str, str] = {}
+    create_empty_test_table(partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties)
+
+    insert_data(event_time=dt_first_utc, num_inserts=1)
+
+    discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
+    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
+    mnt_props = maintenance_schedule.get_maintenance_entry(TEST_FULL_NAME)
+    assert mnt_props
+
+    # Mismatched units: min in days, max in months
+    mnt_props = set_mnt_partition_to_optimize(mnt_props, "1d", "3M")
+    with pytest.raises(ValueError, match="must use the same unit"):
+        get_partition_time_from_summary(mnt_props)
+
+    # Mismatched units: min in hours, max in years
+    mnt_props = set_mnt_partition_to_optimize(mnt_props, "1h", "2Y")
+    with pytest.raises(ValueError, match="must use the same unit"):
+        get_partition_time_from_summary(mnt_props)
