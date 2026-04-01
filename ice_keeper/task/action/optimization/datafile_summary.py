@@ -332,7 +332,7 @@ class DataFilesSummary:
     @staticmethod
     def _parse_interval(value: str) -> tuple[str, int]:
         """Parse a relative time string (e.g. '1d', '24h', '3M', '1Y') into a parsed interval."""
-        if not value or len(value) < 2:
+        if not value or len(value) < 2:  # noqa: PLR2004
             msg = f"Invalid interval '{value!r}'. Expected a non-empty string like '1d', '24h', '3M', or '1Y'."
             raise ValueError(msg)
         unit_map = {
