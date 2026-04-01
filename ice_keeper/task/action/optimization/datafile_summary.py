@@ -37,15 +37,15 @@ class DataFiles(ABC):
 
     @abstractmethod
     def get_max_age_to_optimize(self) -> int:
-        """Abstract method to fetch the minimum age for optimization."""
+        """Abstract method to fetch the maximum age for optimization."""
 
     @abstractmethod
     def get_min_partition_to_optimize(self) -> str:
-        """Abstract method to fetch the minimum age for optimization."""
+        """Abstract method to fetch the minimum partition for optimization."""
 
     @abstractmethod
     def get_max_partition_to_optimize(self) -> str:
-        """Abstract method to fetch the minimum age for optimization."""
+        """Abstract method to fetch the maximum partition for optimization."""
 
 
 class DataFilesBinpack(DataFiles):
@@ -593,7 +593,7 @@ class DataFilesSummary:
                     sum(ceil(sum_file_size / target_file_size)) over(partition by partition_age) as target_num_files_per_age
                 from
                     agg_data_files
-                {% if is_partitioned %}
+                {% if partition_filter_stmt %}
                 where
                     {{ partition_filter_stmt }}
                 {% endif %}
@@ -627,7 +627,7 @@ class DataFilesSummary:
                     (num_files_targetted_for_rewrite > {{ num_files_targetted_for_rewrite_threshold }} or n_delete_files > 0) as should_binpack
                 from
                     agg_data_files
-                {% if is_partitioned %}
+                {% if partition_filter_stmt  %}
                 where
                     {{ partition_filter_stmt }}
                 order by

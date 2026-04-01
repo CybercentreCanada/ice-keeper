@@ -127,7 +127,7 @@ class Transformation(BaseModel):
                 num_buckets=partition_field.transform.num_buckets,
                 catalog=catalog,
             )
-        if isinstance(partition_field.transform, VoidTransform | UnknownTransform):
+        if isinstance(partition_field.transform, (VoidTransform, UnknownTransform)):
             return NotPartitionedTransformation(source_field_path_escaped="", partition_field_escaped="")
 
         msg = f"Unsupported partition transform {type(partition_field.transform).__name__!s} for field '{partition_field.name}'"

@@ -27,8 +27,6 @@ def test_zorder_2_optimized() -> None:
 
     # Verify the results
     assert len(results) == 3
-    print("HERE")
-    print(results[0]["zorder_key"])
     assert results[0]["zorder_key"] == bytearray(
         [0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03]
     )
