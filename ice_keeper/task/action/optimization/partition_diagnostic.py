@@ -1,5 +1,6 @@
 import logging
 
+from jinja2 import Template
 from pyspark.sql.types import Row
 
 from ice_keeper.stm import STL
@@ -61,22 +62,35 @@ class PartitionDiagnosis:
         grouping_stmt = self.spec.make_diagnosis_grouping_stmt(self.mnt_props.optimize_partition_depth)
 
         # Construct SQL query to retrieve partitions that satisfy the optimization criteria
-        sql = f"""
-                -- Identifying partitions to optimize for table {self.mnt_props.full_name}
+        sql_template = Template("""
+                -- Identifying partitions to optimize for table {{ full_name }}
                 select
                     partition_age,
-                    {grouping_stmt},
+                    {% if is_partitioned %}
+                    {{ grouping_stmt }},
+                    {% endif %}
                     first(target_file_size) as target_file_size -- all values are the same per partition
                 from
-                    {summary.summary_before_view_name}
+                    {{ summary_before_view_name }}
                 where
-                    {criteria}
+                    {{ criteria }}
                 group by
-                    partition_age,
-                    {grouping_stmt}
+                    partition_age
+                    {% if is_partitioned %}
+                    , {{ grouping_stmt }}
+                    {% endif %}
                 order by
                     partition_age asc
-                """
+                """)
+        # Render the SQL query with all required variables
+        sql = sql_template.render(
+            is_partitioned=self.spec.is_partitioned,
+            grouping_stmt=grouping_stmt,
+            criteria=criteria,
+            summary_before_view_name=summary.summary_before_view_name,
+            full_name=self.mnt_props.full_name,
+        )
+
         # Log the SQL query for debugging
         logger.debug("Executing SQL to find partitions to optimize:\n%s", sql)
 

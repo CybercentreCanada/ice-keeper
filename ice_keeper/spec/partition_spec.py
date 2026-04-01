@@ -3,11 +3,10 @@ import logging
 import re
 
 from pydantic import BaseModel
-from pyiceberg.partitioning import PartitionField, PartitionSpec
+from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
-from pyiceberg.transforms import VoidTransform
-from pyiceberg.types import DateType, IcebergType, StringType, TimestampType, TimestamptzType, TimeType
+from pyiceberg.types import DateType, IcebergType, TimestampType, TimestamptzType, TimeType
 from pyspark.sql.types import Row
 
 from ice_keeper import escape_identifier
@@ -16,6 +15,7 @@ from ice_keeper.catalog import load_table
 from .transformation import (
     DayTransformation,
     HourTransformation,
+    IdentityTransformation,
     MonthTransformation,
     Transformation,
     YearTransformation,
@@ -57,7 +57,11 @@ class Partition(BaseModel):
 
     def is_temporal_column(self) -> bool:
         # Use the field (column) type to determine if it is temporal.
-        return self.source_field_type in [TimestampType(), TimestamptzType(), TimeType(), DateType()]
+        if self.is_temporal_transformation():
+            return True
+        if isinstance(self.transformation, IdentityTransformation):
+            return self.source_field_type in [TimestampType(), TimestamptzType(), TimeType(), DateType()]
+        return False
 
     def applies_to_diagnosis_row(self, row: Row) -> bool:
         return self.partition_field_alias in row
@@ -148,11 +152,6 @@ class PartitionSpecification:
         partition_name_escaped = escape_identifier(partition_name)
         return next((p for p in self.partition_list if p.transformation.partition_field_escaped == partition_name_escaped), None)
 
-    # @classmethod
-    # def make_not_partitioned_spec(cls, spec_id: int = 0) -> "PartitionSpecification":
-    #     PartitionSpecification.from_pyiceberg()
-    #     return PartitionSpecification([Partition(NotPartitionedTransformation())], spec_id, is_partitioned=False)
-
     def make_order_stmt(self) -> str:
         """Generate an SQL statement for ordering partitions.
 
@@ -161,6 +160,8 @@ class PartitionSpecification:
         Returns:
             str: SQL statement for ordering partitions by descending order.
         """
+        if not self.is_partitioned:
+            return ""
         return ",".join([f"{partition.partition_field_alias} desc" for partition in self.partition_list])
 
     def make_grouping_stmt(self) -> str:
@@ -172,28 +173,63 @@ class PartitionSpecification:
             str: A SQL 'GROUP BY' expression that includes the `spec_id` and
                  all partition identifiers.
         """
-        partition_stmts = ",".join([partition.partition_field_alias for partition in self.partition_list])
-        return f"spec_id, {partition_stmts}"
+        grouping_stmts = ["spec_id"]
+        if self._is_time_partitioned():
+            grouping_stmts.append("partition_time")
+        if self.is_partitioned:
+            grouping_stmts.extend([partition.partition_field_alias for partition in self.partition_list])
+        return ", ".join(grouping_stmts)
+
+    def _is_time_partitioned(self) -> bool:
+        """Check if the partition specification includes any temporal partitions."""
+        if not self.is_partitioned:
+            return False
+        return self.get_base_partition().is_temporal_transformation() or self.get_base_partition().is_temporal_column()
+
+    def make_partition_time_alias_stmt(self) -> str:
+        """Create a partition_time alias statement.
+
+        Use the time based partition alias for example ts_day and compute the corresponding timestamp
+        of the partition given that hours, months and year are an integer since epoch.
+        """
+        if not self._is_time_partitioned():
+            return ""
+
+        partition_time_stmt = ""
+        partition_field = f"{self.get_base_partition().partition_field_alias}"
+        if self.get_base_partition().is_temporal_transformation():
+            if isinstance(self.get_base_partition().transformation, YearTransformation):
+                partition_time_stmt = f"timestamp '1970-01-01 00:00:00' + ({partition_field} * interval '1' year)"
+            elif isinstance(self.get_base_partition().transformation, MonthTransformation):
+                partition_time_stmt = f"timestamp '1970-01-01 00:00:00' + ({partition_field} * interval '1' month)"
+            elif isinstance(self.get_base_partition().transformation, DayTransformation):
+                # Spark represents this as a date already when returning partitions by day.
+                partition_time_stmt = partition_field
+            elif isinstance(self.get_base_partition().transformation, HourTransformation):
+                partition_time_stmt = f"timestamp '1970-01-01 00:00:00' + ({partition_field} * interval '1' hour)"
+            else:
+                msg = f"Unsupported temporal transformation: {type(self.get_base_partition().transformation)}"
+                raise ValueError(msg)
+        elif self.get_base_partition().is_temporal_column():
+            partition_time_stmt = partition_field
+
+        return f"{partition_time_stmt} as partition_time"
 
     def make_alias_stmt(self) -> str:
         """Generate an SQL alias statement for partitions.
 
         The alias assigns a name/alias to the partition columns for easier referencing.
-        If the table is not partitioned, all rows are treated as belonging to a single
-        virtual partition using a fixed value.
 
         Returns:
             str: Alias statement representing the partition columns.
         """
+        alias_stmts: list[str] = ["spec_id as spec_id"]
         if self.is_partitioned:
-            stmt = ",".join(
+            alias_stmts.extend(
                 f"partition.{partition.transformation.partition_field_escaped} as {partition.partition_field_alias}"
                 for partition in self.partition_list
             )
-        else:
-            partition = self.get_base_partition()
-            stmt = f"'fix_val' as {partition.partition_field_alias}"
-        return stmt
+        return ", ".join(alias_stmts)
 
     def make_diagnosis_grouping_stmt(self, optimize_partition_depth: int) -> str:
         """Generate an SQL expression for grouping partitions for optimization.
@@ -267,33 +303,21 @@ class PartitionSpecification:
             PartitionSpecification: The partition specification for the Iceberg table.
         """
         if spec.is_unpartitioned():
-            return cls._create_unpartitioned_spec(catalog, spec)
+            return cls._create_unpartitioned_spec(spec)
 
         return cls._create_partitioned_spec(catalog, spec, schema)
 
     @classmethod
-    def _create_unpartitioned_spec(cls, catalog: str, spec: PartitionSpec) -> "PartitionSpecification":
+    def _create_unpartitioned_spec(cls, spec: PartitionSpec) -> "PartitionSpecification":
         """Create a PartitionSpecification for an unpartitioned table.
 
         Args:
-            catalog (str): The catalog for the table.
             spec (PartitionSpec): PyIceberg PartitionSpec object.
 
         Returns:
             PartitionSpecification: A specification indicating unpartitioned data.
         """
-        partition_field_alias = "not_partitioned"
-        source_field_type: IcebergType = StringType()
-        source_field_path_escaped = "not_partitioned"
-        partition_field = PartitionField(source_id=1, field_id=1000, name="not_partitioned", transform=VoidTransform())
-        ice_keeper_transform = Transformation.from_pyiceberg(source_field_path_escaped, partition_field, catalog)
-        partition_list = [
-            Partition(
-                partition_field_alias=partition_field_alias,
-                source_field_type=source_field_type,
-                transformation=ice_keeper_transform,
-            )
-        ]
+        partition_list: list[Partition] = []
 
         return PartitionSpecification(partition_list, spec.spec_id, is_partitioned=False)
 

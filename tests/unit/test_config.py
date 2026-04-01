@@ -254,7 +254,7 @@ class TestTemplateSearchPaths:
         config = Config.load_config(temp_config_file)
         paths: list[Path] = config.template_search_paths
 
-        assert len(paths) == 2  # noqa: PLR2004
+        assert len(paths) == 2
         assert paths[0] == Path(temp_template_dir).resolve()
         assert paths[1].name == "templates"
 
@@ -343,7 +343,7 @@ class TestTemplateNameEnum:
 
     def test_template_name_count(self) -> None:
         """Test that we have the expected number of templates."""
-        assert len(TemplateName) == 9  # noqa: PLR2004
+        assert len(TemplateName) == 9
 
 
 class TestConfigValidation:

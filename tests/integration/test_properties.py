@@ -41,7 +41,7 @@ def test_default_tblproperties(table: Table) -> None:
     assert not entry.should_rewrite_manifest, "Defaults to false"
     assert not entry.should_apply_lifecycle, "Defaults to false"
     assert not entry.should_optimize, "Defaults to false"
-    assert entry.target_file_size_bytes == 536870912, "Defaults to 512MB"  # noqa: PLR2004
+    assert entry.target_file_size_bytes == 536870912, "Defaults to 512MB"
 
 
 def test_explicit_diabled_tblproperties(table: Table) -> None:
@@ -123,15 +123,15 @@ def test_should_expire_snapshots(table: Table) -> None:
 def test_target_file_size_bytes(table: Table) -> None:
     table.metadata.properties[IceKeeperTblProperty.WRITE_TARGET_FILE_SIZE_BYTES] = "10000"
     entry = MaintenanceScheduleRecord.from_iceberg_table(table).to_entry()
-    assert entry.target_file_size_bytes == 10000  # noqa: PLR2004
+    assert entry.target_file_size_bytes == 10000
     table.metadata.properties[IceKeeperTblProperty.WRITE_TARGET_FILE_SIZE_BYTES] = "20000"
     entry = MaintenanceScheduleRecord.from_iceberg_table(table).to_entry()
-    assert entry.target_file_size_bytes == 20000  # noqa: PLR2004
+    assert entry.target_file_size_bytes == 20000
     table.metadata.properties[IceKeeperTblProperty.OPTIMIZATION_TARGET_FILE_SIZE_BYTES] = "30000"
     table.metadata.properties[IceKeeperTblProperty.WRITE_TARGET_FILE_SIZE_BYTES] = "10000"
     entry = MaintenanceScheduleRecord.from_iceberg_table(table).to_entry()
     # icekeeper overrides iceberg's table config
-    assert entry.target_file_size_bytes == 30000  # noqa: PLR2004
+    assert entry.target_file_size_bytes == 30000
 
 
 @pytest.mark.integration

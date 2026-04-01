@@ -50,7 +50,7 @@ def test_interleave_table() -> None:
 
     # Verify specific values in the table
     assert INTERLEAVE_TABLE[0, 0] == 0
-    assert INTERLEAVE_TABLE[255, 255] == 0xFFFF  # noqa: PLR2004
+    assert INTERLEAVE_TABLE[255, 255] == 0xFFFF
 
 
 def test_interleave_1_with_1() -> None:
@@ -67,7 +67,7 @@ def test_interleave_1_with_1() -> None:
 
     # Verify that the interleaved result is 3
     assert result[0, 14] == 0
-    assert result[0, 15] == 3  # noqa: PLR2004
+    assert result[0, 15] == 3
 
 
 # ============================================================================
@@ -289,7 +289,7 @@ def test_binary_short() -> None:
 
     # First row should have 0x01, 0x02, then zeros
     assert result[0, 0] == 0x01
-    assert result[0, 1] == 0x02  # noqa: PLR2004
+    assert result[0, 1] == 0x02
     assert np.all(result[0, 2:] == 0)
 
 
@@ -336,7 +336,7 @@ def test_interleave_ones() -> None:
     result = interleave_with_lookup(bytes1, bytes2)
 
     assert result.shape == (2, 16)
-    assert np.all(result == 0xFF)  # noqa: PLR2004
+    assert np.all(result == 0xFF)
 
 
 def test_interleave_alternating_patterns() -> None:
@@ -347,8 +347,8 @@ def test_interleave_alternating_patterns() -> None:
 
     assert result.shape == (1, 16)
     # Interleaved pattern should be different from inputs
-    assert not np.all(result == 0xAA)  # noqa: PLR2004
-    assert not np.all(result == 0x55)  # noqa: PLR2004
+    assert not np.all(result == 0xAA)
+    assert not np.all(result == 0x55)
 
 
 def test_interleave_single_bit() -> None:
@@ -360,7 +360,7 @@ def test_interleave_single_bit() -> None:
     bytes2[0, 7] = 0x01
 
     result = interleave_with_lookup(bytes1, bytes2)
-    assert result[0, 15] == 0x03  # Both bits set in interleaved result  # noqa: PLR2004
+    assert result[0, 15] == 0x03  # Both bits set in interleaved result
 
 
 def test_interleave_deterministic() -> None:
@@ -412,9 +412,9 @@ def test_table_dimensions() -> None:
 def test_table_corners() -> None:
     """Test corner values of lookup table."""
     assert INTERLEAVE_TABLE[0, 0] == 0
-    assert INTERLEAVE_TABLE[255, 255] == 0xFFFF  # noqa: PLR2004
-    assert INTERLEAVE_TABLE[255, 0] == 0xAAAA  # 10101010 10101010  # noqa: PLR2004
-    assert INTERLEAVE_TABLE[0, 255] == 0x5555  # 01010101 01010101  # noqa: PLR2004
+    assert INTERLEAVE_TABLE[255, 255] == 0xFFFF
+    assert INTERLEAVE_TABLE[255, 0] == 0xAAAA  # 10101010 10101010
+    assert INTERLEAVE_TABLE[0, 255] == 0x5555  # 01010101 01010101
 
 
 def test_table_symmetry() -> None:

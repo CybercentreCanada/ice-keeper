@@ -60,7 +60,7 @@ class STL:
 
 
 def print_stm(sql: str) -> None:
-    pretty_sql = sql_format(sql, indent_after_first=True, reindent_aligned=True, keyword_case="lower", compact=False)
+    pretty_sql = sql_format(sql, indent_after_first=True, reindent_aligned=True, keyword_case="lower", strip_comments=True)
     sql = "\n" + pretty_sql
     logger.debug(sql)
 

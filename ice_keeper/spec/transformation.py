@@ -12,6 +12,8 @@ from pyiceberg.transforms import (
     IdentityTransform,
     MonthTransform,
     TruncateTransform,
+    UnknownTransform,
+    VoidTransform,
     YearTransform,
 )
 
@@ -125,9 +127,11 @@ class Transformation(BaseModel):
                 num_buckets=partition_field.transform.num_buckets,
                 catalog=catalog,
             )
-        return NotPartitionedTransformation(
-            source_field_path_escaped="not_partitioned", partition_field_escaped="not_partitioned"
-        )
+        if isinstance(partition_field.transform, (VoidTransform, UnknownTransform)):
+            return NotPartitionedTransformation(source_field_path_escaped="", partition_field_escaped="")
+
+        msg = f"Unsupported partition transform {type(partition_field.transform).__name__!s} for field '{partition_field.name}'"
+        raise ValueError(msg)
 
 
 class IdentityTransformation(Transformation):

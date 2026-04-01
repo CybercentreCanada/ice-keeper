@@ -92,6 +92,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = [
+    "PLR2004", # magic-value-comparison
     "SLF001", # private-member-access
     "T201",   # print
 ]

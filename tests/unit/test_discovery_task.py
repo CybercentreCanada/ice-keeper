@@ -279,7 +279,7 @@ class TestSyncSchemaFoundInCatalog:
         task = DiscoveryTask(schedule, CATALOG, SCHEMA)
         task.sync_schema_found_in_catalog()
 
-        assert mock_load_table.call_count == 2  # noqa: PLR2004
+        assert mock_load_table.call_count == 2
         merged: set[MaintenanceScheduleEntry] = schedule.merge_entries.call_args[0][0]
         assert len(merged) == 1
 

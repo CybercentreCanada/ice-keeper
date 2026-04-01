@@ -32,6 +32,8 @@ class IceKeeperTblProperty:
     OPTIMIZATION_STRATEGY = "ice-keeper.optimization-strategy"
     MIN_AGE_TO_OPTIMIZE = "ice-keeper.min-age-to-optimize"
     MAX_AGE_TO_OPTIMIZE = "ice-keeper.max-age-to-optimize"
+    MIN_PARTITION_TO_OPTIMIZE = "ice-keeper.min-partition-to-optimize"
+    MAX_PARTITION_TO_OPTIMIZE = "ice-keeper.max-partition-to-optimize"
     OPTIMIZATION_TARGET_FILE_SIZE_BYTES = "ice-keeper.optimization-target-file-size-bytes"
     OPTIMIZE_PARTITION_DEPTH = "ice-keeper.optimize-partition-depth"
     RETENTION_NUM_SNAPSHOTS = "ice-keeper.retention-num-snapshots"
@@ -48,6 +50,8 @@ class IceKeeperTblProperty:
     WIDENING_RULE_SRC_PARTITION = "ice-keeper.widening.rule.src.partition"
     WIDENING_RULE_DST_PARTITION = "ice-keeper.widening.rule.dst.partition"
     WIDENING_RULE_MIN_AGE_TO_WIDEN = "ice-keeper.widening.rule.min.age.to.widen"
+    WIDENING_RULE_MIN_PARTITION_TO_WIDEN = "ice-keeper.widening.rule.min-partition-to-widen"
+    WIDENING_RULE_MAX_PARTITION_TO_WIDEN = "ice-keeper.widening.rule.max-partition-to-widen"
 
     @classmethod
     @cache

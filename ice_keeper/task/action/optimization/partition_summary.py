@@ -63,7 +63,8 @@ class PartitionSummary:
     def _create_and_cache(self, view_name: str) -> None:
         """Creates and caches a temporary summary view."""
         sql = self.datafiles_summary.create_summary_stmt()
-        STL.sql_and_log(sql, "Create temporary view").createOrReplaceTempView(view_name)
+        df = STL.sql_and_log(sql, "Create temporary view")
+        df.createOrReplaceTempView(view_name)
         STL.sql(f"cache table {view_name}", f"Caching table: {view_name}")
 
     def _uncache_view(self, view_name: str) -> None:

@@ -30,7 +30,6 @@ class WideningRule:
             will be considered for widening. For example, "partition.category in ('leading', 'lagging')".
         partition_specs (dict[int, "PartitionSpecification"]): A dictionary of partition specifications used
             to find the source and destination partitions for the widening operation.
-        min_age_to_widen (int): The minimum age (in days) required for a partition to be eligible for widening.
         partition_depth_required (int): The minimum number of sub-partition levels required in the source
             and destination partition specifications to proceed with widening. This value will be tested against the table's
             optimize_partition_depth, making sure the rewrite_data_files includes these required sub partitions.
@@ -53,7 +52,6 @@ class WideningRule:
             "partition.category in ('leading', 'lagging')").
         partition_specs (dict[int, "PartitionSpecification"]): The data structure containing details of all available
             partition specifications, needed to identify the source and destination partitions.
-        min_age_to_widen (int): The minimum age (in days) for a partition to qualify for widening.
 
     Notes:
         - Before performing a widening operation, the class checks that all `required_fixed_columns`
@@ -72,7 +70,6 @@ class WideningRule:
         dst_partition_name: str,
         required_fixed_columns: list[str],
         filter_expr: str,
-        min_age_to_widen: int,
     ) -> None:
         self.partition_specs = partition_specs
         self.required_fixed_columns = [
@@ -80,7 +77,6 @@ class WideningRule:
             for required in required_fixed_columns
         ]
         self.filter_expr = filter_expr
-        self.min_age_to_widen = min_age_to_widen
         self.partition_depth_required = len(self.required_fixed_columns) + 1
         self.src_partition_name = self.strip_partition_prefix(
             src_partition_name, IceKeeperTblProperty.WIDENING_RULE_SRC_PARTITION
@@ -105,7 +101,6 @@ class WideningRule:
             f"dst_partition_name='{self.dst_partition_name}', "
             f"required_fixed_columns={self.required_fixed_columns}, "
             f"filter_expr='{self.filter_expr}', "
-            f"min_age_to_widen={self.min_age_to_widen}"
             ")"
         )
 

@@ -22,7 +22,7 @@ def test_reset_maintenance_with_location_and_email() -> None:
             MaintenanceSchedule.reset()
 
             # Verify SQL calls
-            assert mock_stl.call_count == 2  # noqa: PLR2004
+            assert mock_stl.call_count == 2
 
             # Check DROP statement
             drop_call: Any = mock_stl.call_args_list[0]
@@ -62,7 +62,7 @@ def test_reset_maintenance_with_no_location_and_no_email() -> None:
             MaintenanceSchedule.reset()
 
             # Verify SQL calls
-            assert mock_stl.call_count == 2  # noqa: PLR2004
+            assert mock_stl.call_count == 2
 
             # Check DROP statement
             drop_call: Any = mock_stl.call_args_list[0]

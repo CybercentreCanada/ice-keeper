@@ -24,8 +24,10 @@ DEFAULTS = {
     "optimize_partition_depth": 1,
     "optimization_strategy": "",
     "should_optimize": False,
-    "min_age_to_optimize": 2,  # Default to optimizing the previous age, not the current one (1)
-    "max_age_to_optimize": 72,
+    "min_age_to_optimize": -1,  # Deprecated configuration, default to -1 indicating it is not set and we should be using min_partition_to_optimize instead.
+    "max_age_to_optimize": -1,
+    "min_partition_to_optimize": "1d",
+    "max_partition_to_optimize": "7d",
     "target_file_size_bytes": 536870912,
     "should_expire_snapshots": True,
     "retention_days_snapshots": 7,
@@ -42,7 +44,9 @@ DEFAULTS = {
     "widening_rule_required_partition_columns": "",
     "widening_rule_src_partition": "",
     "widening_rule_dst_partition": "",
-    "widening_rule_min_age_to_widen": 1,
+    "widening_rule_min_age_to_widen": -1,
+    "widening_rule_min_partition_to_widen": "1M",
+    "widening_rule_max_partition_to_widen": "2M",
     "table_location": "",
 }
 
@@ -66,6 +70,8 @@ class MaintenanceScheduleRecord(BaseModel):
     should_optimize: bool | None = None
     min_age_to_optimize: int | None = None
     max_age_to_optimize: int | None = None
+    min_partition_to_optimize: str | None = None
+    max_partition_to_optimize: str | None = None
     target_file_size_bytes: int | None = None
     should_expire_snapshots: bool | None = None
     retention_days_snapshots: int | None = None
@@ -83,6 +89,8 @@ class MaintenanceScheduleRecord(BaseModel):
     widening_rule_src_partition: str | None = None
     widening_rule_dst_partition: str | None = None
     widening_rule_min_age_to_widen: int | None = None
+    widening_rule_min_partition_to_widen: str | None = None
+    widening_rule_max_partition_to_widen: str | None = None
     table_location: str | None = None
 
     def to_entry(self) -> "MaintenanceScheduleEntry":
@@ -101,6 +109,8 @@ class MaintenanceScheduleRecord(BaseModel):
             should_optimize BOOLEAN,
             min_age_to_optimize INT,
             max_age_to_optimize INT,
+            min_partition_to_optimize STRING,
+            max_partition_to_optimize STRING,
             target_file_size_bytes BIGINT,
             should_expire_snapshots BOOLEAN,
             retention_days_snapshots INT,
@@ -118,6 +128,8 @@ class MaintenanceScheduleRecord(BaseModel):
             widening_rule_src_partition STRING,
             widening_rule_dst_partition STRING,
             widening_rule_min_age_to_widen INT,
+            widening_rule_min_partition_to_widen STRING,
+            widening_rule_max_partition_to_widen STRING,
             table_location STRING
             """
 
@@ -266,6 +278,8 @@ class MaintenanceScheduleRecord(BaseModel):
         parsed["optimization_strategy"] = cls._get_string(tblproperties, IceKeeperTblProperty.OPTIMIZATION_STRATEGY)
         parsed["min_age_to_optimize"] = cls._get_int(tblproperties, IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE)
         parsed["max_age_to_optimize"] = cls._get_int(tblproperties, IceKeeperTblProperty.MAX_AGE_TO_OPTIMIZE)
+        parsed["min_partition_to_optimize"] = cls._get_string(tblproperties, IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE)
+        parsed["max_partition_to_optimize"] = cls._get_string(tblproperties, IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE)
         if tblproperties.get(IceKeeperTblProperty.OPTIMIZATION_TARGET_FILE_SIZE_BYTES):
             parsed["target_file_size_bytes"] = cls._get_int(
                 tblproperties, IceKeeperTblProperty.OPTIMIZATION_TARGET_FILE_SIZE_BYTES
@@ -318,6 +332,16 @@ class MaintenanceScheduleRecord(BaseModel):
         parsed["widening_rule_min_age_to_widen"] = cls._get_int(
             tblproperties,
             IceKeeperTblProperty.WIDENING_RULE_MIN_AGE_TO_WIDEN,
+        )
+
+        parsed["widening_rule_min_partition_to_widen"] = cls._get_string(
+            tblproperties,
+            IceKeeperTblProperty.WIDENING_RULE_MIN_PARTITION_TO_WIDEN,
+        )
+
+        parsed["widening_rule_max_partition_to_widen"] = cls._get_string(
+            tblproperties,
+            IceKeeperTblProperty.WIDENING_RULE_MAX_PARTITION_TO_WIDEN,
         )
         return parsed
 
@@ -377,6 +401,14 @@ class MaintenanceScheduleEntry:
     @property
     def max_age_to_optimize(self) -> int:
         return self._record.get("max_age_to_optimize")
+
+    @property
+    def min_partition_to_optimize(self) -> str:
+        return self._record.get("min_partition_to_optimize")
+
+    @property
+    def max_partition_to_optimize(self) -> str:
+        return self._record.get("max_partition_to_optimize")
 
     @property
     def target_file_size_bytes(self) -> int:
@@ -445,6 +477,14 @@ class MaintenanceScheduleEntry:
     @property
     def widening_rule_min_age_to_widen(self) -> int:
         return self._record.get("widening_rule_min_age_to_widen")
+
+    @property
+    def widening_rule_min_partition_to_widen(self) -> str:
+        return self._record.get("widening_rule_min_partition_to_widen")
+
+    @property
+    def widening_rule_max_partition_to_widen(self) -> str:
+        return self._record.get("widening_rule_max_partition_to_widen")
 
     def get_widening_rule_required_partition_columns(self) -> list[str]:
         """Parses the `widening_rule_required_partition_columns` attribute into a list of column names.

@@ -1,11 +1,16 @@
 import logging
 from abc import ABC, abstractmethod
 
+from jinja2 import Template
+from pyspark.sql.functions import pandas_udf
+from pyspark.sql.types import BinaryType
 from typing_extensions import override
 
 from ice_keeper import IceKeeperTblProperty
 from ice_keeper.spec import PartitionSpecification, WideningRule
+from ice_keeper.stm import STL
 from ice_keeper.table import MaintenanceScheduleEntry
+from ice_keeper.zorder_udf import zorder2Tuple
 
 from .datafiles_bounds import Bounds, BoundsBinpack, BoundsSort, BoundsZorderSort
 
@@ -32,22 +37,37 @@ class DataFiles(ABC):
 
     @abstractmethod
     def get_min_age_to_optimize(self) -> int:
-        """Abstract method to fetch the minimum age for optimization.
+        """Abstract method to fetch the minimum age for optimization."""
 
-        Returns:
-            int: Minimum age (in days or equivalent units) for optimization eligibility.
-        """
+    @abstractmethod
+    def get_max_age_to_optimize(self) -> int:
+        """Abstract method to fetch the maximum age for optimization."""
+
+    @abstractmethod
+    def get_min_partition_to_optimize(self) -> str:
+        """Abstract method to fetch the minimum partition for optimization."""
+
+    @abstractmethod
+    def get_max_partition_to_optimize(self) -> str:
+        """Abstract method to fetch the maximum partition for optimization."""
 
 
 class DataFilesBinpack(DataFiles):
     @override
     def get_min_age_to_optimize(self) -> int:
-        """Fetch the minimum age for binpack optimizations.
-
-        Returns:
-            int: Minimum number of days before files are eligible for optimization.
-        """
         return self.mnt_props.min_age_to_optimize
+
+    @override
+    def get_max_age_to_optimize(self) -> int:
+        return self.mnt_props.max_age_to_optimize
+
+    @override
+    def get_min_partition_to_optimize(self) -> str:
+        return self.mnt_props.min_partition_to_optimize
+
+    @override
+    def get_max_partition_to_optimize(self) -> str:
+        return self.mnt_props.max_partition_to_optimize
 
     @override
     def make_data_files_stmt(self) -> str:
@@ -59,7 +79,6 @@ class DataFilesBinpack(DataFiles):
         return f"""
             select
                 {self.spec.make_alias_stmt()},
-                spec_id,
                 content,
                 record_count,
                 file_size_in_bytes,
@@ -73,12 +92,18 @@ class DataFilesBinpack(DataFiles):
 class DataFilesSort(DataFiles):
     @override
     def get_min_age_to_optimize(self) -> int:
-        """Fetch the minimum age for sorting-based optimizations.
-
-        Returns:
-            int: Minimum number of days before files are eligible for optimization.
-        """
         return self.mnt_props.min_age_to_optimize
+
+    def get_max_age_to_optimize(self) -> int:
+        return self.mnt_props.max_age_to_optimize
+
+    @override
+    def get_min_partition_to_optimize(self) -> str:
+        return self.mnt_props.min_partition_to_optimize
+
+    @override
+    def get_max_partition_to_optimize(self) -> str:
+        return self.mnt_props.max_partition_to_optimize
 
     @override
     def make_data_files_stmt(self) -> str:
@@ -90,7 +115,6 @@ class DataFilesSort(DataFiles):
         return f"""
             select
                 {self.spec.make_alias_stmt()},
-                spec_id,
                 content,
                 record_count,
                 file_size_in_bytes,
@@ -138,12 +162,18 @@ class DataFilesWideningSort(DataFiles):
             raise Exception(msg)
 
     def get_min_age_to_optimize(self) -> int:
-        """Fetch the minimum age required for applying the widening rule.
+        return self.mnt_props.widening_rule_min_age_to_widen
 
-        Returns:
-            int: Minimum age to optimize based on the widening rule.
-        """
-        return self.widening_rule.min_age_to_widen
+    def get_max_age_to_optimize(self) -> int:
+        return self.mnt_props.max_age_to_optimize
+
+    @override
+    def get_min_partition_to_optimize(self) -> str:
+        return self.mnt_props.widening_rule_min_partition_to_widen
+
+    @override
+    def get_max_partition_to_optimize(self) -> str:
+        return self.mnt_props.widening_rule_max_partition_to_widen
 
     @override
     def make_data_files_stmt(self) -> str:
@@ -176,7 +206,6 @@ class DataFilesWideningSort(DataFiles):
             (
                 select
                     {self.spec.make_alias_stmt()},
-                    spec_id,
                     content,
                     record_count,
                     file_size_in_bytes,
@@ -189,7 +218,6 @@ class DataFilesWideningSort(DataFiles):
             (
                 select
                     {self._make_partition_widening_stmt()},
-                    {self.widening_rule.dst_widening.partition_spec.spec_id} as spec_id,
                     content,
                     record_count,
                     file_size_in_bytes,
@@ -211,15 +239,17 @@ class DataFilesWideningSort(DataFiles):
         """
         dst_widening_expr = self.widening_rule.make_diagnosis_widening_expr_stmt()
         dst_widening_partition = self.widening_rule.dst_widening.partition
-        widening_partition_alias = f"{dst_widening_expr} as {dst_widening_partition.partition_field_alias}"
 
-        partition_alias = [
-            widening_partition_alias
-            if partition == dst_widening_partition
-            else f"partition.{partition.transformation.partition_field_escaped} as {partition.partition_field_alias}"
-            for partition in self.spec.partition_list
-        ]
-        return ",".join(partition_alias)
+        alias_stmts: list[str] = [f"{self.widening_rule.dst_widening.partition_spec.spec_id} as spec_id"]
+        alias_stmts.extend(
+            [
+                f"{dst_widening_expr} as {dst_widening_partition.partition_field_alias}"
+                if partition == dst_widening_partition
+                else f"partition.{partition.transformation.partition_field_escaped} as {partition.partition_field_alias}"
+                for partition in self.spec.partition_list
+            ]
+        )
+        return ",".join(alias_stmts)
 
 
 class DataFilesSummary:
@@ -243,7 +273,7 @@ class DataFilesSummary:
             msg = f"Widening partition in table {mnt_props.full_name}, however table is configured to be binpacked which is not supported yet."
             raise Exception(msg)
 
-    def make_age_filter_stmt(self, min_age_to_optimize: int, max_age_to_optimize: int) -> str:
+    def make_partition_filter_stmt(self) -> str:
         """Create a filter to consider only partitions within the specified age range.
 
         This method generates a filter based on the age of temporal partitions in the table, ensuring
@@ -261,7 +291,42 @@ class DataFilesSummary:
             # If the base partition (first-level partition) is temporal (e.g., days or hours),
             # create a filter based on the age range.
             if self.spec.get_base_partition().is_temporal_transformation() or self.spec.get_base_partition().is_temporal_column():
-                filter_stmt = f"partition_age >= {min_age_to_optimize} and partition_age <= ({max_age_to_optimize})"
+                min_age_to_optimize = self.datafiles.get_min_age_to_optimize()
+                max_age_to_optimize = self.datafiles.get_max_age_to_optimize()
+                if min_age_to_optimize >= 0 and max_age_to_optimize >= 0:
+                    filter_stmt = f"partition_age >= {min_age_to_optimize} and partition_age <= ({max_age_to_optimize})"
+                else:
+                    # min/max partition to optimize are strings representing the number of days, hours, months, years
+                    # relative to the current time for example 1d to 7d, 24h to 72h, 1M to 3M, 1Y to 2Y.
+                    min_partition_to_optimize = self.datafiles.get_min_partition_to_optimize()
+                    max_partition_to_optimize = self.datafiles.get_max_partition_to_optimize()
+                    min_unit, min_amount = self._parse_interval(min_partition_to_optimize)
+                    max_unit, max_amount = self._parse_interval(max_partition_to_optimize)
+                    if min_unit != max_unit:
+                        msg = (
+                            f"min-partition-to-optimize '{min_partition_to_optimize}' and "
+                            f"max-partition-to-optimize '{max_partition_to_optimize}' must use the same unit, "
+                            f"but got '{min_unit}' and '{max_unit}'."
+                        )
+                        raise ValueError(msg)
+                    if max_amount < min_amount:
+                        msg = (
+                            f"max-partition-to-optimize '{max_partition_to_optimize}' "
+                            f"must be greater than or equal to min-partition-to-optimize '{min_partition_to_optimize}', "
+                            f"but got max={max_amount} < min={min_amount}."
+                        )
+                        raise ValueError(msg)
+                    # Round down the reference point to the next unit boundary (date_trunc).
+                    # e.g. if max partition_time is 2025-10-15 and unit is 'month',
+                    # the reference becomes 2025-10-01 (start of this month).
+                    # an additional interval is added to the min amount
+                    # an additional interval is substracted from the max amount
+                    max_pt = "(select max(partition_time) from agg_data_files)"
+                    ref_point = f"date_trunc('{min_unit}', {max_pt})"
+                    filter_stmt = (
+                        f"partition_time < timestamp({ref_point} - interval {min_amount} {min_unit} + interval 1 {min_unit} )"
+                        f" and partition_time > timestamp({ref_point} - interval {max_amount} {max_unit} - interval 1 {max_unit} )"
+                    )
             else:
                 # The first partition is not temporal. Check if any sub-partitions are temporal.
                 # Unsupported case: a temporal partition as a secondary partition.
@@ -277,12 +342,63 @@ class DataFilesSummary:
 
         return filter_stmt
 
+    @staticmethod
+    def _parse_interval(value: str) -> tuple[str, int]:
+        """Parse a relative time string (e.g. '1d', '24h', '3M', '1Y') into a parsed interval."""
+        if not value or len(value) < 2:  # noqa: PLR2004
+            msg = f"Invalid interval '{value!r}'. Expected a non-empty string like '1d', '24h', '3M', or '1Y'."
+            raise ValueError(msg)
+        unit_map = {
+            "h": "hour",
+            "d": "day",
+            "m": "month",
+            "y": "year",
+        }
+        suffix = value[-1].lower()
+        if suffix not in unit_map:
+            msg = f"Unsupported interval suffix '{suffix}' in '{value}'. Expected one of: {list(unit_map.keys())}"
+            raise ValueError(msg)
+        amount = value[:-1]
+        if not (amount.isdigit() or (amount.startswith("-") and amount[1:].isdigit())):
+            msg = f"Invalid interval amount '{amount}' in '{value}'. Expected an integer."
+            raise ValueError(msg)
+        unit = unit_map[suffix]
+        return (unit, int(amount))
+
     def _format_bytes_stmt(self, bytes_column: str) -> str:
         return f"""concat(
             round({bytes_column} / power(1024, floor(log(1024, greatest({bytes_column}, 1)))), 2),
             ' ',
             element_at(array('B', 'KB', 'MB', 'GB', 'TB', 'PB'), cast(floor(log(1024, greatest({bytes_column}, 1))) as int) + 1)
         )"""
+
+    def _make_target_file_size_stmt(self) -> str:
+        """Generate the SQL case statement for target file size based on partition size thresholds."""
+        if self.mnt_props.target_file_size_bytes > 0:
+            return str(self.mnt_props.target_file_size_bytes)
+
+        # Target file size based on size of partition from 16MB files up to 1GB.
+        # +-----------------------+----------------+----------------------+------------------------+-----------------------------+----------------------------+
+        # |num_partitions_in_table|table_total_size|table_total_file_count|partition_size_threshold|partition_num_files_threshold|recommended_target_file_size|
+        # +-----------------------+----------------+----------------------+------------------------+-----------------------------+----------------------------+
+        # |300                    |75.0 GB         |4800                  |256.0 MB                |16                           |16.0 MB                     |
+        # |300                    |300.0 GB        |9600                  |1.0 GB                  |32                           |32.0 MB                     |
+        # |300                    |1.17 TB         |19200                 |4.0 GB                  |64                           |64.0 MB                     |
+        # |300                    |4.69 TB         |38400                 |16.0 GB                 |128                          |128.0 MB                    |
+        # |300                    |18.75 TB        |76800                 |64.0 GB                 |256                          |256.0 MB                    |
+        # |300                    |75.0 TB         |153600                |256.0 GB                |512                          |512.0 MB                    |
+        # |300                    |300.0 TB        |307200                |1.0 TB                  |1024                         |1.0 GB                      |
+        # +-----------------------+----------------+----------------------+------------------------+-----------------------------+----------------------------+
+        return """
+        case
+        when sum_file_size < 16L * 16 * 1048576 then 16L * 1048576
+        when sum_file_size < 32L * 32 * 1048576 then 32L * 1048576
+        when sum_file_size < 64L * 64 * 1048576 then 64L * 1048576
+        when sum_file_size < 128L * 128 * 1048576 then 128L * 1048576
+        when sum_file_size < 256L * 256 * 1048576 then 256L * 1048576
+        when sum_file_size < 512L * 512 * 1048576 then 512L * 1048576
+        else 1024L * 1048576 end
+        """
 
     def create_summary_stmt(self, *, estimate_optimization_results: bool = False) -> str:
         """Generate an SQL query for creating a partition diagnostics summary.
@@ -306,92 +422,107 @@ class DataFilesSummary:
               if not explicitly set.
             - The method relies on several helper methods to generate specific SQL fragments,
               such as grouping, bounds, and age filters.
+
+            Example output structure:
+
+            Data file summary: Not partitioned
+            ┏━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+            ┃ spec_id ┃ partition_age ┃ partition_desc  ┃ n_files ┃ num_files_targetted_for_rewrite ┃ n_records ┃ target_file_size ┃ avg_file_size      ┃ min_file_size ┃ max_file_size ┃ sum_file_size ┃ num_files_to_widen ┃ corr ┃ corr_threshold ┃ n_delete_files ┃ n_delete_records ┃ should_sort ┃ should_binpack ┃
+            ┡━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━╇━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+            │ 0       │ 0             │ not partitioned │ 176     │ 176                             │ 79992     │ 536870912        │ 13150.352272727272 │ 13118         │ 13211         │ 2314462       │ 0                  │ 1.0  │ 1.00           │ 0              │ 0                │ False       │ True           │
+            └─────────┴───────────────┴─────────────────┴─────────┴─────────────────────────────────┴───────────┴──────────────────┴────────────────────┴───────────────┴───────────────┴───────────────┴────────────────────┴──────┴────────────────┴────────────────┴──────────────────┴─────────────┴────────────────┘
+
+            Diagnosis result
+            ┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┓
+            ┃ partition_age ┃ target_file_size ┃
+            ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━┩
+            │ 0             │ 536870912        │
+            └───────────────┴──────────────────┘
+
+            Data file summary: Partitioned by hour
+            ┏━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+            ┃ spec_id ┃ partition_time      ┃ submission_ts_hour ┃ partition_age ┃ partition_desc                ┃ n_files ┃ num_files_targetted_for_rewrite ┃ n_records ┃ target_file_size ┃ avg_file_size ┃ min_file_size ┃ max_file_size ┃ sum_file_size ┃ num_files_to_widen ┃ corr ┃ corr_threshold ┃ n_delete_files ┃ n_delete_records ┃ should_sort ┃ should_binpack ┃
+            ┡━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━╇━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+            │ 0       │ 2025-03-03 18:00:00 │ 483618             │ 1             │ {"submission_ts_hour":483618} │ 8       │ 8                               │ 79992     │ 536870912        │ 247131.25     │ 246909        │ 247565        │ 1977050       │ 0                  │ 1.0  │ 1.00           │ 0              │ 0                │ False       │ True           │
+            └─────────┴─────────────────────┴────────────────────┴───────────────┴───────────────────────────────┴─────────┴─────────────────────────────────┴───────────┴──────────────────┴───────────────┴───────────────┴───────────────┴───────────────┴────────────────────┴──────┴────────────────┴────────────────┴──────────────────┴─────────────┴────────────────┘
+
+            Diagnosis result
+            ┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┓
+            ┃ partition_age ┃ submission_ts_hour ┃ target_file_size ┃
+            ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━┩
+            │ 1             │ 483618             │ 536870912        │
+            └───────────────┴────────────────────┴──────────────────┘
+
+            Data file summary: Partitioned by day and bucket
+            ┏━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+            ┃ spec_id ┃ partition_time ┃ ts_day     ┃ id_bucket ┃ partition_age ┃ partition_desc                        ┃ n_files ┃ num_files_targetted_for_rewrite ┃ n_records ┃ target_file_size ┃ avg_file_size ┃ min_file_size ┃ max_file_size ┃ sum_file_size ┃ num_files_to_widen ┃ corr ┃ corr_threshold ┃ n_delete_files ┃ n_delete_records ┃ should_sort ┃ should_binpack ┃
+            ┡━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━╇━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+            │ 0       │ 2025-03-03     │ 2025-03-03 │ 2         │ 1             │ {"ts_day":"2025-03-03","id_bucket":2} │ 8       │ 8                               │ 26801     │ 536870912        │ 86378.125     │ 85472         │ 87719         │ 691025        │ 0                  │ 1.0  │ 1.00           │ 0              │ 0                │ False       │ True           │
+            │ 0       │ 2025-03-03     │ 2025-03-03 │ 1         │ 1             │ {"ts_day":"2025-03-03","id_bucket":1} │ 8       │ 8                               │ 26305     │ 536870912        │ 84802.25      │ 83224         │ 86171         │ 678418        │ 0                  │ 1.0  │ 1.00           │ 0              │ 0                │ False       │ True           │
+            │ 0       │ 2025-03-03     │ 2025-03-03 │ 0         │ 1             │ {"ts_day":"2025-03-03","id_bucket":0} │ 8       │ 8                               │ 26886     │ 536870912        │ 86628.75      │ 83885         │ 88055         │ 693030        │ 0                  │ 1.0  │ 1.00           │ 0              │ 0                │ False       │ True           │
+            └─────────┴────────────────┴────────────┴───────────┴───────────────┴───────────────────────────────────────┴─────────┴─────────────────────────────────┴───────────┴──────────────────┴───────────────┴───────────────┴───────────────┴───────────────┴────────────────────┴──────┴────────────────┴────────────────┴──────────────────┴─────────────┴────────────────┘
+
+            Diagnosis result
+            ┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┓
+            ┃ partition_age ┃ ts_day     ┃ target_file_size ┃
+            ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━┩
+            │ 1             │ 2025-03-03 │ 536870912        │
+            └───────────────┴────────────┴──────────────────┘
+
         """
-        target_file_size_stmt = str(self.mnt_props.target_file_size_bytes)
-        if self.mnt_props.target_file_size_bytes <= 0:
-            # Target file size based on size of partition from 16MB files up to 1GB.
-            # +-----------------------+----------------+----------------------+------------------------+-----------------------------+----------------------------+
-            # |num_partitions_in_table|table_total_size|table_total_file_count|partition_size_threshold|partition_num_files_threshold|recommended_target_file_size|
-            # +-----------------------+----------------+----------------------+------------------------+-----------------------------+----------------------------+
-            # |300                    |75.0 GB         |4800                  |256.0 MB                |16                           |16.0 MB                     |
-            # |300                    |300.0 GB        |9600                  |1.0 GB                  |32                           |32.0 MB                     |
-            # |300                    |1.17 TB         |19200                 |4.0 GB                  |64                           |64.0 MB                     |
-            # |300                    |4.69 TB         |38400                 |16.0 GB                 |128                          |128.0 MB                    |
-            # |300                    |18.75 TB        |76800                 |64.0 GB                 |256                          |256.0 MB                    |
-            # |300                    |75.0 TB         |153600                |256.0 GB                |512                          |512.0 MB                    |
-            # |300                    |300.0 TB        |307200                |1.0 TB                  |1024                         |1.0 GB                      |
-            # +-----------------------+----------------+----------------------+------------------------+-----------------------------+----------------------------+
-            target_file_size_stmt = """
-            case
-            when sum_file_size < 16L * 16 * 1048576 then 16L * 1048576
-            when sum_file_size < 32L * 32 * 1048576 then 32L * 1048576
-            when sum_file_size < 64L * 64 * 1048576 then 64L * 1048576
-            when sum_file_size < 128L * 128 * 1048576 then 128L * 1048576
-            when sum_file_size < 256L * 256 * 1048576 then 256L * 1048576
-            when sum_file_size < 512L * 512 * 1048576 then 512L * 1048576
-            else 1024L * 1048576 end
-            """
+        if self.mnt_props.optimization_spec.is_zordered:
+            # Register UDF in this new Spark session. We are using it to diagnose the table.
+            udf = pandas_udf(zorder2Tuple, returnType=BinaryType())  # type: ignore[call-overload]
+            STL.get().udf.register("zorder2Tuple", udf)
 
-        num_files_targetted_for_rewrite_threshold = 5
-
-        grouping_stmt = self.spec.make_grouping_stmt()
-        data_files_stmt = self.datafiles.make_data_files_stmt()
-        lower_bounds_expr = self.bounds.make_lower_bounds_expr_stmt()
-        upper_bounds_expr = self.bounds.make_upper_bounds_expr_stmt()
-        base_column_name_stmt = self.spec.get_base_partition().partition_field_alias
-        corr_threshold_expr = self.bounds.make_corr_threshold_expr_stmt()
-        min_age_to_optimize = self.datafiles.get_min_age_to_optimize()
-        max_age_to_optimize = self.mnt_props.max_age_to_optimize
-        order_by = self.spec.make_order_stmt()
-        age_filter_stmt = self.make_age_filter_stmt(min_age_to_optimize, max_age_to_optimize)
-
-        cte_to_use = "final_decision" if not estimate_optimization_results else "final_estimate"
-
-        return f"""
-            -- Diagnosing partitioned table '{self.mnt_props.full_name}' for optimization
+        # Define the SQL template
+        sql_template = Template("""
+            -- Diagnosing partitioned table '{{ table_name }}' for optimization
             -- All data files to consider for optimization.
             with data_files as (
+                {{ data_files_stmt }}
+            ),
+            data_files_with_partition_time as (
                 select
-                    {grouping_stmt},
-                    content,
-                    record_count,
-                    file_size_in_bytes,
-                    readable_metrics,
-                    is_data_file_from_widening_src_partition
+                    {% if partition_time_alias_stmt %}
+                    {{ partition_time_alias_stmt }},
+                    {% endif %}
+                    *
                 from
-                    ({data_files_stmt})
+                    data_files
             ),
             -- Add the lower/upper bound to each data file. Note these bounds are dependent on the optimization strategy sort/zorder.
             data_files_with_bounds as (
                 select
-                    {grouping_stmt},
+                    {{ grouping_stmt }},
                     content,
                     record_count,
                     file_size_in_bytes,
-                    {lower_bounds_expr} as the_lower_bound,
-                    {upper_bounds_expr} as the_upper_bound,
+                    readable_metrics,
+                    {{ lower_bounds_expr }} as the_lower_bound,
+                    {{ upper_bounds_expr }} as the_upper_bound,
                     is_data_file_from_widening_src_partition
                 from
-                    data_files
+                    data_files_with_partition_time
             ),
             -- Give data files a rank number based on the ordering of their bounds.
             ranked_data_files as (
                 select
-                    {grouping_stmt},
+                    {{ grouping_stmt }},
                     content,
                     record_count,
                     file_size_in_bytes,
-                    row_number() over (partition by {grouping_stmt} order by the_lower_bound) rn1,
-                    row_number() over (partition by {grouping_stmt} order by the_upper_bound) rn2,
+                    row_number() over (partition by {{ grouping_stmt }} order by the_lower_bound) rn1,
+                    row_number() over (partition by {{ grouping_stmt }} order by the_upper_bound) rn2,
                     is_data_file_from_widening_src_partition
                 from
                     data_files_with_bounds
                 where
-                    spec_id = {self.spec_id}
+                    spec_id = {{ spec_id }}
             ),
             file_stats_per_partition as (
                 select
-                    {grouping_stmt},
+                    {{ grouping_stmt }},
                     content,
                     record_count,
                     file_size_in_bytes,
@@ -399,9 +530,9 @@ class DataFilesSummary:
                     rn2,
                     is_data_file_from_widening_src_partition,
                     -- Aggregations for content = 0 (data files)
-                    count_if(content = 0) over (partition by {grouping_stmt}) as n_files,
+                    count_if(content = 0) over (partition by {{ grouping_stmt }}) as n_files,
                     coalesce(
-                        sum(case when content = 0 then file_size_in_bytes end) over (partition by {grouping_stmt}),
+                        sum(case when content = 0 then file_size_in_bytes end) over (partition by {{ grouping_stmt }}),
                         0
                     ) as sum_file_size
                 from
@@ -409,7 +540,7 @@ class DataFilesSummary:
             ),
             target_file_size_per_partition as (
                 select
-                    {grouping_stmt},
+                    {{ grouping_stmt }},
                     content,
                     record_count,
                     file_size_in_bytes,
@@ -418,30 +549,33 @@ class DataFilesSummary:
                     is_data_file_from_widening_src_partition,
                     n_files,
                     sum_file_size,
-                    {target_file_size_stmt} as target_file_size,
-                    {corr_threshold_expr} as corr_threshold
+                    {{ target_file_size_stmt }} as target_file_size,
+                    {{ corr_threshold_expr }} as corr_threshold
                 from
                     file_stats_per_partition
             ),
-            -- Aggregate the metrics per partition.
             agg_data_files as (
-                select
-                    {grouping_stmt},
+                select -- Aggregate the metrics per partition.
+                    {{ grouping_stmt }},
 
-                    dense_rank() over(order by {base_column_name_stmt} desc) as partition_age,
+                    {% if is_partitioned %}
+                    dense_rank() over(order by {{ base_column_name_stmt }} desc) as partition_age,
+                    {{ to_json_stmt }} as partition_desc,
+                    {% else %}
+                    0 as partition_age, -- If there are no partitions, we can consider all data files to be in a single partition with age 0.
+                    'not partitioned' as partition_desc,
+                    {% endif %}
 
-                    {self.spec.make_to_json_stmt()} as partition_desc,
-
-                    -- Aggregations for content = 0 (data files)
                     first(n_files) as n_files,
-                    sum(case when content = 0 then record_count end) as n_records,
-                    avg(case when content = 0 then file_size_in_bytes end) as avg_file_size,
-                    min(case when content = 0 then file_size_in_bytes end) as min_file_size,
-                    max(case when content = 0 then file_size_in_bytes end) as max_file_size,
+                    sum(if(content = 0, record_count, null)) as n_records, -- Aggregations of data files (content = 0)
+                    avg(if(content = 0, file_size_in_bytes, null)) as avg_file_size,
+                    min(if(content = 0, file_size_in_bytes, null)) as min_file_size,
+                    max(if(content = 0, file_size_in_bytes, null)) as max_file_size,
                     first(sum_file_size) as sum_file_size,
 
                     first(target_file_size) as target_file_size,
                     first(corr_threshold) as corr_threshold,
+
                     count_if(
                         content = 0 and
                         (file_size_in_bytes < target_file_size * 0.75 or file_size_in_bytes > target_file_size * 1.8)
@@ -452,26 +586,47 @@ class DataFilesSummary:
                         is_data_file_from_widening_src_partition = true
                     ) as num_files_to_widen,
 
-                    -- Calculate correlation factor; defaulting null values to 1
-                    -- if only a single file in partition, set corr to 1
                     cast(
                         case when count_if(content = 0) <= 1 then 1
                         else coalesce(corr(rn1, rn2), 1)
-                    end as float) as corr,
+                    end as float) as corr, -- Calculate correlation factor. defaulting null values to 1,  if only a single file in partition, set corr to 1
 
-                    -- Aggregations for content > 0 (delete files)
-                    count_if(content > 0) as n_delete_files,
+                    count_if(content > 0) as n_delete_files, -- Aggregations for content > 0 (delete files)
 
                     sum(case when content > 0 then record_count else 0 end) as n_delete_records
                 from
                     target_file_size_per_partition
                 group by
-                    {grouping_stmt}
+                    {{ grouping_stmt }}
             ),
             -- Add should optimize flags to the aggregate.
-            final_decision as (
+            {% if estimate_optimization_results %}
+            final as (
                 select
-                    {grouping_stmt},
+                    {{ grouping_stmt }},
+                    partition_age,
+                    {{ format_sum_file_size }} as partition_size,
+                    {{ format_avg_file_size }} as avg_file_size,
+                    {{ format_target_file_size }} as target_file_size,
+                    n_files as partition_num_files,
+                    ceil(sum_file_size / target_file_size) as partition_target_num_files,
+                    sum(n_files) over(partition by partition_age) as num_files_per_age,
+                    sum(ceil(sum_file_size / target_file_size)) over(partition by partition_age) as target_num_files_per_age
+                from
+                    agg_data_files
+                {% if partition_filter_stmt %}
+                where
+                    {{ partition_filter_stmt }}
+                {% endif %}
+                order by
+                    partition_age,
+                    n_files desc,
+                    avg_file_size desc
+            )
+            {% else %}
+            final as (
+                select
+                    {{ grouping_stmt }},
                     partition_age,
                     partition_desc,
                     n_files,
@@ -490,34 +645,50 @@ class DataFilesSummary:
                     -- Determine necessity for sorting based on correlation threshold or delete files
                     (corr < corr_threshold or n_delete_files > 0 or num_files_to_widen > 0) as should_sort,
                     -- Determine necessity for binpacking based on number of rewritten files or delete files
-                    (num_files_targetted_for_rewrite > {num_files_targetted_for_rewrite_threshold} or n_delete_files > 0) as should_binpack
+                    (num_files_targetted_for_rewrite > {{ num_files_targetted_for_rewrite_threshold }} or n_delete_files > 0) as should_binpack
                 from
                     agg_data_files
+                {% if partition_filter_stmt  %}
                 where
-                    {age_filter_stmt}
+                    {{ partition_filter_stmt }}
+                {% endif %}
+                {% if order_by %}
                 order by
-                    {order_by}
-            ),
-            final_estimate as (
-                select
-                    {grouping_stmt},
-                    partition_age,
-                    {self._format_bytes_stmt("sum_file_size")} as partition_size,
-                    {self._format_bytes_stmt("avg_file_size")} as avg_file_size,
-                    {self._format_bytes_stmt("target_file_size")} as target_file_size,
-                    n_files as partition_num_files,
-                    ceil(sum_file_size / target_file_size) as partition_target_num_files,
-                    sum(n_files) over(partition by partition_age) as num_files_per_age,
-                    sum(ceil(sum_file_size / target_file_size)) over(partition by partition_age) as target_num_files_per_age
-                from
-                    agg_data_files
-                where
-                    {age_filter_stmt}
-                order by
-                    partition_age asc,
-                    n_files desc,
-                    avg_file_size desc
+                    {{ order_by }}
+                {% endif %}
             )
+            {% endif %}
 
-            select * from {cte_to_use}
-        """
+            select * from final
+        """)
+
+        partition_filter_stmt = self.make_partition_filter_stmt()
+        base_column_name_stmt = self.spec.get_base_partition().partition_field_alias if self.spec.is_partitioned else ""
+        partition_time_alias_stmt = self.spec.make_partition_time_alias_stmt()
+
+        order_by = ""
+        if not estimate_optimization_results:
+            order_by = self.spec.make_order_stmt()
+
+        # Render the SQL query with all required variables
+        return sql_template.render(
+            estimate_optimization_results=estimate_optimization_results,
+            is_partitioned=self.spec.is_partitioned,
+            partition_time_alias_stmt=partition_time_alias_stmt,
+            spec_id=self.spec_id,
+            to_json_stmt=self.spec.make_to_json_stmt(),
+            table_name=self.mnt_props.full_name,
+            grouping_stmt=self.spec.make_grouping_stmt(),
+            corr_threshold_expr=self.bounds.make_corr_threshold_expr_stmt(),
+            data_files_stmt=self.datafiles.make_data_files_stmt(),
+            lower_bounds_expr=self.bounds.make_lower_bounds_expr_stmt(),
+            upper_bounds_expr=self.bounds.make_upper_bounds_expr_stmt(),
+            target_file_size_stmt=self._make_target_file_size_stmt(),
+            base_column_name_stmt=base_column_name_stmt,
+            num_files_targetted_for_rewrite_threshold=5,
+            partition_filter_stmt=partition_filter_stmt,
+            order_by=order_by,
+            format_sum_file_size=self._format_bytes_stmt("sum_file_size"),
+            format_avg_file_size=self._format_bytes_stmt("avg_file_size"),
+            format_target_file_size=self._format_bytes_stmt("target_file_size"),
+        )

@@ -125,7 +125,6 @@ def test_widening_config_defaults(executor: TaskExecutor) -> None:
     assert mnt_props.widening_rule_required_partition_columns == ""
     assert mnt_props.widening_rule_src_partition == ""
     assert mnt_props.widening_rule_dst_partition == ""
-    assert mnt_props.widening_rule_min_age_to_widen == 1
 
 
 @pytest.mark.integration
@@ -137,7 +136,6 @@ def test_widening_config_works(executor: TaskExecutor) -> None:
             IceKeeperTblProperty.WIDENING_RULE_REQUIRED_PARTITION_COLUMNS: "partition.col1, partition.col2, partition.`sub.col3`",
             IceKeeperTblProperty.WIDENING_RULE_SRC_PARTITION: "partition.y",
             IceKeeperTblProperty.WIDENING_RULE_DST_PARTITION: "partition.z",
-            IceKeeperTblProperty.WIDENING_RULE_MIN_AGE_TO_WIDEN: "3",
         },
     )
     mnt_props = get_refreshed_partition_mnt_props()
@@ -148,7 +146,6 @@ def test_widening_config_works(executor: TaskExecutor) -> None:
     assert "partition.`sub.col3`" in columns
     assert mnt_props.widening_rule_src_partition == "partition.y"
     assert mnt_props.widening_rule_dst_partition == "partition.z"
-    assert mnt_props.widening_rule_min_age_to_widen == THREE_EXPECTED
 
 
 @pytest.mark.integration
@@ -161,7 +158,6 @@ def test_widening_config_missing_required_partition(executor: TaskExecutor) -> N
             IceKeeperTblProperty.WIDENING_RULE_REQUIRED_PARTITION_COLUMNS: "partition.bogus",
             IceKeeperTblProperty.WIDENING_RULE_SRC_PARTITION: "partition.wrong_column_name_day",
             IceKeeperTblProperty.WIDENING_RULE_DST_PARTITION: "partition.wrong_column_name_month",
-            IceKeeperTblProperty.WIDENING_RULE_MIN_AGE_TO_WIDEN: "1",
         },
     )
     mnt_props = get_refreshed_partition_mnt_props()
@@ -174,7 +170,6 @@ def test_widening_config_missing_required_partition(executor: TaskExecutor) -> N
             mnt_props.widening_rule_dst_partition,
             mnt_props.get_widening_rule_required_partition_columns(),
             mnt_props.widening_rule_select_criteria,
-            mnt_props.widening_rule_min_age_to_widen,
         )
 
     # Fix src, but still invalid required column name
@@ -190,7 +185,6 @@ def test_widening_config_missing_required_partition(executor: TaskExecutor) -> N
             mnt_props.widening_rule_dst_partition,
             mnt_props.get_widening_rule_required_partition_columns(),
             mnt_props.widening_rule_select_criteria,
-            mnt_props.widening_rule_min_age_to_widen,
         )
 
     # Correct required name, but not partitioned by _lag
@@ -206,7 +200,6 @@ def test_widening_config_missing_required_partition(executor: TaskExecutor) -> N
             mnt_props.widening_rule_dst_partition,
             mnt_props.get_widening_rule_required_partition_columns(),
             mnt_props.widening_rule_select_criteria,
-            mnt_props.widening_rule_min_age_to_widen,
         )
 
 
@@ -220,7 +213,6 @@ def test_widening_config_missing_target_partition(executor: TaskExecutor) -> Non
             IceKeeperTblProperty.WIDENING_RULE_REQUIRED_PARTITION_COLUMNS: "partition._lag",
             IceKeeperTblProperty.WIDENING_RULE_SRC_PARTITION: "partition.ts_day",
             IceKeeperTblProperty.WIDENING_RULE_DST_PARTITION: "partition.wrong_column_name_month",
-            IceKeeperTblProperty.WIDENING_RULE_MIN_AGE_TO_WIDEN: "1",
         },
     )
     # Add _lag partition
@@ -240,7 +232,6 @@ def test_widening_config_missing_target_partition(executor: TaskExecutor) -> Non
             mnt_props.widening_rule_dst_partition,
             mnt_props.get_widening_rule_required_partition_columns(),
             mnt_props.widening_rule_select_criteria,
-            mnt_props.widening_rule_min_age_to_widen,
         )
     # Right name but spec does not exists
     set_tblproperty(IceKeeperTblProperty.WIDENING_RULE_DST_PARTITION, "partition.ts_month")
@@ -254,7 +245,6 @@ def test_widening_config_missing_target_partition(executor: TaskExecutor) -> Non
             mnt_props.widening_rule_dst_partition,
             mnt_props.get_widening_rule_required_partition_columns(),
             mnt_props.widening_rule_select_criteria,
-            mnt_props.widening_rule_min_age_to_widen,
         )
 
     # Add spec month(ts) only spec
@@ -274,7 +264,6 @@ def test_widening_config_missing_target_partition(executor: TaskExecutor) -> Non
             mnt_props.widening_rule_dst_partition,
             mnt_props.get_widening_rule_required_partition_columns(),
             mnt_props.widening_rule_select_criteria,
-            mnt_props.widening_rule_min_age_to_widen,
         )
 
     # add a (month(ts) and _lag) partition spec
@@ -288,7 +277,6 @@ def test_widening_config_missing_target_partition(executor: TaskExecutor) -> Non
         mnt_props.widening_rule_dst_partition,
         mnt_props.get_widening_rule_required_partition_columns(),
         mnt_props.widening_rule_select_criteria,
-        mnt_props.widening_rule_min_age_to_widen,
     )
 
     assert (
@@ -306,7 +294,10 @@ def test_widening_wrong_depth(executor: TaskExecutor) -> None:
             IceKeeperTblProperty.WIDENING_RULE_REQUIRED_PARTITION_COLUMNS: "partition._lag",
             IceKeeperTblProperty.WIDENING_RULE_SRC_PARTITION: "partition.ts_day",
             IceKeeperTblProperty.WIDENING_RULE_DST_PARTITION: "partition.ts_month",
-            IceKeeperTblProperty.WIDENING_RULE_MIN_AGE_TO_WIDEN: "1",
+            IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
+            IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",
+            IceKeeperTblProperty.WIDENING_RULE_MIN_PARTITION_TO_WIDEN: "0d",
+            IceKeeperTblProperty.WIDENING_RULE_MAX_PARTITION_TO_WIDEN: "3000d",
         },
     )
     # Add _lag partition
@@ -381,7 +372,6 @@ def test_widening_invalid_column_in_filtering_expr(executor: TaskExecutor) -> No
             IceKeeperTblProperty.WIDENING_RULE_REQUIRED_PARTITION_COLUMNS: "partition._lag",
             IceKeeperTblProperty.WIDENING_RULE_SRC_PARTITION: "partition.ts_day",
             IceKeeperTblProperty.WIDENING_RULE_DST_PARTITION: "partition.ts_month",
-            IceKeeperTblProperty.WIDENING_RULE_MIN_AGE_TO_WIDEN: "1",
         },
     )
     event_time = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
@@ -426,7 +416,6 @@ def test_widening_bad_filtering_expr(executor: TaskExecutor) -> None:
             IceKeeperTblProperty.WIDENING_RULE_REQUIRED_PARTITION_COLUMNS: "partition._lag",
             IceKeeperTblProperty.WIDENING_RULE_SRC_PARTITION: "partition.ts_day",
             IceKeeperTblProperty.WIDENING_RULE_DST_PARTITION: "partition.ts_month",
-            IceKeeperTblProperty.WIDENING_RULE_MIN_AGE_TO_WIDEN: "1",
         },
     )
     event_time = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
@@ -451,6 +440,10 @@ def test_widening_no_data_in_src_partition(executor: TaskExecutor) -> None:
             IceKeeperTblProperty.SHOULD_OPTIMIZE: "true",
             IceKeeperTblProperty.OPTIMIZATION_STRATEGY: "id asc",
             IceKeeperTblProperty.OPTIMIZE_PARTITION_DEPTH: "2",
+            IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
+            IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",
+            IceKeeperTblProperty.WIDENING_RULE_MIN_PARTITION_TO_WIDEN: "0d",
+            IceKeeperTblProperty.WIDENING_RULE_MAX_PARTITION_TO_WIDEN: "3000d",
         },
     )
 
@@ -466,7 +459,6 @@ def test_widening_no_data_in_src_partition(executor: TaskExecutor) -> None:
             IceKeeperTblProperty.WIDENING_RULE_REQUIRED_PARTITION_COLUMNS: "partition._lag",
             IceKeeperTblProperty.WIDENING_RULE_SRC_PARTITION: "partition.ts_day",
             IceKeeperTblProperty.WIDENING_RULE_DST_PARTITION: "partition.ts_month",
-            IceKeeperTblProperty.WIDENING_RULE_MIN_AGE_TO_WIDEN: "1",
         },
     )
 
@@ -487,6 +479,10 @@ def test_widening_success(executor: TaskExecutor) -> None:
             IceKeeperTblProperty.OPTIMIZATION_STRATEGY: "id asc",
             IceKeeperTblProperty.OPTIMIZE_PARTITION_DEPTH: "2",
             IceKeeperTblProperty.WRITE_TARGET_FILE_SIZE_BYTES: "500000",  # write small files
+            IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
+            IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",
+            IceKeeperTblProperty.WIDENING_RULE_MIN_PARTITION_TO_WIDEN: "0M",
+            IceKeeperTblProperty.WIDENING_RULE_MAX_PARTITION_TO_WIDEN: "300M",
         },
     )
     # Add _lag partition
@@ -510,7 +506,6 @@ def test_widening_success(executor: TaskExecutor) -> None:
             IceKeeperTblProperty.WIDENING_RULE_REQUIRED_PARTITION_COLUMNS: "partition._lag",
             IceKeeperTblProperty.WIDENING_RULE_SRC_PARTITION: "partition.ts_day",
             IceKeeperTblProperty.WIDENING_RULE_DST_PARTITION: "partition.ts_month",
-            IceKeeperTblProperty.WIDENING_RULE_MIN_AGE_TO_WIDEN: "1",
         },
     )
     # insert data into many days.
