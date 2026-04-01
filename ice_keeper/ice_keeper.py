@@ -280,13 +280,13 @@ def reset(force: bool, schedule: bool, journal: bool, health: bool, all_tables: 
     "--min_age_to_diagnose",
     type=int,
     default=None,
-    help="Minimum snapshot age (in partition rank) to diagnose.",
+    help="Minimum snapshot age (in partition rank) to diagnose. Must be used with --max_age_to_diagnose.",
 )
 @click.option(
     "--max_age_to_diagnose",
     type=int,
     default=None,
-    help="Maximum snapshot age (in partition rank) to diagnose.",
+    help="Maximum snapshot age (in partition rank) to diagnose. Must be used with --min_age_to_diagnose.",
 )
 @click.option(
     "--min_partition_to_diagnose",
