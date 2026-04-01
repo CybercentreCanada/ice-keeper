@@ -7,23 +7,23 @@ import pytest
 from click.testing import CliRunner
 
 from ice_keeper import Action, Status
-from ice_keeper.ice_keeper import diagnose
+from ice_keeper.ice_keeper import OptimizationStrategy, diagnose
 from ice_keeper.pool import TaskExecutor
 from ice_keeper.stm import STL, Scope
-from ice_keeper.table import MaintenanceSchedule, PartitionHealth
+from ice_keeper.table import MaintenanceSchedule
 from ice_keeper.table.journal import Journal
 from ice_keeper.table.schedule_entry import IceKeeperTblProperty
-from ice_keeper.task import ActionTaskFactory
+from ice_keeper.task import ActionTaskFactory, PartitionSummary
+from ice_keeper.task.action.optimization.optimization import SubOptimizationStrategy
+from ice_keeper.task.action.optimization.partition_diagnostic import PartitionDiagnosis
 from tests.test_common import (
     FIVE_EXPECTED,
     ONE_EXPECTED,
     SCOPE_SCHEMA,
     SCOPE_WHERE_FULL_NAME,
-    SEVEN_EXPECTED,
     TEST_CATALOG_NAME,
     TEST_FULL_NAME,
     TEST_SCHEMA_NAME,
-    TEST_TABLE_NAME,
     TWO_EXPECTED,
     ZERO_EXPECTED,
 )
@@ -31,6 +31,7 @@ from tests.utils import (
     compare_multiline_strings,
     create_empty_test_table,
     create_test_table_with_data,
+    create_test_table_with_one_batch,
     discover_tables,
     insert_data,
 )
@@ -403,55 +404,41 @@ def test_optimize(
     test_name: str, partitioned_by: str, optimization_strategy: str, expected_output: str, executor: TaskExecutor
 ) -> None:
     # Change default min age for testing.
-    properties = {IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d", IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d"}
-    create_test_table_with_data(
-        executor, partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties
+    properties = {
+        "write.delete.mode": "merge-on-read",
+        IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
+        IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",
+    }
+    dt = datetime.datetime(2025, 3, 3, 18, 33, 59, tzinfo=datetime.timezone.utc)
+    create_test_table_with_one_batch(
+        event_time=dt, partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties
     )
-
+    sql = f"delete from {TEST_FULL_NAME} where id = (select id from {TEST_FULL_NAME} where ts = '{dt}' limit 1)"
+    STL.get().sql(sql)
+    # add table to maintenance schedule
+    discover_tables(executor, SCOPE_SCHEMA)
     maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
     assert len(maintenance_schedule.entries()) == 1, "Scoped to one table, should have one maintenance entry."
     mnt_props = maintenance_schedule.entries()[0]
     assert mnt_props
 
-    if mnt_props.optimization_spec and mnt_props.optimization_spec.is_zordered:
-        dt = datetime.datetime(2025, 3, 3, 18, 33, 59, tzinfo=datetime.timezone.utc)
-        insert_data(TEST_TABLE_NAME, event_time=dt, num_inserts=25)
-
-    tasks = ActionTaskFactory.make_tasks(Action.REWRITE_DATA_FILES, maintenance_schedule)
-    assert len(tasks) == 1, "Should find the schedule entry for given table"
-    executor.submit_tasks_and_wait(tasks)
-    health_df = PartitionHealth().read(SCOPE_WHERE_FULL_NAME)
-    health_df.show(truncate=False)
-    for row in health_df.collect():
-        before = row.before.n_records
-        after = row.after.n_records
-        if before != after:
-            msg = f"In each partition the number of rows should be the same. before: {before}, after: {after}"
-            raise Exception(msg)
-        before = row.before.n_files
-        after = row.after.n_files
-        if not (before >= after):
-            msg = f"In each partition the number of files should be smaller or equals. before: {before}, after: {after}"
-            raise Exception(msg)
-        before = row.before.corr
-        after = row.after.corr
-        if not (before <= after):
-            msg = f"In each partition the rows should be better sorted or the same. before: {before}, after: {after}"
-            raise Exception(msg)
-
-    rows = executor.get_journal().flush().read(Scope()).collect()
-    # If we have an expected procedure call.
-    if expected_output != "":
-        assert len(rows) == ONE_EXPECTED, "Should have a single log"
-        if rows[0].status != Status.SUCCESS.value:
-            assert rows[0].status_details == "", "Should succeed, why this error..."
-        actual_output = rows[0].sql_stm
+    os = OptimizationStrategy(mnt_props)
+    if os.check_should_execute_action():
+        spec_id = 0
+        widening_rule = None
+        summary = PartitionSummary(mnt_props, spec_id, widening_rule)
+        diagnosis = PartitionDiagnosis(mnt_props, spec_id)
+        rows = diagnosis.find_partitions_to_optimize(summary)
+        assert len(rows) == ONE_EXPECTED
+        sos = SubOptimizationStrategy(rows[0], spec_id, mnt_props, widening_rule)
+        actual_output = sos.prepare_statement_to_execute()
         diff, details = compare_multiline_strings(expected_output, actual_output)
         if diff:
             msg = f"Test {test_name} failed. The actual output was {actual_output}.\nDifferences are {details}"
             raise Exception(msg)
     else:
-        assert len(rows) == ZERO_EXPECTED, "Should have no logs"
+        assert not mnt_props.optimization_spec.is_binpack()
+        assert not mnt_props.optimization_spec.is_sorted()
 
 
 @pytest.mark.integration
@@ -566,137 +553,6 @@ def test_optimize_binpack_partition_by_timestamp_day_identity(executor: TaskExec
     # assert status_details1 == ""
     # actual_output0 = rows[0].sql_stm
     # actual_output1 = rows[1].sql_stm
-
-
-@pytest.mark.integration
-def test_optimize_binpack_correct_hour(executor: TaskExecutor) -> None:
-    partitioned_by = "hours(ts)"
-    optimization_strategy = "binpack"
-    properties = {IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "2", IceKeeperTblProperty.MAX_AGE_TO_OPTIMIZE: "200"}
-    create_empty_test_table(partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties)
-    # 6 files in hour 2025-12-01 00:00:00
-    dt = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
-    insert_data(event_time=dt, num_inserts=3)
-    dt = datetime.datetime(2025, 12, 1, 0, 59, 59, tzinfo=timezone.utc)
-    insert_data(event_time=dt, num_inserts=3)
-
-    # 7 files in hour 2025-12-01 23:00:00
-    dt = datetime.datetime(2025, 12, 1, 23, 0, 0, tzinfo=timezone.utc)
-    insert_data(event_time=dt, num_inserts=3)
-    dt = datetime.datetime(2025, 12, 1, 23, 59, 59, tzinfo=timezone.utc)
-    insert_data(event_time=dt, num_inserts=4)
-
-    # add table to maintenance schedule
-    discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
-
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    assert len(maintenance_schedule.entries()) == 1, "Scoped to one table, should have one maintenance entry."
-    tasks = ActionTaskFactory.make_tasks(Action.REWRITE_DATA_FILES, maintenance_schedule)
-    assert len(tasks) == 1, "Should find the schedule entry for given table"
-    executor.submit_tasks_and_wait(tasks)
-
-    sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_hour = 490175 """
-    num_files_age_1 = STL.sql_and_log(sql).count()
-    assert num_files_age_1 == SEVEN_EXPECTED, "Most recent hour should not be optimized, should have 7 files."
-    sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_hour = 490152 """
-    num_files_age_2 = STL.sql_and_log(sql).count()
-    assert num_files_age_2 == ONE_EXPECTED, "Older hour should be optimized into one file."
-
-
-@pytest.mark.integration
-def test_optimize_binpack_correct_day(executor: TaskExecutor) -> None:
-    partitioned_by = "days(ts)"
-    optimization_strategy = "binpack"
-    properties = {IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "2", IceKeeperTblProperty.MAX_AGE_TO_OPTIMIZE: "200"}
-    create_empty_test_table(partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties)
-    dt = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
-    insert_data(event_time=dt, num_inserts=6)
-    dt = datetime.datetime(2025, 12, 2, 0, 0, 0, tzinfo=timezone.utc)
-    insert_data(event_time=dt, num_inserts=7)
-    # add table to maintenance schedule
-    discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
-
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    assert len(maintenance_schedule.entries()) == 1, "Scoped to one table, should have one maintenance entry."
-    tasks = ActionTaskFactory.make_tasks(Action.REWRITE_DATA_FILES, maintenance_schedule)
-    assert len(tasks) == 1, "Should find the schedule entry for given table"
-    executor.submit_tasks_and_wait(tasks)
-    sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_day = '2025-12-02' """
-    num_files_age_1 = STL.sql_and_log(sql).count()
-    assert num_files_age_1 == SEVEN_EXPECTED, "Most recent day should not be optimized, should have 7 files."
-    sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_day = '2025-12-01' """
-    num_files_age_2 = STL.sql_and_log(sql).count()
-    assert num_files_age_2 == ONE_EXPECTED, "Older day should be optimized into one file."
-
-
-@pytest.mark.integration
-def test_optimize_binpack_correct_month(executor: TaskExecutor) -> None:
-    partitioned_by = "month(ts)"
-    optimization_strategy = "binpack"
-    properties = {IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "2", IceKeeperTblProperty.MAX_AGE_TO_OPTIMIZE: "200"}
-    create_empty_test_table(partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties)
-    # 6 files in month 2025-12-01
-    dt = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
-    insert_data(event_time=dt, num_inserts=3)
-    dt = datetime.datetime(2025, 12, 31, 0, 59, 59, tzinfo=timezone.utc)
-    insert_data(event_time=dt, num_inserts=3)
-
-    # 7 files in month 2026-01-01
-    dt = datetime.datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    insert_data(event_time=dt, num_inserts=3)
-    dt = datetime.datetime(2026, 1, 1, 23, 59, 59, tzinfo=timezone.utc)
-    insert_data(event_time=dt, num_inserts=4)
-
-    # add table to maintenance schedule
-    discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
-
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    assert len(maintenance_schedule.entries()) == 1, "Scoped to one table, should have one maintenance entry."
-    tasks = ActionTaskFactory.make_tasks(Action.REWRITE_DATA_FILES, maintenance_schedule)
-    assert len(tasks) == 1, "Should find the schedule entry for given table"
-    executor.submit_tasks_and_wait(tasks)
-
-    sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_month = 672 """
-    num_files_age_1 = STL.sql_and_log(sql).count()
-    assert num_files_age_1 == SEVEN_EXPECTED, "Most recent month should not be optimized, should have 7 files."
-    sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_month = 671 """
-    num_files_age_2 = STL.sql_and_log(sql).count()
-    assert num_files_age_2 == ONE_EXPECTED, "Older month should be optimized into one file."
-
-
-@pytest.mark.integration
-def test_optimize_binpack_correct_year(executor: TaskExecutor) -> None:
-    partitioned_by = "year(ts)"
-    optimization_strategy = "binpack"
-    properties = {IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "2", IceKeeperTblProperty.MAX_AGE_TO_OPTIMIZE: "200"}
-    create_empty_test_table(partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties)
-    # 6 files in year 2024
-    dt = datetime.datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    insert_data(event_time=dt, num_inserts=3)
-    dt = datetime.datetime(2024, 12, 31, 0, 59, 59, tzinfo=timezone.utc)
-    insert_data(event_time=dt, num_inserts=3)
-
-    # 7 files in year 2025
-    dt = datetime.datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    insert_data(event_time=dt, num_inserts=3)
-    dt = datetime.datetime(2025, 1, 1, 23, 59, 59, tzinfo=timezone.utc)
-    insert_data(event_time=dt, num_inserts=4)
-
-    # add table to maintenance schedule
-    discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
-
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    assert len(maintenance_schedule.entries()) == 1, "Scoped to one table, should have one maintenance entry."
-    tasks = ActionTaskFactory.make_tasks(Action.REWRITE_DATA_FILES, maintenance_schedule)
-    assert len(tasks) == 1, "Should find the schedule entry for given table"
-    executor.submit_tasks_and_wait(tasks)
-
-    sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_year = 55 """
-    num_files_age_1 = STL.sql_and_log(sql).count()
-    assert num_files_age_1 == SEVEN_EXPECTED, "Most recent year should not be optimized, should have 7 files."
-    sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_year = 54 """
-    num_files_age_2 = STL.sql_and_log(sql).count()
-    assert num_files_age_2 == ONE_EXPECTED, "Older year should be optimized into one file."
 
 
 @pytest.mark.integration

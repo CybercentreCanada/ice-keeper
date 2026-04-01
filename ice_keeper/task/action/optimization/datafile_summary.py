@@ -378,10 +378,10 @@ class DataFilesSummary:
                     # e.g. if max partition_time is 2025-10-15 and unit is 'month',
                     # the reference becomes 2025-11-01 (start of next month).
                     max_pt = "(select max(partition_time) from agg_data_files)"
-                    ref_point = f"date_trunc('{min_unit}', {max_pt}) + interval {min_amount} {min_unit}"
+                    ref_point = f"date_trunc('{min_unit}', {max_pt})"
                     filter_stmt = (
-                        f"partition_time <= timestamp({ref_point} - interval {min_amount} {min_unit})"
-                        f" and partition_time >= timestamp({ref_point} - interval {max_amount} {max_unit})"
+                        f"partition_time < timestamp({ref_point} - interval {min_amount} {min_unit} + interval 1 {min_unit} )"
+                        f" and partition_time > timestamp({ref_point} - interval {max_amount} {max_unit} - interval 1 {max_unit} )"
                     )
             else:
                 # The first partition is not temporal. Check if any sub-partitions are temporal.
@@ -615,10 +615,10 @@ class DataFilesSummary:
                     {% endif %}
 
                     first(n_files) as n_files,
-                    sum(case when content = 0 then record_count end) as n_records, -- Aggregations of data files (content = 0)
-                    avg(case when content = 0 then file_size_in_bytes end) as avg_file_size,
-                    min(case when content = 0 then file_size_in_bytes end) as min_file_size,
-                    max(case when content = 0 then file_size_in_bytes end) as max_file_size,
+                    sum(if(content = 0, record_count, null)) as n_records, -- Aggregations of data files (content = 0)
+                    avg(if(content = 0, file_size_in_bytes, null)) as avg_file_size,
+                    min(if(content = 0, file_size_in_bytes, null)) as min_file_size,
+                    max(if(content = 0, file_size_in_bytes, null)) as max_file_size,
                     first(sum_file_size) as sum_file_size,
 
                     first(target_file_size) as target_file_size,

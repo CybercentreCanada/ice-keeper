@@ -1,8 +1,7 @@
 import logging
 from typing import Any
 
-from pyspark.sql.functions import pandas_udf
-from pyspark.sql.types import BinaryType, Row, StructType
+from pyspark.sql.types import Row, StructType
 from typing_extensions import override
 
 from ice_keeper import Action
@@ -14,7 +13,6 @@ from ice_keeper.task import SparkTask
 from ice_keeper.task.action.action import ActionStrategy, ActionTask
 from ice_keeper.task.action.optimization.datafile_summary import DataFilesSummary
 from ice_keeper.task.task import SubTaskExecutor
-from ice_keeper.zorder_udf import zorder2Tuple
 
 from .optimization_partition import SubOptimizationStrategy
 from .partition_diagnostic import PartitionDiagnosis, PartitionSummary
@@ -122,11 +120,6 @@ class OptimizationStrategy(ActionStrategy):
         return {}
 
     def find_and_optimize_specs(self, sub_executor: SubTaskExecutor) -> None:
-        # Register UDF in this new Spark session. We might use it to diagnose the table.
-
-        udf = pandas_udf(zorder2Tuple, returnType=BinaryType())  # type: ignore[call-overload]
-        STL.get().udf.register("zorder2Tuple", udf)
-
         unique_spec_ids = self._find_specs_to_optimize()
 
         for spec_id in unique_spec_ids:
@@ -156,10 +149,6 @@ class OptimizationStrategy(ActionStrategy):
                 summary.uncache_views(did_some_optimizations=did_some_optimizations)
 
     def _run_partition_spec_diagnostics(self, *, estimate_optimization_results: bool) -> None:
-        # Register UDF in this new Spark session. We might use it to diagnose the table.
-        udf = pandas_udf(zorder2Tuple, returnType=BinaryType())  # type: ignore[call-overload]
-        STL.get().udf.register("zorder2Tuple", udf)
-
         unique_spec_ids = self._find_specs_to_optimize()
         for spec_id in unique_spec_ids:
             logger.debug(

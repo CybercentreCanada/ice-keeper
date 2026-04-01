@@ -11,6 +11,50 @@ from ice_keeper.task import DiscoveryTask
 from tests.test_common import SCOPE_SCHEMA, TEST_CATALOG_NAME, TEST_FULL_NAME, TEST_SCHEMA_NAME, TEST_TABLE_NAME
 
 
+def create_test_table_with_one_batch(
+    event_time: datetime.datetime,
+    catalog: str = TEST_CATALOG_NAME,
+    schema: str = TEST_SCHEMA_NAME,
+    table_name: str = TEST_TABLE_NAME,
+    partitioned_by: str | None = None,
+    optimization_strategy: str | None = None,
+    properties: dict[str, str] = {},  # noqa: B006
+) -> None:
+    partition_by_stm = ""
+    if partitioned_by:
+        partition_by_stm = f"partitioned by ({partitioned_by})"
+
+    props = {}
+    if optimization_strategy:
+        props[IceKeeperTblProperty.SHOULD_OPTIMIZE] = "true"
+        props[IceKeeperTblProperty.OPTIMIZATION_STRATEGY] = optimization_strategy
+    total_props = props | properties
+
+    tblproperties_stm = ""
+    if total_props:
+        props_stm = ", ".join(f"'{key}' = '{value}'" for key, value in total_props.items())
+        tblproperties_stm = f"tblproperties ({props_stm})"
+    STL.sql(
+        f"""
+            create table {catalog}.{schema}.{table_name}
+            using iceberg
+            {partition_by_stm}
+            {tblproperties_stm}
+            as (
+                select
+                    timestamp '{event_time}' as ts,
+                    CAST((rand() * 4294967296) - 2147483648 AS INT) as id,
+                    uuid() as name,
+                    'category_' || (id % 5) as category,
+                    (id % 5) as category_int,
+                    named_struct('ts', timestamp '{event_time}') as submission
+                from
+                    range(1, 10000)
+            )
+        """,
+    )
+
+
 def create_empty_test_table(
     catalog: str = TEST_CATALOG_NAME,
     schema: str = TEST_SCHEMA_NAME,
