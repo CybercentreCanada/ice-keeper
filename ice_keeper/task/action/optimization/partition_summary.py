@@ -1,13 +1,9 @@
 import logging
 
-from pyspark.sql.functions import pandas_udf
-from pyspark.sql.types import BinaryType
-
 from ice_keeper.output import rows_log_debug
 from ice_keeper.spec.widening_rule import WideningRule
 from ice_keeper.stm import STL
 from ice_keeper.table import MaintenanceScheduleEntry, PartitionHealth
-from ice_keeper.zorder_udf import zorder2Tuple
 
 from .datafile_summary import DataFilesSummary
 
@@ -31,11 +27,6 @@ class PartitionSummary:
         view_name_base = f"{self.mnt_props.catalog}_{self.mnt_props.schema}_{self.mnt_props.table_name}"
         self.summary_before_view_name = f"BEFORE_DIAGNOSIS_FOR_{view_name_base}"
         self.summary_after_view_name = f"AFTER_DIAGNOSIS_FOR_{view_name_base}"
-
-        if self.mnt_props.optimization_spec.is_zordered:
-            # Register UDF in this new Spark session. We are using it to diagnose the table.
-            udf = pandas_udf(zorder2Tuple, returnType=BinaryType())  # type: ignore[call-overload]
-            STL.get().udf.register("zorder2Tuple", udf)
 
         # Create and cache the initial partition summary
         self._create_and_cache(self.summary_before_view_name)

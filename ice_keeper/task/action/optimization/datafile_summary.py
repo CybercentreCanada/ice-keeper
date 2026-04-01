@@ -2,11 +2,15 @@ import logging
 from abc import ABC, abstractmethod
 
 from jinja2 import Template
+from pyspark.sql.functions import pandas_udf
+from pyspark.sql.types import BinaryType
 from typing_extensions import override
 
 from ice_keeper import IceKeeperTblProperty
 from ice_keeper.spec import PartitionSpecification, WideningRule
+from ice_keeper.stm import STL
 from ice_keeper.table import MaintenanceScheduleEntry
+from ice_keeper.zorder_udf import zorder2Tuple
 
 from .datafiles_bounds import Bounds, BoundsBinpack, BoundsSort, BoundsZorderSort
 
@@ -457,6 +461,11 @@ class DataFilesSummary:
             └───────────────┴────────────┴──────────────────┘
 
         """
+        if self.mnt_props.optimization_spec.is_zordered:
+            # Register UDF in this new Spark session. We are using it to diagnose the table.
+            udf = pandas_udf(zorder2Tuple, returnType=BinaryType())  # type: ignore[call-overload]
+            STL.get().udf.register("zorder2Tuple", udf)
+
         # Define the SQL template
         sql_template = Template("""
             -- Diagnosing partitioned table '{{ table_name }}' for optimization
