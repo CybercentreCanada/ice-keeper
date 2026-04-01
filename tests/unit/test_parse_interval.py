@@ -63,9 +63,17 @@ class TestParseInterval:
             DataFilesSummary._parse_interval("abcd")
 
     def test_empty_amount(self) -> None:
-        with pytest.raises(ValueError, match="Invalid interval amount"):
+        with pytest.raises(ValueError, match="Invalid interval"):
             DataFilesSummary._parse_interval("d")
 
     def test_double_negative(self) -> None:
         with pytest.raises(ValueError, match="Invalid interval amount"):
             DataFilesSummary._parse_interval("--1d")
+
+    def test_empty_string(self) -> None:
+        with pytest.raises(ValueError, match="Invalid interval"):
+            DataFilesSummary._parse_interval("")
+
+    def test_blank_string(self) -> None:
+        with pytest.raises(ValueError, match="Invalid interval"):
+            DataFilesSummary._parse_interval(" ")

@@ -332,6 +332,9 @@ class DataFilesSummary:
     @staticmethod
     def _parse_interval(value: str) -> tuple[str, int]:
         """Parse a relative time string (e.g. '1d', '24h', '3M', '1Y') into a parsed interval."""
+        if not value or len(value) < 2:
+            msg = f"Invalid interval '{value!r}'. Expected a non-empty string like '1d', '24h', '3M', or '1Y'."
+            raise ValueError(msg)
         unit_map = {
             "h": "hour",
             "d": "day",
@@ -630,6 +633,8 @@ class DataFilesSummary:
                 {% if partition_filter_stmt  %}
                 where
                     {{ partition_filter_stmt }}
+                {% endif %}
+                {% if order_by %}
                 order by
                     {{ order_by }}
                 {% endif %}
@@ -643,8 +648,13 @@ class DataFilesSummary:
         base_column_name_stmt = self.spec.get_base_partition().partition_field_alias if self.spec.is_partitioned else ""
         partition_time_alias_stmt = self.spec.make_partition_time_alias_stmt()
 
+        order_by = ""
+        if not estimate_optimization_results:
+            order_by = self.spec.make_order_stmt()
+
         # Render the SQL query with all required variables
         return sql_template.render(
+            estimate_optimization_results=estimate_optimization_results,
             is_partitioned=self.spec.is_partitioned,
             partition_time_alias_stmt=partition_time_alias_stmt,
             spec_id=self.spec_id,
@@ -659,8 +669,7 @@ class DataFilesSummary:
             base_column_name_stmt=base_column_name_stmt,
             num_files_targetted_for_rewrite_threshold=5,
             partition_filter_stmt=partition_filter_stmt,
-            order_by=self.spec.make_order_stmt(),
-            estimate_optimization_results=estimate_optimization_results,
+            order_by=order_by,
             format_sum_file_size=self._format_bytes_stmt("sum_file_size"),
             format_avg_file_size=self._format_bytes_stmt("avg_file_size"),
             format_target_file_size=self._format_bytes_stmt("target_file_size"),

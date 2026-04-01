@@ -480,8 +480,8 @@ def test_summary_partition_month(executor: TaskExecutor) -> None:
     row = get_partition_time_from_summary(mnt_props)
     assert row
     # most_recent should be Nov (skipped Dec)
-    assert row.most_recent is not None
-    assert row.most_recent < row.oldest or row.most_recent == row.oldest or row.oldest is not None
+    assert row.most_recent == datetime.datetime(2025, 11, 1, 0, 0, 0)  # noqa: DTZ001
+    assert row.oldest == datetime.datetime(2025, 10, 1, 0, 0, 0)  # noqa: DTZ001
 
     # Only current month
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "0M", "0M")
