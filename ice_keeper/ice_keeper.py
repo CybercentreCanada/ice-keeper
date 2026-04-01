@@ -234,39 +234,42 @@ def cli(
 
 
 @cli.command(
-    short_help="Drop ice-keeper admin tables and recreate them (deletes history/state).",
+    short_help="Drop and recreate ice-keeper admin tables (deletes history/state).",
 )
-@click.option(
-    "--force",
-    is_flag=True,
-    help="Confirm resetting admin tables without prompting.",
-)
-def reset(force: bool) -> None:  # noqa: FBT001
+@click.option("--force", is_flag=True, help="Skip confirmation prompts.")
+@click.option("-s", "--schedule", is_flag=True, help="Reset MaintenanceSchedule table.")
+@click.option("-j", "--journal", is_flag=True, help="Reset Journal table.")
+@click.option("-p", "--health", is_flag=True, help="Reset PartitionHealth table.")
+@click.option("-a", "--all", "all_tables", is_flag=True, help="Reset all admin tables.")
+def reset(force: bool, schedule: bool, journal: bool, health: bool, all_tables: bool) -> None:  # noqa: FBT001
     """Resets the admin tables."""
-    if force or click.confirm(
-        "This will DROP and RECREATE the MaintenanceSchedule table and permanently delete all "
-        "configuration state. Are you sure you want to continue?",
-    ):
-        MaintenanceSchedule.reset()
-        click.echo("MaintenanceSchedule table reset.")
-    else:
-        click.echo("Skipping MaintenanceSchedule table.")
+    if all_tables:
+        schedule = journal = health = True
 
-    if force or click.confirm(
-        "This will DROP and RECREATE the Journal table and permanently delete all history of executions. Are you sure you want to continue?",
-    ):
-        Journal.reset()
-        click.echo("Journal table reset.")
-    else:
-        click.echo("Skipping Journal table.")
+    if not (schedule or journal or health):
+        msg = "Specify at least one table to reset: -s (schedule), -j (journal), -p (health), or -a (all)."
+        raise click.UsageError(msg)
 
-    if force or click.confirm(
-        "This will DROP and RECREATE the PartitionHealth table and permanently delete all history/state. Are you sure you want to continue?",
-    ):
-        PartitionHealth.reset()
-        click.echo("PartitionHealth table reset.")
-    else:
-        click.echo("Skipping PartitionHealth table.")
+    if schedule:
+        if force or click.confirm("Drop and recreate MaintenanceSchedule?"):
+            MaintenanceSchedule.reset()
+            click.echo("MaintenanceSchedule reset.")
+        else:
+            click.echo("Skipping MaintenanceSchedule.")
+
+    if journal:
+        if force or click.confirm("Drop and recreate Journal?"):
+            Journal.reset()
+            click.echo("Journal reset.")
+        else:
+            click.echo("Skipping Journal.")
+
+    if health:
+        if force or click.confirm("Drop and recreate PartitionHealth?"):
+            PartitionHealth.reset()
+            click.echo("PartitionHealth reset.")
+        else:
+            click.echo("Skipping PartitionHealth.")
 
 
 @cli.command(
@@ -312,8 +315,8 @@ def reset(force: bool) -> None:  # noqa: FBT001
     default="simulate",
     show_default=True,
     help=(
-        "Execution mode. 'simulate' runs the optimizer logic and prints a detailed "
-        "decision summary without applying any changes. 'dry_run' prints only a "
+        "Execution mode. 'dry_run' runs the optimizer logic and prints a detailed "
+        "decision summary without applying any changes. 'simulate' prints only a "
         "high-level estimate of potential changes, also without applying them."
     ),
 )
