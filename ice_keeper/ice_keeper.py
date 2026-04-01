@@ -317,7 +317,7 @@ def reset(force: bool) -> None:  # noqa: FBT001
         "high-level estimate of potential changes, also without applying them."
     ),
 )
-def diagnose(
+def diagnose(  # noqa: C901
     full_name: str,
     min_age_to_diagnose: int | None,
     max_age_to_diagnose: int | None,
