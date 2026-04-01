@@ -181,9 +181,9 @@ class PartitionSpecification:
         return ", ".join(grouping_stmts)
 
     def _is_time_partitioned(self) -> bool:
+        """Check if the partition specification includes any temporal partitions."""
         if not self.is_partitioned:
             return False
-        """Check if the partition specification includes any temporal partitions."""
         return self.get_base_partition().is_temporal_transformation() or self.get_base_partition().is_temporal_column()
 
     def make_partition_time_alias_stmt(self) -> str:
