@@ -234,38 +234,70 @@ def cli(
 
 
 @cli.command(
-    short_help="Drop ice-keeper admin tables and recreate them (deletes history/state).",
+    short_help="Drop and recreate ice-keeper admin tables (deletes history/state).",
 )
-@click.option(
-    "--force",
-    is_flag=True,
-    help="Confirm resetting admin tables without prompting.",
-)
-def reset(force: bool) -> None:  # noqa: FBT001
+@click.option("--force", is_flag=True, help="Skip confirmation prompts.")
+@click.option("-s", "--schedule", is_flag=True, help="Reset MaintenanceSchedule table.")
+@click.option("-j", "--journal", is_flag=True, help="Reset Journal table.")
+@click.option("-p", "--health", is_flag=True, help="Reset PartitionHealth table.")
+@click.option("-a", "--all", "all_tables", is_flag=True, help="Reset all admin tables.")
+def reset(force: bool, schedule: bool, journal: bool, health: bool, all_tables: bool) -> None:  # noqa: FBT001
     """Resets the admin tables."""
-    if not force:
-        # Use abort=True to automatically exit if user says 'no'
-        click.confirm(
-            "This will DROP and RECREATE ice-keeper admin tables and permanently delete all "
-            "admin history/state (MaintenanceSchedule, Journal, PartitionHealth). "
-            "Are you sure you want to continue?",
-            abort=True,
-        )
+    if all_tables:
+        schedule = journal = health = True
 
-    # The maintenance schedule is populated by the tblproperties. It's safe to reset.
-    MaintenanceSchedule.reset()
-    # The journal contains historical runs of ice-keeper, if you don't care about the history you can reset.
-    Journal.reset()
-    # The partition health table contains historical partition diagnosis diff (before/after), if you don't care about the history you can reset.
-    PartitionHealth.reset()
+    if not (schedule or journal or health):
+        msg = "Specify at least one table to reset: -s (schedule), -j (journal), -p (health), or -a (all)."
+        raise click.UsageError(msg)
+
+    if schedule:
+        if force or click.confirm("Drop and recreate MaintenanceSchedule?"):
+            MaintenanceSchedule.reset()
+            click.echo("MaintenanceSchedule reset.")
+        else:
+            click.echo("Skipping MaintenanceSchedule.")
+
+    if journal:
+        if force or click.confirm("Drop and recreate Journal?"):
+            Journal.reset()
+            click.echo("Journal reset.")
+        else:
+            click.echo("Skipping Journal.")
+
+    if health:
+        if force or click.confirm("Drop and recreate PartitionHealth?"):
+            PartitionHealth.reset()
+            click.echo("PartitionHealth reset.")
+        else:
+            click.echo("Skipping PartitionHealth.")
 
 
 @cli.command(
     short_help="Diagnose table health by analyzing its partitions.",
 )
 @click.option("--full_name", required=True, help="Fully qualified name of table to diagnose.")
-@click.option("--min_age_to_diagnose", default=1, help="Minimum snapshot age (in partition rank) to diagnose (default: 1).")
-@click.option("--max_age_to_diagnose", default=72, help="Maximum snapshot age (in partition rank) to diagnose (default: 72).")
+@click.option(
+    "--min_age_to_diagnose",
+    type=int,
+    default=None,
+    help="Minimum snapshot age (in partition rank) to diagnose. Must be used with --max_age_to_diagnose.",
+)
+@click.option(
+    "--max_age_to_diagnose",
+    type=int,
+    default=None,
+    help="Maximum snapshot age (in partition rank) to diagnose. Must be used with --min_age_to_diagnose.",
+)
+@click.option(
+    "--min_partition_to_diagnose",
+    default=None,
+    help="Minimum partition offset to diagnose (e.g., '1d', '1M'). Must be used with --max_partition_to_diagnose.",
+)
+@click.option(
+    "--max_partition_to_diagnose",
+    default=None,
+    help="Maximum partition offset to diagnose (e.g., '7d', '3M'). Must be used with --min_partition_to_diagnose.",
+)
 @click.option("--optimization_strategy", help="Optional optimization strategy to use during diagnosis.")
 @click.option(
     "--target_file_size_bytes",
@@ -283,15 +315,17 @@ def reset(force: bool) -> None:  # noqa: FBT001
     default="simulate",
     show_default=True,
     help=(
-        "Execution mode. 'simulate' runs the optimizer logic and prints a detailed "
-        "decision summary without applying any changes. 'dry_run' prints only a "
+        "Execution mode. 'dry_run' runs the optimizer logic and prints a detailed "
+        "decision summary without applying any changes. 'simulate' prints only a "
         "high-level estimate of potential changes, also without applying them."
     ),
 )
-def diagnose(
+def diagnose(  # noqa: C901
     full_name: str,
-    min_age_to_diagnose: int,
-    max_age_to_diagnose: int,
+    min_age_to_diagnose: int | None,
+    max_age_to_diagnose: int | None,
+    min_partition_to_diagnose: str | None,
+    max_partition_to_diagnose: str | None,
     mode: str,
     optimization_strategy: str | None,
     target_file_size_bytes: int | None,
@@ -302,6 +336,21 @@ def diagnose(
     for optimization. It uses a specified optimization strategy to calculate and display
     a detailed summary of the partition state before any intervention.
     """
+    has_age = min_age_to_diagnose is not None or max_age_to_diagnose is not None
+    has_partition = min_partition_to_diagnose is not None or max_partition_to_diagnose is not None
+
+    if has_age and has_partition:
+        msg = "Cannot specify both age-based (--min/max_age_to_diagnose) and partition-based (--min/max_partition_to_diagnose) options."
+        raise click.UsageError(msg)
+
+    if has_age and (min_age_to_diagnose is None or max_age_to_diagnose is None):
+        msg = "Both --min_age_to_diagnose and --max_age_to_diagnose must be specified together."
+        raise click.UsageError(msg)
+
+    if has_partition and (min_partition_to_diagnose is None or max_partition_to_diagnose is None):
+        msg = "Both --min_partition_to_diagnose and --max_partition_to_diagnose must be specified together."
+        raise click.UsageError(msg)
+
     maintenance_schedule = MaintenanceSchedule(Scope())
     entry = maintenance_schedule.get_maintenance_entry(full_name)
     if entry:
@@ -312,8 +361,17 @@ def diagnose(
             record_copy.optimization_strategy = optimization_strategy
         if target_file_size_bytes is not None:
             record_copy.target_file_size_bytes = target_file_size_bytes
-        record_copy.min_age_to_optimize = min_age_to_diagnose
-        record_copy.max_age_to_optimize = max_age_to_diagnose
+        if has_partition:
+            record_copy.min_age_to_optimize = None
+            record_copy.max_age_to_optimize = None
+            record_copy.min_partition_to_optimize = min_partition_to_diagnose
+            record_copy.max_partition_to_optimize = max_partition_to_diagnose
+        elif has_age:
+            record_copy.min_age_to_optimize = min_age_to_diagnose
+            record_copy.max_age_to_optimize = max_age_to_diagnose
+            record_copy.min_partition_to_optimize = None
+            record_copy.max_partition_to_optimize = None
+
         row = Row(**record_copy.model_dump(by_alias=True))
         entry = MaintenanceScheduleRecord.from_row(row).to_entry()
         strategy = OptimizationStrategy(entry)
