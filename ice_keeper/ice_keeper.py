@@ -243,29 +243,48 @@ def cli(
 )
 def reset(force: bool) -> None:  # noqa: FBT001
     """Resets the admin tables."""
-    if not force:
-        # Use abort=True to automatically exit if user says 'no'
-        click.confirm(
-            "This will DROP and RECREATE ice-keeper admin tables and permanently delete all "
-            "admin history/state (MaintenanceSchedule, Journal, PartitionHealth). "
-            "Are you sure you want to continue?",
-            abort=True,
-        )
+    if force or click.confirm(
+        "This will DROP and RECREATE the MaintenanceSchedule table and permanently delete all "
+        "configuration state. Are you sure you want to continue?",
+    ):
+        MaintenanceSchedule.reset()
+        click.echo("MaintenanceSchedule table reset.")
+    else:
+        click.echo("Skipping MaintenanceSchedule table.")
 
-    # The maintenance schedule is populated by the tblproperties. It's safe to reset.
-    MaintenanceSchedule.reset()
-    # The journal contains historical runs of ice-keeper, if you don't care about the history you can reset.
-    Journal.reset()
-    # The partition health table contains historical partition diagnosis diff (before/after), if you don't care about the history you can reset.
-    PartitionHealth.reset()
+    if force or click.confirm(
+        "This will DROP and RECREATE the Journal table and permanently delete all history of executions. Are you sure you want to continue?",
+    ):
+        Journal.reset()
+        click.echo("Journal table reset.")
+    else:
+        click.echo("Skipping Journal table.")
+
+    if force or click.confirm(
+        "This will DROP and RECREATE the PartitionHealth table and permanently delete all history/state. Are you sure you want to continue?",
+    ):
+        PartitionHealth.reset()
+        click.echo("PartitionHealth table reset.")
+    else:
+        click.echo("Skipping PartitionHealth table.")
 
 
 @cli.command(
     short_help="Diagnose table health by analyzing its partitions.",
 )
 @click.option("--full_name", required=True, help="Fully qualified name of table to diagnose.")
-@click.option("--min_age_to_diagnose", default=1, help="Minimum snapshot age (in partition rank) to diagnose (default: 1).")
-@click.option("--max_age_to_diagnose", default=72, help="Maximum snapshot age (in partition rank) to diagnose (default: 72).")
+@click.option("--min_age_to_diagnose", default=None, help="Minimum snapshot age (in partition rank) to diagnose (default: 1).")
+@click.option("--max_age_to_diagnose", default=None, help="Maximum snapshot age (in partition rank) to diagnose (default: 72).")
+@click.option(
+    "--min_partition_to_diagnose",
+    default=None,
+    help="Minimum partition offset to diagnose (e.g., '1d', '1M'). Overrides min_age_to_diagnose.",
+)
+@click.option(
+    "--max_partition_to_diagnose",
+    default=None,
+    help="Maximum partition offset to diagnose (e.g., '7d', '3M'). Overrides max_age_to_diagnose.",
+)
 @click.option("--optimization_strategy", help="Optional optimization strategy to use during diagnosis.")
 @click.option(
     "--target_file_size_bytes",
@@ -292,6 +311,8 @@ def diagnose(
     full_name: str,
     min_age_to_diagnose: int,
     max_age_to_diagnose: int,
+    min_partition_to_diagnose: str | None,
+    max_partition_to_diagnose: str | None,
     mode: str,
     optimization_strategy: str | None,
     target_file_size_bytes: int | None,
@@ -312,8 +333,17 @@ def diagnose(
             record_copy.optimization_strategy = optimization_strategy
         if target_file_size_bytes is not None:
             record_copy.target_file_size_bytes = target_file_size_bytes
-        record_copy.min_age_to_optimize = min_age_to_diagnose
-        record_copy.max_age_to_optimize = max_age_to_diagnose
+        if min_partition_to_diagnose is not None or max_partition_to_diagnose is not None:
+            # Partition-based range: set age fields to -1 so the partition path is used
+            record_copy.min_age_to_optimize = -1
+            record_copy.max_age_to_optimize = -1
+            if min_partition_to_diagnose is not None:
+                record_copy.min_partition_to_optimize = min_partition_to_diagnose
+            if max_partition_to_diagnose is not None:
+                record_copy.max_partition_to_optimize = max_partition_to_diagnose
+        else:
+            record_copy.min_age_to_optimize = min_age_to_diagnose
+            record_copy.max_age_to_optimize = max_age_to_diagnose
         row = Row(**record_copy.model_dump(by_alias=True))
         entry = MaintenanceScheduleRecord.from_row(row).to_entry()
         strategy = OptimizationStrategy(entry)
