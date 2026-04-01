@@ -276,26 +276,24 @@ def reset(force: bool) -> None:  # noqa: FBT001
 @click.option(
     "--min_age_to_diagnose",
     type=int,
-    default=1,
-    show_default=True,
+    default=None,
     help="Minimum snapshot age (in partition rank) to diagnose.",
 )
 @click.option(
     "--max_age_to_diagnose",
     type=int,
-    default=72,
-    show_default=True,
+    default=None,
     help="Maximum snapshot age (in partition rank) to diagnose.",
 )
 @click.option(
     "--min_partition_to_diagnose",
     default=None,
-    help="Minimum partition offset to diagnose (e.g., '1d', '1M'). Overrides min_age_to_diagnose.",
+    help="Minimum partition offset to diagnose (e.g., '1d', '1M'). Must be used with --max_partition_to_diagnose.",
 )
 @click.option(
     "--max_partition_to_diagnose",
     default=None,
-    help="Maximum partition offset to diagnose (e.g., '7d', '3M'). Overrides max_age_to_diagnose.",
+    help="Maximum partition offset to diagnose (e.g., '7d', '3M'). Must be used with --min_partition_to_diagnose.",
 )
 @click.option("--optimization_strategy", help="Optional optimization strategy to use during diagnosis.")
 @click.option(
@@ -321,8 +319,8 @@ def reset(force: bool) -> None:  # noqa: FBT001
 )
 def diagnose(
     full_name: str,
-    min_age_to_diagnose: int,
-    max_age_to_diagnose: int,
+    min_age_to_diagnose: int | None,
+    max_age_to_diagnose: int | None,
     min_partition_to_diagnose: str | None,
     max_partition_to_diagnose: str | None,
     mode: str,
@@ -335,6 +333,21 @@ def diagnose(
     for optimization. It uses a specified optimization strategy to calculate and display
     a detailed summary of the partition state before any intervention.
     """
+    has_age = min_age_to_diagnose is not None or max_age_to_diagnose is not None
+    has_partition = min_partition_to_diagnose is not None or max_partition_to_diagnose is not None
+
+    if has_age and has_partition:
+        msg = "Cannot specify both age-based (--min/max_age_to_diagnose) and partition-based (--min/max_partition_to_diagnose) options."
+        raise click.UsageError(msg)
+
+    if has_age and (min_age_to_diagnose is None or max_age_to_diagnose is None):
+        msg = "Both --min_age_to_diagnose and --max_age_to_diagnose must be specified together."
+        raise click.UsageError(msg)
+
+    if has_partition and (min_partition_to_diagnose is None or max_partition_to_diagnose is None):
+        msg = "Both --min_partition_to_diagnose and --max_partition_to_diagnose must be specified together."
+        raise click.UsageError(msg)
+
     maintenance_schedule = MaintenanceSchedule(Scope())
     entry = maintenance_schedule.get_maintenance_entry(full_name)
     if entry:
@@ -345,29 +358,17 @@ def diagnose(
             record_copy.optimization_strategy = optimization_strategy
         if target_file_size_bytes is not None:
             record_copy.target_file_size_bytes = target_file_size_bytes
-        if min_partition_to_diagnose is not None or max_partition_to_diagnose is not None:
-            # Partition-based range: set age fields to -1 so the partition path is used
-            record_copy.min_age_to_optimize = -1
-            record_copy.max_age_to_optimize = -1
-            if min_partition_to_diagnose is not None:
-                record_copy.min_partition_to_optimize = min_partition_to_diagnose
-            if max_partition_to_diagnose is not None:
-                record_copy.max_partition_to_optimize = max_partition_to_diagnose
-        else:
-            # Age-based range: only override when both bounds are provided.
-            if min_age_to_diagnose is None and max_age_to_diagnose is None:
-                # No CLI overrides for age; keep values from the maintenance schedule.
-                pass
-            elif min_age_to_diagnose is None or max_age_to_diagnose is None:
-                # Partially specified age range is invalid; require both bounds.
-                msg = (
-                    "Both --min-age-to-diagnose and --max-age-to-diagnose must be provided "
-                    "together when specifying an age range."
-                )
-                raise click.ClickException(msg)
-            else:
-                record_copy.min_age_to_optimize = min_age_to_diagnose
-                record_copy.max_age_to_optimize = max_age_to_diagnose
+        if has_partition:
+            record_copy.min_age_to_optimize = None
+            record_copy.max_age_to_optimize = None
+            record_copy.min_partition_to_optimize = min_partition_to_diagnose
+            record_copy.max_partition_to_optimize = max_partition_to_diagnose
+        elif has_age:
+            record_copy.min_age_to_optimize = min_age_to_diagnose
+            record_copy.max_age_to_optimize = max_age_to_diagnose
+            record_copy.min_partition_to_optimize = None
+            record_copy.max_partition_to_optimize = None
+
         row = Row(**record_copy.model_dump(by_alias=True))
         entry = MaintenanceScheduleRecord.from_row(row).to_entry()
         strategy = OptimizationStrategy(entry)
