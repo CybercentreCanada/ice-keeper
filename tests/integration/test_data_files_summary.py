@@ -74,6 +74,10 @@ d_first = datetime.date(2025, 12, 1)
 d_second = datetime.date(2025, 12, 2)
 d_third = datetime.date(2025, 12, 3)
 
+dt_first = datetime.datetime(2025, 12, 1, 0, 0, 0)  # noqa: DTZ001
+dt_second = datetime.datetime(2025, 12, 2, 0, 0, 0)  # noqa: DTZ001
+dt_third = datetime.datetime(2025, 12, 3, 0, 0, 0)  # noqa: DTZ001
+
 dt_first_18h = datetime.datetime(2025, 12, 1, 18, 0, 0)  # noqa: DTZ001
 dt_first_19h = datetime.datetime(2025, 12, 1, 19, 0, 0)  # noqa: DTZ001
 dt_first_20h = datetime.datetime(2025, 12, 1, 20, 0, 0)  # noqa: DTZ001
@@ -117,6 +121,65 @@ def test_summary_age_day(executor: TaskExecutor) -> None:
     assert row
     assert row.oldest == d_second
     assert row.most_recent == d_second
+
+
+@pytest.mark.integration
+def test_summary_identity_day(executor: TaskExecutor) -> None:
+    partitioned_by = "ts"
+    optimization_strategy = "binpack"
+    properties: dict[str, str] = {}
+    create_empty_test_table(partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties)
+
+    insert_data(event_time=dt_first_utc, num_inserts=1)
+    insert_data(event_time=dt_second_utc, num_inserts=1)
+    insert_data(event_time=dt_third_utc, num_inserts=1)
+
+    # add table to maintenance schedule
+    discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
+
+    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
+    mnt_props = maintenance_schedule.get_maintenance_entry(TEST_FULL_NAME)
+    assert mnt_props, "Should have maintenance properties for the table"
+
+    # Consider all partitions
+    mnt_props = set_mnt_partition_to_optimize(mnt_props, "0d", "2000d")
+    row = get_partition_time_from_summary(mnt_props)
+    assert row
+    assert row.oldest == dt_first
+    assert row.most_recent == dt_third
+
+    # Do not process most recent partition
+    mnt_props = set_mnt_partition_to_optimize(mnt_props, "1d", "2000d")
+    row = get_partition_time_from_summary(mnt_props)
+    assert row
+    assert row.oldest == dt_first
+    assert row.most_recent == dt_second
+
+    # skip current partition and up to 2d
+    mnt_props = set_mnt_partition_to_optimize(mnt_props, "1d", "2d")
+    row = get_partition_time_from_summary(mnt_props)
+    assert row
+    assert row.oldest == dt_first
+    assert row.most_recent == dt_second
+
+    # skip current partition and up to 1d
+    mnt_props = set_mnt_partition_to_optimize(mnt_props, "1d", "1d")
+    row = get_partition_time_from_summary(mnt_props)
+    assert row
+    assert row.oldest == dt_second
+    assert row.most_recent == dt_second
+
+    mnt_props = set_mnt_partition_to_optimize(mnt_props, "0d", "0d")
+    row = get_partition_time_from_summary(mnt_props)
+    assert row
+    assert row.oldest == dt_third
+    assert row.most_recent == dt_third
+
+    mnt_props = set_mnt_partition_to_optimize(mnt_props, "0M", "0M")
+    row = get_partition_time_from_summary(mnt_props)
+    assert row
+    assert row.oldest == dt_first
+    assert row.most_recent == dt_third
 
 
 @pytest.mark.integration
