@@ -26,7 +26,7 @@ def test_zorder_2_optimized() -> None:
     results = STL.sql("select zorder2Tuple(col1, col2) as zorder_key from view").collect()
 
     # Verify the results
-    assert len(results) == 3  # noqa: PLR2004
+    assert len(results) == 3
     print("HERE")
     print(results[0]["zorder_key"])
     assert results[0]["zorder_key"] == bytearray(

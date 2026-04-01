@@ -44,9 +44,9 @@ DEFAULTS = {
     "widening_rule_required_partition_columns": "",
     "widening_rule_src_partition": "",
     "widening_rule_dst_partition": "",
-    "widening_rule_min_age_to_widen": 1,
-    "widening_rule_min_partition_to_widen": "1d",
-    "widening_rule_max_partition_to_widen": "7d",
+    "widening_rule_min_age_to_widen": -1,
+    "widening_rule_min_partition_to_widen": "1M",
+    "widening_rule_max_partition_to_widen": "2M",
     "table_location": "",
 }
 
