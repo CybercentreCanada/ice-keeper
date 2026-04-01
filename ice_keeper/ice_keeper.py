@@ -354,8 +354,20 @@ def diagnose(
             if max_partition_to_diagnose is not None:
                 record_copy.max_partition_to_optimize = max_partition_to_diagnose
         else:
-            record_copy.min_age_to_optimize = min_age_to_diagnose
-            record_copy.max_age_to_optimize = max_age_to_diagnose
+            # Age-based range: only override when both bounds are provided.
+            if min_age_to_diagnose is None and max_age_to_diagnose is None:
+                # No CLI overrides for age; keep values from the maintenance schedule.
+                pass
+            elif min_age_to_diagnose is None or max_age_to_diagnose is None:
+                # Partially specified age range is invalid; require both bounds.
+                msg = (
+                    "Both --min-age-to-diagnose and --max-age-to-diagnose must be provided "
+                    "together when specifying an age range."
+                )
+                raise click.ClickException(msg)
+            else:
+                record_copy.min_age_to_optimize = min_age_to_diagnose
+                record_copy.max_age_to_optimize = max_age_to_diagnose
         row = Row(**record_copy.model_dump(by_alias=True))
         entry = MaintenanceScheduleRecord.from_row(row).to_entry()
         strategy = OptimizationStrategy(entry)
