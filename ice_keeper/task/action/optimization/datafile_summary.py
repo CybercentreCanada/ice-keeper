@@ -309,9 +309,18 @@ class DataFilesSummary:
                             f"but got '{min_unit}' and '{max_unit}'."
                         )
                         raise ValueError(msg)
-                    # Round up the reference point to the next unit boundary (ceiling).
+                    if max_amount < min_amount:
+                        msg = (
+                            f"max-partition-to-optimize '{max_partition_to_optimize}' "
+                            f"must be greater than or equal to min-partition-to-optimize '{min_partition_to_optimize}', "
+                            f"but got max={max_amount} < min={min_amount}."
+                        )
+                        raise ValueError(msg)
+                    # Round down the reference point to the next unit boundary (date_trunc).
                     # e.g. if max partition_time is 2025-10-15 and unit is 'month',
-                    # the reference becomes 2025-11-01 (start of next month).
+                    # the reference becomes 2025-10-01 (start of this month).
+                    # an additional interval is added to the min amount
+                    # an additional interval is substracted from the max amount
                     max_pt = "(select max(partition_time) from agg_data_files)"
                     ref_point = f"date_trunc('{min_unit}', {max_pt})"
                     filter_stmt = (
