@@ -219,8 +219,6 @@ class PartitionSpecification:
         """Generate an SQL alias statement for partitions.
 
         The alias assigns a name/alias to the partition columns for easier referencing.
-        If the table is not partitioned return an empty string. The statement will not be used.
-
 
         Returns:
             str: Alias statement representing the partition columns.

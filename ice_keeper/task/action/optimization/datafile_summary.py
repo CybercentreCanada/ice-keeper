@@ -365,7 +365,7 @@ class DataFilesSummary:
             if self.spec.get_base_partition().is_temporal_transformation() or self.spec.get_base_partition().is_temporal_column():
                 min_age_to_optimize = self.datafiles.get_min_age_to_optimize()
                 max_age_to_optimize = self.datafiles.get_max_age_to_optimize()
-                if min_age_to_optimize >= 0 and max_age_to_optimize >= 0:
+                if min_age_to_optimize >= 0 or max_age_to_optimize >= 0:
                     filter_stmt = f"partition_age >= {min_age_to_optimize} and partition_age <= ({max_age_to_optimize})"
                 else:
                     # min/max partition to optimize are strings representing the number of days, hours, months, years
@@ -662,10 +662,12 @@ class DataFilesSummary:
                     sum(ceil(sum_file_size / target_file_size)) over(partition by partition_age) as target_num_files_per_age
                 from
                     agg_data_files
+                {% if is_partitioned %}
                 where
-                    {{ age_filter_stmt }}
+                    {{ partition_filter_stmt }}
+                {% endif %}
                 order by
-                    partition_age asc,
+                    partition_age,
                     n_files desc,
                     avg_file_size desc
             )
