@@ -73,13 +73,13 @@ class Partition(BaseModel):
             msg = f"Cannot perform rewrite_data_files using a filter criteria that is NULL. The partition field {self.partition_field_alias} cannot be NULL."
             raise ValueError(msg)
 
-    def make_rewrite_data_files_partition_filter_stmt(self, partition_field_value: Any) -> str:  # noqa: ANN401
+    def to_sql_predicate(self, partition_field_value: Any) -> str:  # noqa: ANN401
         """Make a SQL filter clause for a single partition field value.
 
         Delegates to the partition's transformation to produce the appropriate
         SQL predicate (e.g. range filter for temporal, equality for bucket/truncate).
         """
-        return self.transformation.make_rewrite_data_files_partition_filter_stmt(partition_field_value)
+        return self.transformation.to_sql_predicate(partition_field_value)
 
 
 class PartitionSpecification:
@@ -114,18 +114,18 @@ class PartitionSpecification:
             for partition in applicable_partitions:
                 partition.sanity_check_partition_field_value(partition_filter)
 
-    def convert_to_rewrite_data_files_partition_filter_stmt(self, partition_diagnosis: PartitionDiagnosisResult) -> str:
+    def make_where_clause_stmt(self, partition_diagnosis: PartitionDiagnosisResult) -> str:
         if not self.is_partitioned:
             return "(1 = 1)"
         partition_filter_stmts: list[str] = []
         for partition_filter in partition_diagnosis.partition_filters:
-            one_partition_filter = self._make_rewrite_data_files_partition_filter_stmt(partition_filter)
+            one_partition_filter = self._make_conjunctive_predicate_stmt(partition_filter)
             partition_filter_stmts.append(one_partition_filter)
         if len(partition_filter_stmts) == 1:
             return partition_filter_stmts[0]
         return " or ".join(f"({stmt})" for stmt in partition_filter_stmts)
 
-    def _make_rewrite_data_files_partition_filter_stmt(self, partition_filter: dict[str, Any]) -> str:
+    def _make_conjunctive_predicate_stmt(self, partition_filter: dict[str, Any]) -> str:
         """Build SQL filter clauses for rewrite_data_files from a single partition filter dict.
 
         Each partition filter is a dict mapping partition field aliases to their values,
@@ -141,7 +141,7 @@ class PartitionSpecification:
         for partition_field_alias, partition_field_value in partition_filter.items():
             partition = self.get_partition_field_by_alias(partition_field_alias)
             if partition:
-                filter_stmt = partition.make_rewrite_data_files_partition_filter_stmt(partition_field_value)
+                filter_stmt = partition.to_sql_predicate(partition_field_value)
                 partition_filter_stmts.append(filter_stmt)
             else:
                 msg = (

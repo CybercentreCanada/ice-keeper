@@ -156,9 +156,7 @@ class WideningRule:
         assert len(partition_diagnosys.partition_filters) == 1
         partition_filter = partition_diagnosys.partition_filters[0]
         partition_field_value = partition_filter[partition_field_alias]
-        dst_partition_date_range = self.dst_widening.partition.make_rewrite_data_files_partition_filter_stmt(
-            partition_field_value
-        )
+        dst_partition_date_range = self.dst_widening.partition.to_sql_predicate(partition_field_value)
         null_check_stmts = [f"{required_column} is null" for required_column in self.required_fixed_columns]
         required_columns_not_null = " or ".join(null_check_stmts)
         return f"({dst_partition_date_range}) and ({required_columns_not_null})"

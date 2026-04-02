@@ -149,7 +149,7 @@ class SubOptimizationStrategy(ActionStrategy):
             table_name=escape_identifier(self.mnt_props.table_name),
             strategy=self.optimization_spec.strategy.value,
             sort_order=sort_order,
-            where=self.spec.convert_to_rewrite_data_files_partition_filter_stmt(self.partition_diagnosis),
+            where=self.spec.make_where_clause_stmt(self.partition_diagnosis),
             options=options,
         )
 

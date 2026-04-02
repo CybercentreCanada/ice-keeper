@@ -71,7 +71,7 @@ def test_identity_partition_spec() -> None:
 
     # Once we find partitions to optimize we will feed those values to a function to make a filter expression for the rewrite_data_files procedure:
     # Note we have to apply the bucket transform to the original column in order to get the equality to work.
-    assert par_spec.make_rewrite_data_files_partition_filter_stmt("fullvalue") == "( id = 'fullvalue' )"
+    assert par_spec.to_sql_predicate("fullvalue") == "( id = 'fullvalue' )"
 
 
 def test_identity_partition_spec_need_quotes() -> None:
@@ -98,7 +98,7 @@ def test_identity_partition_spec_need_quotes() -> None:
 
     # Once we find partitions to optimize we will feed those values to a function to make a filter expression for the rewrite_data_files procedure:
     # Note we have to apply the bucket transform to the original column in order to get the equality to work.
-    assert par_spec.make_rewrite_data_files_partition_filter_stmt("fullvalue") == "( `col+plus|pipe` = 'fullvalue' )"
+    assert par_spec.to_sql_predicate("fullvalue") == "( `col+plus|pipe` = 'fullvalue' )"
 
 
 def test_bucket_partition_spec() -> None:
@@ -125,7 +125,7 @@ def test_bucket_partition_spec() -> None:
 
     # Once we find partitions to optimize we will feed those values to a function to make a filter expression for the rewrite_data_files procedure:
     # Note we have to apply the bucket transform to the original column in order to get the equality to work.
-    assert par_spec.make_rewrite_data_files_partition_filter_stmt("A00B") == "( test.system.bucket(4, id) = 'A00B' )"
+    assert par_spec.to_sql_predicate("A00B") == "( test.system.bucket(4, id) = 'A00B' )"
 
 
 def test_month_partition_spec() -> None:
@@ -165,10 +165,7 @@ def test_month_partition_spec() -> None:
     # └───────────────┴────────────┘
 
     # Once we find partitions to optimize we will feed those values to a function to make a filter expression for the rewrite_data_files procedure:
-    assert (
-        par_spec.make_rewrite_data_files_partition_filter_stmt(672)
-        == "( ts >= date('2026-01-01') and ts < date('2026-01-01') + interval 1 month )"
-    )
+    assert par_spec.to_sql_predicate(672) == "( ts >= date('2026-01-01') and ts < date('2026-01-01') + interval 1 month )"
 
 
 def test_day_partition_spec() -> None:
@@ -196,7 +193,7 @@ def test_day_partition_spec() -> None:
 
     # Once we find partitions to optimize we will feed those values to a function to make a filter expression for the rewrite_data_files procedure:
     assert (
-        par_spec.make_rewrite_data_files_partition_filter_stmt(datetime(2026, 1, 10, 0, 0, 0, tzinfo=timezone.utc))
+        par_spec.to_sql_predicate(datetime(2026, 1, 10, 0, 0, 0, tzinfo=timezone.utc))
         == "( ts >= date('2026-01-10 00:00:00+00:00') and ts < date('2026-01-10 00:00:00+00:00') + interval 1 day )"
     )
 
@@ -239,7 +236,7 @@ def test_hour_partition_spec() -> None:
 
     # Once we find partitions to optimize we will feed those values to a function to make a filter expression for the rewrite_data_files procedure:
     assert (
-        par_spec.make_rewrite_data_files_partition_filter_stmt(450000)
+        par_spec.to_sql_predicate(450000)
         == "( ts >= timestamp('2021-05-03 00:00:00') and ts < timestamp('2021-05-03 00:00:00') + interval 1 hour )"
     )
 
@@ -291,7 +288,7 @@ def test_invalid_partition_value(
     catalog = "test"
     ps = PartitionSpecification.from_pyiceberg(catalog, iceberg_partition_spec, schema)
     with pytest.raises(TypeError):
-        ps.get_base_partition().make_rewrite_data_files_partition_filter_stmt(partition_field_value)
+        ps.get_base_partition().to_sql_predicate(partition_field_value)
 
 
 @pytest.mark.parametrize(
@@ -349,4 +346,4 @@ def test_partition_spec(
     assert ps.is_partitioned
     par_spec = ps.get_base_partition()
 
-    assert par_spec.make_rewrite_data_files_partition_filter_stmt(partition_field_value) == filter_stmt
+    assert par_spec.to_sql_predicate(partition_field_value) == filter_stmt
