@@ -11,7 +11,6 @@ from pyiceberg.types import (
     StringType,
     TimestamptzType,
 )
-from pyspark.sql.types import Row
 
 from ice_keeper import quote_literal_value, should_escape
 from ice_keeper.spec.partition_spec import PartitionSpecification
@@ -72,8 +71,7 @@ def test_identity_partition_spec() -> None:
 
     # Once we find partitions to optimize we will feed those values to a function to make a filter expression for the rewrite_data_files procedure:
     # Note we have to apply the bucket transform to the original column in order to get the equality to work.
-    partition_to_optimize = Row(id="fullvalue")
-    assert par_spec.make_rewrite_data_files_partition_filter_stmt(partition_to_optimize) == "( id = 'fullvalue' )"
+    assert par_spec.make_rewrite_data_files_partition_filter_stmt("fullvalue") == "( id = 'fullvalue' )"
 
 
 def test_identity_partition_spec_need_quotes() -> None:
@@ -100,8 +98,7 @@ def test_identity_partition_spec_need_quotes() -> None:
 
     # Once we find partitions to optimize we will feed those values to a function to make a filter expression for the rewrite_data_files procedure:
     # Note we have to apply the bucket transform to the original column in order to get the equality to work.
-    partition_to_optimize = Row(col_plus_pipe="fullvalue")
-    assert par_spec.make_rewrite_data_files_partition_filter_stmt(partition_to_optimize) == "( `col+plus|pipe` = 'fullvalue' )"
+    assert par_spec.make_rewrite_data_files_partition_filter_stmt("fullvalue") == "( `col+plus|pipe` = 'fullvalue' )"
 
 
 def test_bucket_partition_spec() -> None:
@@ -128,10 +125,7 @@ def test_bucket_partition_spec() -> None:
 
     # Once we find partitions to optimize we will feed those values to a function to make a filter expression for the rewrite_data_files procedure:
     # Note we have to apply the bucket transform to the original column in order to get the equality to work.
-    partition_to_optimize = Row(id_bucket="A00B")
-    assert (
-        par_spec.make_rewrite_data_files_partition_filter_stmt(partition_to_optimize) == "( test.system.bucket(4, id) = 'A00B' )"
-    )
+    assert par_spec.make_rewrite_data_files_partition_filter_stmt("A00B") == "( test.system.bucket(4, id) = 'A00B' )"
 
 
 def test_month_partition_spec() -> None:
@@ -171,9 +165,8 @@ def test_month_partition_spec() -> None:
     # └───────────────┴────────────┘
 
     # Once we find partitions to optimize we will feed those values to a function to make a filter expression for the rewrite_data_files procedure:
-    partition_to_optimize = Row(partition_age=6, ts_month=672)
     assert (
-        par_spec.make_rewrite_data_files_partition_filter_stmt(partition_to_optimize)
+        par_spec.make_rewrite_data_files_partition_filter_stmt(672)
         == "( ts >= date('2026-01-01') and ts < date('2026-01-01') + interval 1 month )"
     )
 
@@ -202,9 +195,8 @@ def test_day_partition_spec() -> None:
     assert ps.make_order_stmt() == "ts_day desc"
 
     # Once we find partitions to optimize we will feed those values to a function to make a filter expression for the rewrite_data_files procedure:
-    partition_to_optimize = Row(ts_day=datetime(2026, 1, 10, 0, 0, 0, tzinfo=timezone.utc))
     assert (
-        par_spec.make_rewrite_data_files_partition_filter_stmt(partition_to_optimize)
+        par_spec.make_rewrite_data_files_partition_filter_stmt(datetime(2026, 1, 10, 0, 0, 0, tzinfo=timezone.utc))
         == "( ts >= date('2026-01-10 00:00:00+00:00') and ts < date('2026-01-10 00:00:00+00:00') + interval 1 day )"
     )
 
@@ -246,9 +238,8 @@ def test_hour_partition_spec() -> None:
     # └───────────────┴────────────┘
 
     # Once we find partitions to optimize we will feed those values to a function to make a filter expression for the rewrite_data_files procedure:
-    partition_to_optimize = Row(partition_age=6, ts_hour=450000)
     assert (
-        par_spec.make_rewrite_data_files_partition_filter_stmt(partition_to_optimize)
+        par_spec.make_rewrite_data_files_partition_filter_stmt(450000)
         == "( ts >= timestamp('2021-05-03 00:00:00') and ts < timestamp('2021-05-03 00:00:00') + interval 1 hour )"
     )
 
@@ -299,11 +290,8 @@ def test_invalid_partition_value(
     iceberg_partition_spec = PartitionSpec(PartitionField(1, 1001, transform, partition_field_name))
     catalog = "test"
     ps = PartitionSpecification.from_pyiceberg(catalog, iceberg_partition_spec, schema)
-    partition_field_alias = ps.get_base_partition().partition_field_alias
-    data = {partition_field_alias: partition_field_value}
-    partition_to_optimize = Row(**data)
     with pytest.raises(TypeError):
-        ps.get_base_partition().make_rewrite_data_files_partition_filter_stmt(partition_to_optimize)
+        ps.get_base_partition().make_rewrite_data_files_partition_filter_stmt(partition_field_value)
 
 
 @pytest.mark.parametrize(
@@ -312,7 +300,6 @@ def test_invalid_partition_value(
         "field_type",
         "transform",
         "partition_field_name",
-        "partition_field_alias",
         "partition_field_value",
         "filter_stmt",
     ),
@@ -322,7 +309,6 @@ def test_invalid_partition_value(
             TimestamptzType(),
             HourTransform(),
             "ts_hour",
-            "ts_hour",
             500000,
             "( ts >= timestamp('2027-01-15 08:00:00') and ts < timestamp('2027-01-15 08:00:00') + interval 1 hour )",
         ),
@@ -330,7 +316,6 @@ def test_invalid_partition_value(
             "col.with.dots",
             TimestamptzType(),
             HourTransform(),
-            "col.with.dots_hour",
             "col_with_dots_hour",
             500000,
             "( `col.with.dots` >= timestamp('2027-01-15 08:00:00') and `col.with.dots` < timestamp('2027-01-15 08:00:00') + interval 1 hour )",
@@ -339,7 +324,6 @@ def test_invalid_partition_value(
             "ts",
             TimestamptzType(),
             DayTransform(),
-            "ts_day",
             "ts_day",
             datetime(2026, 1, 13, tzinfo=timezone.utc),
             "( ts >= date('2026-01-13 00:00:00+00:00') and ts < date('2026-01-13 00:00:00+00:00') + interval 1 day )",
@@ -351,7 +335,6 @@ def test_partition_spec(
     field_type: IcebergType,
     partition_field_name: str,
     transform: Transform[Any, Any],
-    partition_field_alias: str,
     partition_field_value: Any,  # noqa: ANN401
     filter_stmt: str,
 ) -> None:
@@ -366,6 +349,4 @@ def test_partition_spec(
     assert ps.is_partitioned
     par_spec = ps.get_base_partition()
 
-    data = {partition_field_alias: partition_field_value}
-    partition_to_optimize = Row(**data)
-    assert par_spec.make_rewrite_data_files_partition_filter_stmt(partition_to_optimize) == filter_stmt
+    assert par_spec.make_rewrite_data_files_partition_filter_stmt(partition_field_value) == filter_stmt

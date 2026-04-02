@@ -1,16 +1,17 @@
 import json
 import logging
 import re
+from typing import Any
 
 from pydantic import BaseModel
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
 from pyiceberg.types import DateType, IcebergType, TimestampType, TimestamptzType, TimeType
-from pyspark.sql.types import Row
 
 from ice_keeper import escape_identifier
 from ice_keeper.catalog import load_table
+from ice_keeper.spec.partition_diagnosis_result import PartitionDiagnosisResult
 
 from .transformation import (
     DayTransformation,
@@ -63,16 +64,16 @@ class Partition(BaseModel):
             return self.source_field_type in [TimestampType(), TimestamptzType(), TimeType(), DateType()]
         return False
 
-    def applies_to_diagnosis_row(self, row: Row) -> bool:
-        return self.partition_field_alias in row
+    def applies_to_diagnosis_row(self, partition_filter: dict[str, Any]) -> bool:
+        return self.partition_field_alias in partition_filter
 
-    def sanity_check_partition_field_value(self, row: Row) -> None:
-        partition_field_value = row[self.partition_field_alias]
+    def sanity_check_partition_field_value(self, partition_filter: dict[str, Any]) -> None:
+        partition_field_value = partition_filter[self.partition_field_alias]
         if partition_field_value is None:
             msg = f"Cannot perform rewrite_data_files using a filter criteria that is NULL. The partition field {self.partition_field_alias} cannot be NULL."
             raise ValueError(msg)
 
-    def make_rewrite_data_files_partition_filter_stmt(self, row: Row) -> str:
+    def make_rewrite_data_files_partition_filter_stmt(self, partition_field_value: Any) -> str:  # noqa: ANN401
         """Make filters for the rewrite_data_files from the diagnosis result.
 
         The diagnosis will return a resultset like this one. Note, that this result set does not necessarliy contain
@@ -88,20 +89,23 @@ class Partition(BaseModel):
             │ 9             │ 450003     │
             └───────────────┴────────────┘
         """
-        return self.transformation.make_rewrite_data_files_partition_filter_stmt(row[self.partition_field_alias])
+        return self.transformation.make_rewrite_data_files_partition_filter_stmt(partition_field_value)
 
 
 class PartitionSpecification:
-    def __init__(self, partition_list: list[Partition], spec_id: int, *, is_partitioned: bool) -> None:
+    def __init__(self, partition_list: list[Partition], spec_id: int) -> None:
         self.partition_list = partition_list
         self.spec_id = spec_id
-        self.is_partitioned = is_partitioned
+        self.is_partitioned = len(partition_list) > 0
 
     def __str__(self) -> str:  # noqa: D105
-        partition_list_str = "[" + ", ".join(str(part) for part in self.partition_list) + "]"
+        partition_list_str = "[" + ", ".join(part.model_dump_json() for part in self.partition_list) + "]"
         return f"PartitionSpecification(spec_id={self.spec_id}, partition_list={partition_list_str}, is_partitioned={self.is_partitioned})"
 
     def get_base_partition(self) -> Partition:
+        if len(self.partition_list) == 0:
+            msg = "Can't get base partition of un-partitioned tables, check if table is partitioned before calling his method."
+            raise RuntimeError(msg)
         return self.partition_list[0]
 
     def make_to_json_stmt(self) -> str:
@@ -112,17 +116,27 @@ class PartitionSpecification:
         struct_fields = [f"'{p.partition_field_alias}', {p.partition_field_alias}" for p in self.partition_list]
         return f"to_json(named_struct( {' , '.join(struct_fields)} ))"
 
-    def sanity_check_partition_field_values(self, row: Row) -> None:
+    def sanity_check_partition_field_values(self, partition_filter: dict[str, Any]) -> None:
         if self.is_partitioned:
-            applicable_partitions = [partition for partition in self.partition_list if partition.applies_to_diagnosis_row(row)]
+            applicable_partitions = [
+                partition for partition in self.partition_list if partition.applies_to_diagnosis_row(partition_filter)
+            ]
             for partition in applicable_partitions:
-                partition.sanity_check_partition_field_value(row)
+                partition.sanity_check_partition_field_value(partition_filter)
 
-    def convert_to_rewrite_data_files_partition_filter_stmt(self, row: Row) -> str:
-        filters = self.make_rewrite_data_files_partition_filters(row)
-        return " and ".join(filters)
+    def convert_to_rewrite_data_files_partition_filter_stmt(self, partition_diagnosis: PartitionDiagnosisResult) -> str:
+        if not self.is_partitioned:
+            return "(1 = 1)"
+        partition_filter_stmts: list[str] = []
+        for partition_filter in partition_diagnosis.partition_filters:
+            filters = self.make_rewrite_data_files_partition_filters(partition_filter)
+            one_partition_filter = " and ".join(filters)
+            partition_filter_stmts.append(one_partition_filter)
+        if len(partition_filter_stmts) == 1:
+            return partition_filter_stmts[0]
+        return " or ".join(f"({stmt})" for stmt in partition_filter_stmts)
 
-    def make_rewrite_data_files_partition_filters(self, row: Row) -> list[str]:
+    def make_rewrite_data_files_partition_filters(self, partition_filter: dict[str, Any]) -> list[str]:
         """Make filters for the rewrite_data_files from the diagnosis result.
 
         The diagnosis will return a resultset like this one. Note, that this result set does not necessarliy contain
@@ -138,11 +152,23 @@ class PartitionSpecification:
             │ 9             │ 450003     │
             └───────────────┴────────────┘
         """
-        if not self.is_partitioned:
-            return ["(1 = 1)"]
-        # If the partition is not found in the resultset then skip it.
-        applicable_partitions = [partition for partition in self.partition_list if partition.applies_to_diagnosis_row(row)]
-        return [partition.make_rewrite_data_files_partition_filter_stmt(row) for partition in applicable_partitions]
+        partition_filter_stmts: list[str] = []
+        # If the partition field is not found in the resultset then skip it.
+        for partition_field_alias, partition_field_value in partition_filter.items():
+            partition = self.get_partition_field_by_alias(partition_field_alias)
+            if partition:
+                filter_stmt = partition.make_rewrite_data_files_partition_filter_stmt(partition_field_value)
+                partition_filter_stmts.append(filter_stmt)
+            else:
+                msg = "should not happen"
+                raise RuntimeError(msg)
+        return partition_filter_stmts
+
+    def get_partition_field_by_alias(self, partition_alias: str) -> Partition | None:
+        for partition in self.partition_list:
+            if partition.partition_field_alias == partition_alias:
+                return partition
+        return None
 
     def get_partition_field_by_name(self, partition_name: str) -> Partition | None:
         """Retrieve the partition field matching the partition_name in the list of partitions.
@@ -319,7 +345,7 @@ class PartitionSpecification:
         """
         partition_list: list[Partition] = []
 
-        return PartitionSpecification(partition_list, spec.spec_id, is_partitioned=False)
+        return PartitionSpecification(partition_list, spec.spec_id)
 
     @classmethod
     def _create_partitioned_spec(cls, catalog: str, spec: PartitionSpec, schema: Schema) -> "PartitionSpecification":
@@ -347,7 +373,7 @@ class PartitionSpecification:
             )
             partition_list.append(partition)
 
-        return PartitionSpecification(partition_list, spec.spec_id, is_partitioned=True)
+        return PartitionSpecification(partition_list, spec.spec_id)
 
 
 class PartitionSpecifications:

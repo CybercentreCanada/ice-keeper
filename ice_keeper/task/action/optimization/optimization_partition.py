@@ -2,11 +2,11 @@ import logging
 from typing import Any
 
 import humanfriendly
-from pyspark.sql.types import Row
 from typing_extensions import override
 
 from ice_keeper import Action, ActionWarning, escape_identifier
 from ice_keeper.config import Config, TemplateName
+from ice_keeper.spec.partition_diagnosis_result import PartitionDiagnosisResult
 from ice_keeper.spec.widening_rule import WideningRule
 from ice_keeper.stm import STL
 from ice_keeper.table.schedule_entry import MaintenanceScheduleEntry
@@ -24,11 +24,16 @@ class SubOptimizationStrategy(ActionStrategy):
     and executes widening rules for partition rewrites when applicable.
     """
 
-    def __init__(self, row: Row, spec_id: int, mnt_props: MaintenanceScheduleEntry, widening_rule: None | WideningRule) -> None:
+    def __init__(
+        self,
+        partition_diagnosis: PartitionDiagnosisResult,
+        spec_id: int,
+        mnt_props: MaintenanceScheduleEntry,
+        widening_rule: None | WideningRule,
+    ) -> None:
         """Initialize the strategy for optimizing a specific partition."""
         super().__init__(mnt_props)
-        self.row = row
-        self.target_file_size = self.row.target_file_size
+        self.partition_diagnosis = partition_diagnosis
         self.spec_id = spec_id
         self.spec = self.mnt_props.partition_specs[self.spec_id]
         self.optimization_spec = self.mnt_props.optimization_spec
@@ -117,7 +122,7 @@ class SubOptimizationStrategy(ActionStrategy):
             "delete-file-threshold": "1",
             "remove-dangling-deletes": "true",
             "max-file-group-size-bytes": str(humanfriendly.parse_size("200 GB", binary=True)),
-            "target-file-size-bytes": str(self.target_file_size),
+            "target-file-size-bytes": str(self.partition_diagnosis.target_file_size),
             "output-spec-id": str(self.spec_id),
             "rewrite-all": "true" if not self.optimization_spec.is_binpack() else "false",
             "min-input-files": "1",  # The diagnosis process checks if we have the necessary number of files to trigger an optimization of the partition. No need to check minimum here.
@@ -125,7 +130,7 @@ class SubOptimizationStrategy(ActionStrategy):
 
         # Add additional options when optimizing sorted data
         if self.optimization_spec.is_sorted():
-            per_file = self._evaluate_shuffle_partitions_per_file(self.target_file_size)
+            per_file = self._evaluate_shuffle_partitions_per_file(self.partition_diagnosis.target_file_size)
             options["shuffle-partitions-per-file"] = str(per_file)
 
         self._sanity_check_partition_field_values()
@@ -144,7 +149,7 @@ class SubOptimizationStrategy(ActionStrategy):
             table_name=escape_identifier(self.mnt_props.table_name),
             strategy=self.optimization_spec.strategy.value,
             sort_order=sort_order,
-            where=self._convert_to_rewrite_data_files_partition_filter_stmt(),
+            where=self.spec.convert_to_rewrite_data_files_partition_filter_stmt(self.partition_diagnosis),
             options=options,
         )
 
@@ -164,24 +169,13 @@ class SubOptimizationStrategy(ActionStrategy):
         return max(1, n)
 
     def _sanity_check_partition_field_values(self) -> None:
-        try:
-            self.spec.sanity_check_partition_field_values(self.row)
-        except ValueError as e:
-            msg = f"Cannot optimize a partition in table {self.mnt_props.full_name}. Caused by {e!s}"
-            raise ActionWarning(msg)  # noqa: B904
-
-    def _convert_to_rewrite_data_files_partition_filter_stmt(self) -> str:
-        """Generates a WHERE clause for filtering the partitions to optimize.
-
-        This ensures that the optimization targets specific partitions according
-        to the maintenance properties.
-
-        Returns:
-            str: A SQL WHERE clause to filter specific partitions.
-        """
-        stmt = self.spec.convert_to_rewrite_data_files_partition_filter_stmt(self.row)
-        logger.debug("Adding partition to optimization list: %s", stmt)
-        return stmt
+        if len(self.partition_diagnosis.partition_filters) > 0:
+            try:
+                partition_filter = self.partition_diagnosis.partition_filters[0]
+                self.spec.sanity_check_partition_field_values(partition_filter)
+            except ValueError as e:
+                msg = f"Cannot optimize a partition in table {self.mnt_props.full_name}. Caused by {e!s}"
+                raise ActionWarning(msg)  # noqa: B904
 
     def _has_widening_rule(self) -> bool:
         """Check if a widening rule exists for the specified partition.
@@ -204,7 +198,7 @@ class SubOptimizationStrategy(ActionStrategy):
         assert self.widening_rule, "Widening rule must be defined."
 
         # Create the validation filter for the partition
-        validation_filter = self.widening_rule.make_widening_validation_filter(self.row)
+        validation_filter = self.widening_rule.make_widening_validation_filter(self.partition_diagnosis)
 
         sql = f"""
           -- Checking if safe to run widening rewrite

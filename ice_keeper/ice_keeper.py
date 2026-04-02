@@ -247,7 +247,7 @@ def reset(force: bool, schedule: bool, journal: bool, health: bool, all_tables: 
         schedule = journal = health = True
 
     if not (schedule or journal or health):
-        msg = "Specify at least one table to reset: -s (schedule), -j (journal), -p (health), or -a (all)."
+        msg = "Specify at least one table to reset: -s (--schedule), -j (--journal), -p (--health), or -a (--all)."
         raise click.UsageError(msg)
 
     if schedule:

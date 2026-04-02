@@ -1,12 +1,13 @@
 import logging
 from typing import Any
 
-from pyspark.sql.types import Row, StructType
+from pyspark.sql.types import StructType
 from typing_extensions import override
 
 from ice_keeper import Action
 from ice_keeper.output import rows_log_debug
 from ice_keeper.spec import WideningRule
+from ice_keeper.spec.partition_diagnosis_result import PartitionDiagnosisResult
 from ice_keeper.stm import STL
 from ice_keeper.table import PartitionHealth
 from ice_keeper.task import SparkTask
@@ -133,11 +134,10 @@ class OptimizationStrategy(ActionStrategy):
                 # Diagnose the partitions for optimization opportunities
                 diagnosis = PartitionDiagnosis(self.mnt_props, spec_id)
 
-                rows = diagnosis.find_partitions_to_optimize(summary)
-                if len(rows) > 0:
-                    rows_log_debug(rows, f"Partitions to optimize in {self.mnt_props.full_name}")
+                partitions_to_optimize = diagnosis.find_partitions_to_optimize(summary)
+                if len(partitions_to_optimize) > 0:
                     did_some_optimizations = True
-                    self._execute_sub_tasks(sub_executor, rows, spec_id)
+                    self._execute_sub_tasks(sub_executor, partitions_to_optimize, spec_id)
                 else:
                     logger.debug("All partitions in spec_id: %s are healthy", spec_id)
 
@@ -195,19 +195,16 @@ class OptimizationStrategy(ActionStrategy):
             return rule
         return None
 
-    def _execute_sub_tasks(self, sub_executor: SubTaskExecutor, rows: list[Row], spec_id: int) -> None:
+    def _execute_sub_tasks(
+        self, sub_executor: SubTaskExecutor, partitions_to_optimize: list[PartitionDiagnosisResult], spec_id: int
+    ) -> None:
         """Execute sub-tasks for optimizing partitions.
 
         Sub-tasks are created based on rows containing partitions that require optimization.
-
-        Args:
-            sub_executor (SubTaskExecutor): The task execution context.
-            rows (list[Row]): List of partitions to optimize.
-            spec_id (int): The partition spec ID being processed.
         """
         # sub_tasks: list[Task] = []
-        for row in rows:
-            strategy = SubOptimizationStrategy(row, spec_id, self.mnt_props, self.get_widening_rule(spec_id))
+        for partition_diagnosis in partitions_to_optimize:
+            strategy = SubOptimizationStrategy(partition_diagnosis, spec_id, self.mnt_props, self.get_widening_rule(spec_id))
             task = SparkTask(ActionTask(strategy, self.mnt_props))
             sub_executor.submit_subtasks_and_wait([task])
             # sub_tasks.append(task)

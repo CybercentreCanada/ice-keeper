@@ -377,6 +377,17 @@ class DataFilesSummary:
         if self.mnt_props.target_file_size_bytes > 0:
             return str(self.mnt_props.target_file_size_bytes)
 
+        # Auto target file size requires each sub-partition to be optimized independently,
+        # so optimize-partition-depth must equal the number of partition levels.
+        num_partition_levels = len(self.spec.partition_list)
+        configured_depth = self.mnt_props.optimize_partition_depth
+        if configured_depth != num_partition_levels:
+            msg = (
+                f"Auto target file size (ice-keeper.optimization-target-file-size-bytes=-1) requires "
+                f"ice-keeper.optimize-partition-depth to equal the number of partition levels. "
+                f"Current depth is {configured_depth} but the table has {num_partition_levels} partition level(s)."
+            )
+            raise ValueError(msg)
         # Target file size based on size of partition from 16MB files up to 1GB.
         # +-----------------------+----------------+----------------------+------------------------+-----------------------------+----------------------------+
         # |num_partitions_in_table|table_total_size|table_total_file_count|partition_size_threshold|partition_num_files_threshold|recommended_target_file_size|

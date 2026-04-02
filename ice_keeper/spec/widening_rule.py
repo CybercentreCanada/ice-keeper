@@ -1,8 +1,7 @@
 import logging
 
-from pyspark.sql.types import Row
-
 from ice_keeper import IceKeeperTblProperty
+from ice_keeper.spec.partition_diagnosis_result import PartitionDiagnosisResult
 
 from .partition_spec import Partition, PartitionSpecification, PartitionSpecifications
 
@@ -136,7 +135,7 @@ class WideningRule:
         )
         raise ValueError(msg)
 
-    def make_widening_validation_filter(self, row: Row) -> str:
+    def make_widening_validation_filter(self, partition_diagnosys: PartitionDiagnosisResult) -> str:
         """Generate a WHERE clause to validate that required columns do not contain NULL values.
 
         When performing a widening operation with `rewrite_data_files`, a filter is applied
@@ -152,7 +151,14 @@ class WideningRule:
         "(timestamp >= '2025-02-01' AND timestamp < '2025-02-01' + INTERVAL 1 MONTH) AND (_lag IS NULL)"
         """
         assert self.dst_widening
-        dst_partition_date_range = self.dst_widening.partition.make_rewrite_data_files_partition_filter_stmt(row)
+        assert len(self.dst_widening.partition.partition_field_alias) > 0
+        partition_field_alias = self.dst_widening.partition.partition_field_alias
+        assert len(partition_diagnosys.partition_filters) == 1
+        partition_filter = partition_diagnosys.partition_filters[0]
+        partition_field_value = partition_filter[partition_field_alias]
+        dst_partition_date_range = self.dst_widening.partition.make_rewrite_data_files_partition_filter_stmt(
+            partition_field_value
+        )
         null_check_stmts = [f"{required_column} is null" for required_column in self.required_fixed_columns]
         required_columns_not_null = " or ".join(null_check_stmts)
         return f"({dst_partition_date_range}) and ({required_columns_not_null})"
