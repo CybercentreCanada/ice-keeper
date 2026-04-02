@@ -74,20 +74,10 @@ class Partition(BaseModel):
             raise ValueError(msg)
 
     def make_rewrite_data_files_partition_filter_stmt(self, partition_field_value: Any) -> str:  # noqa: ANN401
-        """Make filters for the rewrite_data_files from the diagnosis result.
+        """Make a SQL filter clause for a single partition field value.
 
-        The diagnosis will return a resultset like this one. Note, that this result set does not necessarliy contain
-        columns for all the partitions. ice-keeper groups partitions together using a depth level.
-
-        This function will make a filter only if the column matches a partition.
-            ┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┓
-            ┃ partition_age ┃ ts_hour    ┃
-            ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━┩
-            │ 6             │ 450000     │
-            │ 7             │ 450001     │
-            │ 8             │ 450002     │
-            │ 9             │ 450003     │
-            └───────────────┴────────────┘
+        Delegates to the partition's transformation to produce the appropriate
+        SQL predicate (e.g. range filter for temporal, equality for bucket/truncate).
         """
         return self.transformation.make_rewrite_data_files_partition_filter_stmt(partition_field_value)
 
@@ -129,28 +119,22 @@ class PartitionSpecification:
             return "(1 = 1)"
         partition_filter_stmts: list[str] = []
         for partition_filter in partition_diagnosis.partition_filters:
-            filters = self.make_rewrite_data_files_partition_filters(partition_filter)
-            one_partition_filter = " and ".join(filters)
+            one_partition_filter = self._make_rewrite_data_files_partition_filter_stmt(partition_filter)
             partition_filter_stmts.append(one_partition_filter)
         if len(partition_filter_stmts) == 1:
             return partition_filter_stmts[0]
         return " or ".join(f"({stmt})" for stmt in partition_filter_stmts)
 
-    def make_rewrite_data_files_partition_filters(self, partition_filter: dict[str, Any]) -> list[str]:
-        """Make filters for the rewrite_data_files from the diagnosis result.
+    def _make_rewrite_data_files_partition_filter_stmt(self, partition_filter: dict[str, Any]) -> str:
+        """Build SQL filter clauses for rewrite_data_files from a single partition filter dict.
 
-        The diagnosis will return a resultset like this one. Note, that this result set does not necessarliy contain
-        columns for all the partitions. ice-keeper groups partitions together using a depth level.
+        Each partition filter is a dict mapping partition field aliases to their values,
+        extracted from a PartitionDiagnosisResult. For example::
 
-        This function will make a filter only if the column matches a partition.
-            ┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┓
-            ┃ partition_age ┃ ts_hour    ┃
-            ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━┩
-            │ 6             │ 450000     │
-            │ 7             │ 450001     │
-            │ 8             │ 450002     │
-            │ 9             │ 450003     │
-            └───────────────┴────────────┘
+            {"ts_day": 20181, "id_bucket": 2}
+
+        A SQL predicate is generated for every key that matches a known partition field.
+        Raises RuntimeError if a key does not match any partition in the table.
         """
         partition_filter_stmts: list[str] = []
         # If the partition field is not found in the resultset then skip it.
@@ -160,9 +144,12 @@ class PartitionSpecification:
                 filter_stmt = partition.make_rewrite_data_files_partition_filter_stmt(partition_field_value)
                 partition_filter_stmts.append(filter_stmt)
             else:
-                msg = "should not happen"
+                msg = (
+                    f"This should not happen. The partition_filter contains a partition field alias named: {partition_field_alias} "
+                    f"but the table is not partitioned by that field. Here is the list of partitions in this table: {self.partition_list}"
+                )
                 raise RuntimeError(msg)
-        return partition_filter_stmts
+        return " and ".join(partition_filter_stmts)
 
     def get_partition_field_by_alias(self, partition_alias: str) -> Partition | None:
         for partition in self.partition_list:

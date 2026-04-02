@@ -13,10 +13,12 @@ from ice_keeper.task import PartitionSummary
 from ice_keeper.task.action.optimization.optimization import SubOptimizationStrategy
 from ice_keeper.task.action.optimization.partition_diagnostic import PartitionDiagnosis
 from tests.test_common import (
+    FIVE_EXPECTED,
     ONE_EXPECTED,
     SCOPE_SCHEMA,
     SCOPE_WHERE_FULL_NAME,
     TEST_FULL_NAME,
+    THREE_EXPECTED,
 )
 from tests.utils import (
     compare_multiline_strings,
@@ -427,3 +429,85 @@ def test_optimize(
     else:
         assert not mnt_props.optimization_spec.is_binpack()
         assert not mnt_props.optimization_spec.is_sorted()
+
+
+@pytest.mark.integration
+def test_dynamic_grouping_binpack_groups_all_buckets(executor: TaskExecutor) -> None:
+    """With a large grouping size, all buckets within the same age should be grouped into one PartitionDiagnosisResult."""
+    properties = {
+        "write.delete.mode": "merge-on-read",
+        IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
+        IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",
+        IceKeeperTblProperty.OPTIMIZE_PARTITION_DEPTH: "-1",
+        # Large threshold so all sub-partitions fit in one group
+        IceKeeperTblProperty.OPTIMIZATION_GROUPING_SIZE_BYTES: "1073741824",
+        IceKeeperTblProperty.BINPACK_MIN_INPUT_FILES: "0",
+    }
+    dt = datetime.datetime(2025, 3, 3, 18, 33, 59, tzinfo=datetime.timezone.utc)
+    create_test_table_with_one_batch(
+        event_time=dt, partitioned_by="days(ts), bucket(3, id)", optimization_strategy="binpack", properties=properties
+    )
+    discover_tables(executor, SCOPE_SCHEMA)
+    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
+    mnt_props = maintenance_schedule.entries()[0]
+
+    os = OptimizationStrategy(mnt_props)
+    assert os.check_should_execute_action()
+
+    spec_id = 0
+    summary = PartitionSummary(mnt_props, spec_id, None)
+    diagnosis = PartitionDiagnosis(mnt_props, spec_id)
+    partition_diagnosys_results = diagnosis.find_partitions_to_optimize(summary)
+
+    # All buckets should be in a single group
+    assert len(partition_diagnosys_results) == ONE_EXPECTED
+    result = partition_diagnosys_results[0]
+    # Should have multiple partition filters (one per bucket)
+    assert len(result.partition_filters) == THREE_EXPECTED, f"Expected 3 bucket filters, got {result.partition_filters}"
+
+    # The WHERE clause should contain OR'd filters
+    sos = SubOptimizationStrategy(result, spec_id, mnt_props, None)
+    stmt = sos.prepare_statement_to_execute()
+    assert " or " in stmt, f"Expected OR'd partition filters in WHERE clause, got: {stmt}"
+    assert "local.system.bucket(3, id)" in stmt, f"Expected bucket filter in WHERE clause, got: {stmt}"
+
+
+@pytest.mark.integration
+def test_dynamic_grouping_binpack_splits_into_multiple_groups(executor: TaskExecutor) -> None:
+    """With a tiny grouping size, each bucket should end up in its own group."""
+    properties = {
+        "write.delete.mode": "merge-on-read",
+        IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
+        IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",
+        IceKeeperTblProperty.OPTIMIZE_PARTITION_DEPTH: "-1",
+        # Tiny threshold so each sub-partition exceeds the limit
+        IceKeeperTblProperty.OPTIMIZATION_GROUPING_SIZE_BYTES: "1",
+        IceKeeperTblProperty.BINPACK_MIN_INPUT_FILES: "0",
+    }
+    dt = datetime.datetime(2025, 3, 3, 18, 33, 59, tzinfo=datetime.timezone.utc)
+    create_test_table_with_one_batch(
+        event_time=dt, partitioned_by="days(ts), category", optimization_strategy="binpack", properties=properties
+    )
+
+    discover_tables(executor, SCOPE_SCHEMA)
+    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
+    mnt_props = maintenance_schedule.entries()[0]
+
+    os = OptimizationStrategy(mnt_props)
+    assert os.check_should_execute_action()
+
+    spec_id = 0
+    summary = PartitionSummary(mnt_props, spec_id, None)
+    diagnosis = PartitionDiagnosis(mnt_props, spec_id)
+    partition_diagnosys_results = diagnosis.find_partitions_to_optimize(summary)
+
+    # Each bucket should be in its own group
+    assert len(partition_diagnosys_results) == FIVE_EXPECTED, (
+        f"Expected 5 groups (one per category), got {len(partition_diagnosys_results)}"
+    )
+    for result in partition_diagnosys_results:
+        assert len(result.partition_filters) == ONE_EXPECTED, f"Expected 1 filter per group, got {result.partition_filters}"
+        sos = SubOptimizationStrategy(result, spec_id, mnt_props, None)
+        stmt = sos.prepare_statement_to_execute()
+        # Single filter should not have OR
+        assert " or " not in stmt, f"Single-category group should not have OR in WHERE, got: {stmt}"

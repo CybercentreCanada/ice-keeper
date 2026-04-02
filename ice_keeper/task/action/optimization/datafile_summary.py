@@ -656,7 +656,7 @@ class DataFilesSummary:
                     -- Determine necessity for sorting based on correlation threshold or delete files
                     (corr < corr_threshold or n_delete_files > 0 or num_files_to_widen > 0) as should_sort,
                     -- Determine necessity for binpacking based on number of rewritten files or delete files
-                    (num_files_targetted_for_rewrite > {{ num_files_targetted_for_rewrite_threshold }} or n_delete_files > 0) as should_binpack
+                    (num_files_targetted_for_rewrite > {{ binpack_min_input_files }} or n_delete_files > 0) as should_binpack
                 from
                     agg_data_files
                 {% if partition_filter_stmt  %}
@@ -696,7 +696,7 @@ class DataFilesSummary:
             upper_bounds_expr=self.bounds.make_upper_bounds_expr_stmt(),
             target_file_size_stmt=self._make_target_file_size_stmt(),
             base_column_name_stmt=base_column_name_stmt,
-            num_files_targetted_for_rewrite_threshold=5,
+            binpack_min_input_files=self.mnt_props.binpack_min_input_files,
             partition_filter_stmt=partition_filter_stmt,
             order_by=order_by,
             format_sum_file_size=self._format_bytes_stmt("sum_file_size"),

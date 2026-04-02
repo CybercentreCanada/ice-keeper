@@ -1,6 +1,5 @@
 import logging
 
-import humanfriendly
 from jinja2 import Template
 
 from ice_keeper.spec.partition_diagnosis_result import PartitionDiagnosisResult
@@ -34,15 +33,13 @@ class PartitionDiagnosis:
         self.spec = mnt_props.partition_specs[spec_id]
 
     def _find_partitions_to_optimize_dynamic_grouping(self, summary: PartitionSummary) -> list[PartitionDiagnosisResult]:
-        all_partition_grouping_stmt = self.spec.make_grouping_stmt()
-
         # Construct SQL query to retrieve partitions that satisfy the optimization criteria
         sql_template = Template("""
                 -- Identifying partitions to optimize for table {{ full_name }}
                 with summary as (
                     select
                         partition_age,
-                        {{ all_partition_grouping_stmt }},
+                        {{ list_of_all_partition_alias_stmt }},
                         target_file_size,
                         sum_file_size as subpartition_size,
                         should_sort,
@@ -54,7 +51,7 @@ class PartitionDiagnosis:
                 running_partition_size as (
                     select
                         partition_age,
-                        {{ all_partition_grouping_stmt }},
+                        {{ list_of_all_partition_alias_stmt }},
                         target_file_size,
                         subpartition_size,
                         sum(subpartition_size) over (
@@ -79,7 +76,7 @@ class PartitionDiagnosis:
                 labeled_partition_groupings as (
                     select
                         partition_age,
-                        {{ all_partition_grouping_stmt }},
+                        {{ list_of_all_partition_alias_stmt }},
                         target_file_size,
                         format_string('partition_age:%d target_file_size:%d optimization_group:%d',
                             partition_age,
@@ -95,7 +92,7 @@ class PartitionDiagnosis:
                         target_file_size,
                         dynamic_optimization_grouping_label
                         {% if is_partitioned %}
-                            , collect_list(struct({{ all_partition_grouping_stmt }})) as partition_filters
+                            , collect_list(struct({{ list_of_all_partition_alias_stmt }})) as partition_filters
                         {% endif %}
                     from
                         labeled_partition_groupings
@@ -111,15 +108,14 @@ class PartitionDiagnosis:
                 select * from final
         """)
 
-        optimization_grouping_size_threshold = humanfriendly.parse_size("16 MB", binary=True)
         # Render the SQL query with all required variables
         sql = sql_template.render(
             is_partitioned=self.spec.is_partitioned,
             is_binpack=self.mnt_props.optimization_spec.is_binpack(),
-            all_partition_grouping_stmt=all_partition_grouping_stmt,
+            list_of_all_partition_alias_stmt=self.spec.make_diagnosis_grouping_stmt(100),
             summary_before_view_name=summary.summary_before_view_name,
             full_name=self.mnt_props.full_name,
-            optimization_grouping_size_threshold=optimization_grouping_size_threshold,
+            optimization_grouping_size_threshold=self.mnt_props.optimization_grouping_size_bytes,
         )
 
         rows = STL.sql_and_log(sql, "Find partitions to optimize").collect()
@@ -131,15 +127,6 @@ class PartitionDiagnosis:
         # The optimize_partition_depth determines if sub-partition are used.
         # For example if depth is set to 2, then we will return rows for id_bucket as well
         # Not just for ts_day.
-        # ┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┓
-        # ┃ partition_age ┃ ts_day     ┃ id_bucket | target_file_size ┃
-        # ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━┩
-        # │ 1             │ 2025-03-03 │ 2         | 536870912        │
-        # │ 1             │ 2025-03-03 │ 1         | 536870912        │
-        # │ 1             │ 2025-03-03 │ 0         | 536870912        │
-        # └───────────────┴────────────┴───────────┴──────────────────┘
-        depth_grouping_stmt = self.spec.make_diagnosis_grouping_stmt(self.mnt_props.optimize_partition_depth)
-
         # Construct SQL query to retrieve partitions that satisfy the optimization criteria
         sql_template = Template("""
                 -- Identifying partitions to optimize for table {{ full_name }}
@@ -170,7 +157,7 @@ class PartitionDiagnosis:
         sql = sql_template.render(
             is_partitioned=self.spec.is_partitioned,
             is_binpack=self.mnt_props.optimization_spec.is_binpack(),
-            depth_grouping_stmt=depth_grouping_stmt,
+            depth_grouping_stmt=self.spec.make_diagnosis_grouping_stmt(self.mnt_props.optimize_partition_depth),
             summary_before_view_name=summary.summary_before_view_name,
             full_name=self.mnt_props.full_name,
         )
@@ -205,18 +192,25 @@ class PartitionDiagnosis:
         └─────────┴────────────────┴────────────┴───────────┴───────────────┴───────────────────────────────────────┴─────────┴─────────────────────────────────┴───────────┴──────────────────┴───────────────┴───────────────┴───────────────┴───────────────┴────────────────────┴──────┴────────────────┴────────────────┴──────────────────┴─────────────┴────────────────┘
 
         The function returns rows like this:
-        ┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┓
-        ┃ partition_age ┃ ts_day     ┃ target_file_size ┃
-        ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━┩
-        │ 1             │ 2025-03-03 │ 536870912        │
-        └───────────────┴────────────┴──────────────────┘
-
+        ┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━┓
+        ┃ partition_age ┃ target_file_size ┃ partition_filters     ┃
+        ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━┩
+        │ 1             │ 536870912        │ [{ts_day:2025-03-03}] │
+        └───────────────┴──────────────────┴───────────────────────┘
+        If the depth is set to two, then it will output
+        ┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+        ┃ partition_age ┃ target_file_size ┃ partition_filters                   ┃
+        ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+        │ 1             │ 536870912        │ [{ts_day:2025-03-03, id_bucket: 2}] │
+        │ 1             │ 536870912        │ [{ts_day:2025-03-03, id_bucket: 1}] │
+        │ 1             │ 536870912        │ [{ts_day:2025-03-03, id_bucket: 0}] │
+        └───────────────┴──────────────────┴─────────────────────────────────────┘
         Args:
             summary (PartitionSummary): An instance that contains summary data about
                 the partitions, including metrics to evaluate optimization criteria.
 
         Returns:
-            list[Row]: A list of rows, each containing partition information for
+            list[PartitionDiagnosisResult]: A list of PartitionDiagnosisResult, each containing partition information for
                        the partitions marked for optimization.
         """
         if self.mnt_props.optimize_partition_depth > 0:

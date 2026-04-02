@@ -40,6 +40,8 @@ DEFAULTS = {
     "should_apply_lifecycle": False,
     "lifecycle_max_days": 330,
     "lifecycle_ingestion_time_column": "",
+    "optimization_grouping_size_bytes": 33554432,
+    "binpack_min_input_files": 5,
     "widening_rule_select_criteria": "",
     "widening_rule_required_partition_columns": "",
     "widening_rule_src_partition": "",
@@ -84,6 +86,8 @@ class MaintenanceScheduleRecord(BaseModel):
     should_apply_lifecycle: bool | None = None
     lifecycle_max_days: int | None = None
     lifecycle_ingestion_time_column: str | None = None
+    optimization_grouping_size_bytes: int | None = None
+    binpack_min_input_files: int | None = None
     widening_rule_select_criteria: str | None = None
     widening_rule_required_partition_columns: str | None = None
     widening_rule_src_partition: str | None = None
@@ -123,6 +127,8 @@ class MaintenanceScheduleRecord(BaseModel):
             should_apply_lifecycle BOOLEAN,
             lifecycle_max_days INT,
             lifecycle_ingestion_time_column STRING,
+            optimization_grouping_size_bytes BIGINT,
+            binpack_min_input_files INT,
             widening_rule_select_criteria STRING,
             widening_rule_required_partition_columns STRING,
             widening_rule_src_partition STRING,
@@ -288,6 +294,10 @@ class MaintenanceScheduleRecord(BaseModel):
             parsed["target_file_size_bytes"] = cls._get_int(tblproperties, IceKeeperTblProperty.WRITE_TARGET_FILE_SIZE_BYTES)
 
         parsed["optimize_partition_depth"] = cls._get_int(tblproperties, IceKeeperTblProperty.OPTIMIZE_PARTITION_DEPTH)
+        parsed["optimization_grouping_size_bytes"] = cls._get_int(
+            tblproperties, IceKeeperTblProperty.OPTIMIZATION_GROUPING_SIZE_BYTES
+        )
+        parsed["binpack_min_input_files"] = cls._get_int(tblproperties, IceKeeperTblProperty.BINPACK_MIN_INPUT_FILES)
 
         parsed["retention_num_snapshots"] = cls._get_int(tblproperties, IceKeeperTblProperty.HISTORY_EXPIRE_MIN_SNAPSHOTS_TO_KEEP)
         if tblproperties.get(IceKeeperTblProperty.RETENTION_NUM_SNAPSHOTS):
@@ -385,6 +395,14 @@ class MaintenanceScheduleEntry:
     @property
     def optimize_partition_depth(self) -> int:
         return self._record.get("optimize_partition_depth")
+
+    @property
+    def optimization_grouping_size_bytes(self) -> int:
+        return self._record.get("optimization_grouping_size_bytes")
+
+    @property
+    def binpack_min_input_files(self) -> int:
+        return self._record.get("binpack_min_input_files")
 
     @property
     def optimization_strategy(self) -> str:
