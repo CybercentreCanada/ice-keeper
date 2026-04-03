@@ -8,7 +8,8 @@ from pyiceberg.transforms import DayTransform, HourTransform, MonthTransform, Ye
 from pyiceberg.types import NestedField, TimestamptzType
 from pyspark.sql.types import Row
 
-from ice_keeper import Action, Status
+from ice_keeper import Action, ActionWarning, Status
+from ice_keeper.ice_keeper import OptimizationStrategy
 from ice_keeper.pool import TaskExecutor
 from ice_keeper.spec import WideningRule
 from ice_keeper.spec.partition_spec import PartitionSpecification
@@ -16,7 +17,10 @@ from ice_keeper.stm import STL, Scope
 from ice_keeper.table import MaintenanceSchedule
 from ice_keeper.table.journal import Journal
 from ice_keeper.table.schedule_entry import IceKeeperTblProperty, MaintenanceScheduleEntry
+from ice_keeper.task import PartitionSummary
 from ice_keeper.task.action.factory import ActionTaskFactory
+from ice_keeper.task.action.optimization.optimization_partition import SubOptimizationStrategy
+from ice_keeper.task.action.optimization.partition_diagnostic import PartitionDiagnosis
 from tests.test_common import (
     ONE_EXPECTED,
     SCOPE_SCHEMA,
@@ -28,7 +32,7 @@ from tests.test_common import (
     set_tblproperties,
     set_tblproperty,
 )
-from tests.utils import compare_multiline_strings, discover_tables
+from tests.utils import compare_multiline_strings, discover_tables, get_updated_mnt_props
 
 
 def create_widening_table(executor: TaskExecutor, properties: dict[str, str] = {}) -> None:  # noqa: B006
@@ -406,11 +410,6 @@ def test_widening_bad_filtering_expr(executor: TaskExecutor) -> None:
     STL.sql(f"alter table {TEST_FULL_NAME} add partition field month(ts)")
     STL.sql(f"alter table {TEST_FULL_NAME} add partition field _lag")
 
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    assert len(maintenance_schedule.entries()) == 1, "Scoped to one table, should have one maintenance entry."
-    mnt_props = maintenance_schedule.get_maintenance_entry(TEST_FULL_NAME)
-    assert mnt_props, "Should be able to retrieve it"
-
     set_tblproperties(
         {
             IceKeeperTblProperty.WIDENING_RULE_SELECT_CRITERIA: "partition._lag not valid sql here... in ('leading', 'lagging')",
@@ -432,7 +431,7 @@ def test_widening_bad_filtering_expr(executor: TaskExecutor) -> None:
 
 
 @pytest.mark.integration
-def test_widening_no_data_in_src_partition(executor: TaskExecutor) -> None:
+def test_widening_no_data_in_src_partition(executor: TaskExecutor) -> None:  # noqa: PLR0915
     create_widening_table(executor)
     # Add _lag partition
     STL.sql(f"alter table {TEST_FULL_NAME} add partition field _lag")
@@ -463,12 +462,74 @@ def test_widening_no_data_in_src_partition(executor: TaskExecutor) -> None:
         },
     )
 
-    event_time = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
+    event_time = datetime.datetime(2025, 12, 17, 0, 0, 0, tzinfo=timezone.utc)
     insert_rows_with_null_lag(event_time)
 
-    rows = optimize(executor)
-    # If we have an expected procedure call.
-    assert len(rows) == ZERO_EXPECTED, "Should skip no data"
+    mnt_props = get_updated_mnt_props()
+
+    os = OptimizationStrategy(mnt_props)
+    assert os.check_should_execute_action()
+    spec_id = 0  # ts_day
+    widening_rule = os.get_widening_rule(spec_id)
+    assert widening_rule is None
+    summary = PartitionSummary(mnt_props, spec_id, widening_rule)
+    diagnosis = PartitionDiagnosis(mnt_props, spec_id)
+    diagnosis_results = diagnosis.find_partitions_to_optimize(summary)
+    assert len(diagnosis_results) == 0
+
+    spec_id = 1  # ts_day, _lag
+    widening_rule = os.get_widening_rule(spec_id)
+    assert widening_rule is None
+    summary = PartitionSummary(mnt_props, spec_id, widening_rule)
+    diagnosis = PartitionDiagnosis(mnt_props, spec_id)
+    diagnosis_results = diagnosis.find_partitions_to_optimize(summary)
+    assert len(diagnosis_results) == 0
+
+    spec_id = 2  # unpartitioned
+    widening_rule = os.get_widening_rule(spec_id)
+    assert widening_rule is None
+    summary = PartitionSummary(mnt_props, spec_id, widening_rule)
+    diagnosis = PartitionDiagnosis(mnt_props, spec_id)
+    diagnosis_results = diagnosis.find_partitions_to_optimize(summary)
+    assert len(diagnosis_results) == 0
+
+    spec_id = 3  # ts_month
+    widening_rule = os.get_widening_rule(spec_id)
+    assert widening_rule is None
+    summary = PartitionSummary(mnt_props, spec_id, widening_rule)
+    diagnosis = PartitionDiagnosis(mnt_props, spec_id)
+    diagnosis_results = diagnosis.find_partitions_to_optimize(summary)
+    assert len(diagnosis_results) == 0
+
+    spec_id = 4  # ts_month, _lag
+    widening_rule = os.get_widening_rule(spec_id)
+    assert widening_rule, "The partition has a widening rule."
+    summary = PartitionSummary(mnt_props, spec_id, widening_rule)
+    diagnosis = PartitionDiagnosis(mnt_props, spec_id)
+    diagnosis_results = diagnosis.find_partitions_to_optimize(summary)
+    assert len(diagnosis_results) == 3
+
+    for diagnosis_result in diagnosis_results:
+        lag = diagnosis_result.partition_filters[0]["_lag"]
+        if lag in ("lagging", "leading"):
+            sos = SubOptimizationStrategy(diagnosis_result, spec_id, mnt_props, widening_rule)
+            stmt = sos.prepare_statement_to_execute()
+            print(stmt)
+            expected = [
+                "( ts >= date('2025-12-01') and ts < date('2025-12-01') + interval 1 month ) and ( _lag = 'lagging' ) ",
+                "( ts >= date('2025-12-01') and ts < date('2025-12-01') + interval 1 month ) and ( _lag = 'leading' )",
+            ]
+            assert expected[0] in stmt or expected[1] in stmt
+        elif lag is None:
+            # Matches a specific part of the error message
+            sos = SubOptimizationStrategy(diagnosis_result, spec_id, mnt_props, widening_rule)
+            with pytest.raises(
+                ActionWarning,
+                match="The partition field _lag cannot be NULL",
+            ):
+                stmt = sos.prepare_statement_to_execute()
+        else:
+            pytest.fail("We should not get here.")
 
 
 @pytest.mark.integration

@@ -6,9 +6,9 @@ from ice_keeper import IceKeeperTblProperty, TimeProvider
 from ice_keeper.config import Config
 from ice_keeper.pool import TaskExecutor
 from ice_keeper.stm import STL, Scope
-from ice_keeper.table import MaintenanceSchedule
+from ice_keeper.table import MaintenanceSchedule, MaintenanceScheduleEntry
 from ice_keeper.task import DiscoveryTask
-from tests.test_common import TEST_CATALOG_NAME, TEST_SCHEMA_NAME, TEST_TABLE_NAME
+from tests.test_common import SCOPE_WHERE_FULL_NAME, TEST_CATALOG_NAME, TEST_SCHEMA_NAME, TEST_TABLE_NAME
 
 
 def create_generic_test_table(
@@ -105,6 +105,14 @@ def create_empty_test_table(
         properties=properties,
         num_inserts=0,
     )
+
+
+def get_updated_mnt_props() -> MaintenanceScheduleEntry:
+    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
+    assert len(maintenance_schedule.entries()) == 1, "Scoped to one table, should have one maintenance entry."
+    mnt_props = maintenance_schedule.entries()[0]
+    assert mnt_props
+    return maintenance_schedule.update_maintenance_schedule_entry(mnt_props)
 
 
 def discover_tables(executor: TaskExecutor, scope: Scope) -> None:
