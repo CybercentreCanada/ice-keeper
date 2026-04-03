@@ -6,7 +6,6 @@ import pytest
 
 from ice_keeper.ice_keeper import OptimizationStrategy
 from ice_keeper.pool import TaskExecutor
-from ice_keeper.table import MaintenanceSchedule
 from ice_keeper.table.schedule_entry import IceKeeperTblProperty
 from ice_keeper.task import PartitionSummary
 from ice_keeper.task.action.optimization.optimization import SubOptimizationStrategy
@@ -15,13 +14,13 @@ from tests.test_common import (
     FIVE_EXPECTED,
     ONE_EXPECTED,
     SCOPE_SCHEMA,
-    SCOPE_WHERE_FULL_NAME,
     THREE_EXPECTED,
 )
 from tests.utils import (
     compare_multiline_strings,
     create_generic_test_table,
     discover_tables,
+    get_updated_mnt_props,
 )
 
 default_sort_rewrite_data_files_options = f"""options => map(
@@ -409,10 +408,7 @@ def test_optimize(
     )
     # add table to maintenance schedule
     discover_tables(executor, SCOPE_SCHEMA)
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    assert len(maintenance_schedule.entries()) == 1, "Scoped to one table, should have one maintenance entry."
-    mnt_props = maintenance_schedule.entries()[0]
-    assert mnt_props
+    mnt_props = get_updated_mnt_props()
 
     os = OptimizationStrategy(mnt_props)
     if os.check_should_execute_action():
@@ -454,8 +450,7 @@ def test_dynamic_grouping_binpack_groups_all_buckets(executor: TaskExecutor) -> 
         properties=properties,
     )
     discover_tables(executor, SCOPE_SCHEMA)
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    mnt_props = maintenance_schedule.entries()[0]
+    mnt_props = get_updated_mnt_props()
 
     os = OptimizationStrategy(mnt_props)
     assert os.check_should_execute_action()
@@ -500,8 +495,7 @@ def test_dynamic_grouping_binpack_splits_into_multiple_groups(executor: TaskExec
     )
 
     discover_tables(executor, SCOPE_SCHEMA)
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    mnt_props = maintenance_schedule.entries()[0]
+    mnt_props = get_updated_mnt_props()
 
     os = OptimizationStrategy(mnt_props)
     assert os.check_should_execute_action()

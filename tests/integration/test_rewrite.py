@@ -5,21 +5,19 @@ import pytest
 
 from ice_keeper import Action, IceKeeperTblProperty, Status
 from ice_keeper.pool import TaskExecutor
-from ice_keeper.stm import Scope
-from ice_keeper.table import MaintenanceSchedule
-from ice_keeper.task import ActionTaskFactory
 from tests.test_common import SCOPE_TABLE, load_test_table
-from tests.utils import compare_multiline_strings, create_empty_test_table, create_generic_test_table
+from tests.utils import (
+    compare_multiline_strings,
+    create_empty_test_table,
+    create_generic_test_table,
+    run_action_and_collect_journal,
+)
 
 
 @pytest.mark.integration
 def test_rewrite_manifests_default_skip(executor: TaskExecutor) -> None:
     create_empty_test_table(executor)
-    maintenance_schedule = MaintenanceSchedule(SCOPE_TABLE)
-    tasks = ActionTaskFactory.make_tasks(Action.REWRITE_MANIFESTS, maintenance_schedule)
-    assert len(tasks) == 1, "Should only find our test table"
-    executor.submit_tasks_and_wait(tasks)
-    rows = executor.get_journal().flush().stop().read(Scope()).collect()
+    rows = run_action_and_collect_journal(executor, Action.REWRITE_MANIFESTS, scope=SCOPE_TABLE)
     # Then we should have the corresponding log.
     assert len(rows) == 0, "should be skipped"
 
@@ -28,11 +26,7 @@ def test_rewrite_manifests_default_skip(executor: TaskExecutor) -> None:
 def test_rewrite_manifests_enabled_post_discovery(executor: TaskExecutor) -> None:
     create_empty_test_table(executor, properties={IceKeeperTblProperty.SHOULD_REWRITE_MANIFEST: "true"})
 
-    maintenance_schedule = MaintenanceSchedule(SCOPE_TABLE)
-    tasks = ActionTaskFactory.make_tasks(Action.REWRITE_MANIFESTS, maintenance_schedule)
-    assert len(tasks) == 1, "Should only find our test table"
-    executor.submit_tasks_and_wait(tasks)
-    rows = executor.get_journal().flush().stop().read(Scope()).collect()
+    rows = run_action_and_collect_journal(executor, Action.REWRITE_MANIFESTS, scope=SCOPE_TABLE)
     # Then we should have the corresponding log.
     assert len(rows) == 1, "should have 1 log"
     actual_output = rows[0].sql_stm
@@ -58,11 +52,7 @@ def test_rewrite_manifests_missing_snapshots(executor: TaskExecutor) -> None:
         f = f.replace("file:", "")
         os.remove(f)  # noqa: PTH107
 
-    maintenance_schedule = MaintenanceSchedule(SCOPE_TABLE)
-    tasks = ActionTaskFactory.make_tasks(Action.REWRITE_MANIFESTS, maintenance_schedule)
-    assert len(tasks) == 1, "Should only find our test table"
-    executor.submit_tasks_and_wait(tasks)
-    rows = executor.get_journal().flush().stop().read(Scope()).collect()
+    rows = run_action_and_collect_journal(executor, Action.REWRITE_MANIFESTS, scope=SCOPE_TABLE)
     # Then we should have the corresponding log.
     assert len(rows) == 1, "should have 1 log"
     actual_output = rows[0].sql_stm
@@ -92,11 +82,7 @@ def test_rewrite_manifests_missing_metadata(executor: TaskExecutor) -> None:
         f = f.replace("file:", "")
         os.remove(f)  # noqa: PTH107
 
-    maintenance_schedule = MaintenanceSchedule(SCOPE_TABLE)
-    tasks = ActionTaskFactory.make_tasks(Action.REWRITE_MANIFESTS, maintenance_schedule)
-    assert len(tasks) == 1, "Should only find our test table"
-    executor.submit_tasks_and_wait(tasks)
-    rows = executor.get_journal().flush().stop().read(Scope()).collect()
+    rows = run_action_and_collect_journal(executor, Action.REWRITE_MANIFESTS, scope=SCOPE_TABLE)
     # Then we should have the corresponding log.
     assert len(rows) == 1, "should have 1 log"
     assert rows[0].status == Status.FAILED.value, "Should fail"

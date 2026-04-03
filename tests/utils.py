@@ -2,12 +2,14 @@ import datetime
 import difflib
 import re
 
-from ice_keeper import IceKeeperTblProperty, TimeProvider
+from pyspark.sql import Row
+
+from ice_keeper import Action, IceKeeperTblProperty, TimeProvider
 from ice_keeper.config import Config
 from ice_keeper.pool import TaskExecutor
 from ice_keeper.stm import STL, Scope
 from ice_keeper.table import MaintenanceSchedule, MaintenanceScheduleEntry
-from ice_keeper.task import DiscoveryTask
+from ice_keeper.task import ActionTaskFactory, DiscoveryTask
 from tests.test_common import SCOPE_WHERE_FULL_NAME, TEST_CATALOG_NAME, TEST_SCHEMA_NAME, TEST_TABLE_NAME
 
 
@@ -119,6 +121,18 @@ def discover_tables(executor: TaskExecutor, scope: Scope) -> None:
     maintenance_schedule = MaintenanceSchedule(scope)
     tasks = DiscoveryTask.make_tasks(maintenance_schedule, scope)
     executor.submit_tasks_and_wait(tasks)
+
+
+def run_action_and_collect_journal(
+    executor: TaskExecutor,
+    action: Action,
+    scope: Scope = SCOPE_WHERE_FULL_NAME,
+) -> list[Row]:
+    maintenance_schedule = MaintenanceSchedule(scope)
+    tasks = ActionTaskFactory.make_tasks(action, maintenance_schedule)
+    assert len(tasks) == 1, "Should find the schedule entry for given table"
+    executor.submit_tasks_and_wait(tasks)
+    return executor.get_journal().flush().stop().read(Scope()).collect()
 
 
 # def create_test_table(

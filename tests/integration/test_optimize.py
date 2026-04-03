@@ -29,6 +29,7 @@ from tests.utils import (
     create_generic_test_table,
     discover_tables,
     insert_data,
+    run_action_and_collect_journal,
 )
 
 
@@ -51,14 +52,7 @@ def test_two_partitions(executor: TaskExecutor) -> None:
         optimization_strategy=optimization_strategy,
         properties=properties,
     )
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    assert len(maintenance_schedule.entries()) == 1, "Scoped to one table, should have one maintenance entry."
-
-    tasks = ActionTaskFactory.make_tasks(Action.REWRITE_DATA_FILES, maintenance_schedule)
-    assert len(tasks) == 1, "Should find the schedule entry for given table"
-    executor.submit_tasks_and_wait(tasks)
-
-    rows = executor.get_journal().flush().read(Scope()).collect()
+    rows = run_action_and_collect_journal(executor, Action.REWRITE_DATA_FILES)
     # If we have an expected procedure call.
     assert len(rows) == TWO_EXPECTED, "Should have a two log"
     status0 = rows[0].status
@@ -126,13 +120,7 @@ def test_invalid_column(executor: TaskExecutor) -> None:
         properties=properties,
     )
 
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    assert len(maintenance_schedule.entries()) == 1, "Scoped to one table, should have one maintenance entry."
-
-    tasks = ActionTaskFactory.make_tasks(Action.REWRITE_DATA_FILES, maintenance_schedule)
-    assert len(tasks) == 1, "Should find the schedule entry for given table"
-    executor.submit_tasks_and_wait(tasks)
-    rows = executor.get_journal().flush().read(Scope()).collect()
+    rows = run_action_and_collect_journal(executor, Action.REWRITE_DATA_FILES)
     # If we have an expected procedure call.
     assert len(rows) == ONE_EXPECTED, "Should have a one log"
     status = rows[0].status
@@ -160,12 +148,7 @@ def test_binpack_min_1_files_skip(executor: TaskExecutor) -> None:
         num_inserts=1,
     )
 
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    assert len(maintenance_schedule.entries()) == 1, "Scoped to one table, should have one maintenance entry."
-    tasks = ActionTaskFactory.make_tasks(Action.REWRITE_DATA_FILES, maintenance_schedule)
-    assert len(tasks) == 1, "Should find the schedule entry for given table"
-    executor.submit_tasks_and_wait(tasks)
-    rows = executor.get_journal().flush().read(Scope()).collect()
+    rows = run_action_and_collect_journal(executor, Action.REWRITE_DATA_FILES)
     # If we have an expected procedure call.
     assert len(rows) == ZERO_EXPECTED, "Should not binpack a single file"
 
@@ -189,12 +172,7 @@ def test_binpack_min_1_files_do(executor: TaskExecutor) -> None:
         num_inserts=2,
     )
 
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    assert len(maintenance_schedule.entries()) == 1, "Scoped to one table, should have one maintenance entry."
-    tasks = ActionTaskFactory.make_tasks(Action.REWRITE_DATA_FILES, maintenance_schedule)
-    assert len(tasks) == 1, "Should find the schedule entry for given table"
-    executor.submit_tasks_and_wait(tasks)
-    rows = executor.get_journal().flush().read(Scope()).collect()
+    rows = run_action_and_collect_journal(executor, Action.REWRITE_DATA_FILES)
     # If we have an expected procedure call.
     assert len(rows) == ONE_EXPECTED, "Should binpack since more than 1 files"
 
@@ -217,12 +195,7 @@ def test_partitioned_by_category_sorted_by_id_max_age_2(executor: TaskExecutor) 
         properties=properties,
     )
 
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    assert len(maintenance_schedule.entries()) == 1, "Scoped to one table, should have one maintenance entry."
-    tasks = ActionTaskFactory.make_tasks(Action.REWRITE_DATA_FILES, maintenance_schedule)
-    assert len(tasks) == 1, "Should find the schedule entry for given table"
-    executor.submit_tasks_and_wait(tasks)
-    rows = executor.get_journal().flush().read(Scope()).collect()
+    rows = run_action_and_collect_journal(executor, Action.REWRITE_DATA_FILES)
     # If we have an expected procedure call.
     assert len(rows) == FIVE_EXPECTED, (
         "The category column is not temporal, max age should not affect it. All 5 categories should be sorted."
@@ -247,12 +220,7 @@ def test_temporal_not_first_partition(executor: TaskExecutor) -> None:
         properties=properties,
     )
 
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    assert len(maintenance_schedule.entries()) == 1, "Scoped to one table, should have one maintenance entry."
-    tasks = ActionTaskFactory.make_tasks(Action.REWRITE_DATA_FILES, maintenance_schedule)
-    assert len(tasks) == 1, "Should find the schedule entry for given table"
-    executor.submit_tasks_and_wait(tasks)
-    rows = executor.get_journal().flush().read(Scope()).collect()
+    rows = run_action_and_collect_journal(executor, Action.REWRITE_DATA_FILES)
     # If we have an expected procedure call.
     assert len(rows) == ONE_EXPECTED, "Should fail, so 1 journal row."
     assert rows[0].status == Status.FAILED.value
@@ -282,13 +250,7 @@ def test_special_char_partition_column(executor: TaskExecutor) -> None:
     STL.sql_and_log(sql)
 
     discover_tables(executor, SCOPE_SCHEMA)
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    assert len(maintenance_schedule.entries()) == 1, "Scoped to one table, should have one maintenance entry."
-
-    tasks = ActionTaskFactory.make_tasks(Action.REWRITE_DATA_FILES, maintenance_schedule)
-    assert len(tasks) == 1, "Should find the schedule entry for given table"
-    executor.submit_tasks_and_wait(tasks)
-    rows = executor.get_journal().flush().read(Scope()).collect()
+    rows = run_action_and_collect_journal(executor, Action.REWRITE_DATA_FILES)
     # If we have an expected procedure call.
     assert len(rows) == ONE_EXPECTED, "Should have a one log"
     status = rows[0].status
@@ -323,13 +285,9 @@ def test_special_partition_struct(executor: TaskExecutor) -> None:
     STL.sql_and_log(sql)
 
     discover_tables(executor, Scope(catalog, schema))
-    maintenance_schedule = MaintenanceSchedule(Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME, table_name))
-    assert len(maintenance_schedule.entries()) == 1, "Scoped to one table, should have one maintenance entry."
-
-    tasks = ActionTaskFactory.make_tasks(Action.REWRITE_DATA_FILES, maintenance_schedule)
-    assert len(tasks) == 1, "Should find the schedule entry for given table"
-    executor.submit_tasks_and_wait(tasks)
-    rows = executor.get_journal().flush().read(Scope()).collect()
+    rows = run_action_and_collect_journal(
+        executor, Action.REWRITE_DATA_FILES, scope=Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME, table_name)
+    )
     # If we have an expected procedure call.
     assert len(rows) == ONE_EXPECTED, "Should have a one log"
     status = rows[0].status
@@ -502,11 +460,7 @@ def test_optimize_binpack_correct_hour(executor: TaskExecutor) -> None:
     # add table to maintenance schedule
     discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
 
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    assert len(maintenance_schedule.entries()) == 1, "Scoped to one table, should have one maintenance entry."
-    tasks = ActionTaskFactory.make_tasks(Action.REWRITE_DATA_FILES, maintenance_schedule)
-    assert len(tasks) == 1, "Should find the schedule entry for given table"
-    executor.submit_tasks_and_wait(tasks)
+    run_action_and_collect_journal(executor, Action.REWRITE_DATA_FILES)
 
     sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_hour = 490175 """
     num_files_age_1 = STL.sql_and_log(sql).count()
@@ -531,11 +485,7 @@ def test_optimize_binpack_correct_day(executor: TaskExecutor) -> None:
     # add table to maintenance schedule
     discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
 
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    assert len(maintenance_schedule.entries()) == 1, "Scoped to one table, should have one maintenance entry."
-    tasks = ActionTaskFactory.make_tasks(Action.REWRITE_DATA_FILES, maintenance_schedule)
-    assert len(tasks) == 1, "Should find the schedule entry for given table"
-    executor.submit_tasks_and_wait(tasks)
+    run_action_and_collect_journal(executor, Action.REWRITE_DATA_FILES)
     sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_day = '2025-12-02' """
     num_files_age_1 = STL.sql_and_log(sql).count()
     assert num_files_age_1 == SEVEN_EXPECTED, "Most recent day should not be optimized, should have 7 files."
@@ -567,11 +517,7 @@ def test_optimize_binpack_correct_month(executor: TaskExecutor) -> None:
     # add table to maintenance schedule
     discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
 
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    assert len(maintenance_schedule.entries()) == 1, "Scoped to one table, should have one maintenance entry."
-    tasks = ActionTaskFactory.make_tasks(Action.REWRITE_DATA_FILES, maintenance_schedule)
-    assert len(tasks) == 1, "Should find the schedule entry for given table"
-    executor.submit_tasks_and_wait(tasks)
+    run_action_and_collect_journal(executor, Action.REWRITE_DATA_FILES)
 
     sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_month = 672 """
     num_files_age_1 = STL.sql_and_log(sql).count()
@@ -604,11 +550,7 @@ def test_optimize_binpack_correct_year(executor: TaskExecutor) -> None:
     # add table to maintenance schedule
     discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
 
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    assert len(maintenance_schedule.entries()) == 1, "Scoped to one table, should have one maintenance entry."
-    tasks = ActionTaskFactory.make_tasks(Action.REWRITE_DATA_FILES, maintenance_schedule)
-    assert len(tasks) == 1, "Should find the schedule entry for given table"
-    executor.submit_tasks_and_wait(tasks)
+    run_action_and_collect_journal(executor, Action.REWRITE_DATA_FILES)
 
     sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_year = 55 """
     num_files_age_1 = STL.sql_and_log(sql).count()

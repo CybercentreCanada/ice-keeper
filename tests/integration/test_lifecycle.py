@@ -2,11 +2,9 @@ import pytest
 
 from ice_keeper import Action, IceKeeperTblProperty, Status
 from ice_keeper.pool import TaskExecutor
-from ice_keeper.stm import STL, Scope
-from ice_keeper.table import MaintenanceSchedule
-from ice_keeper.task import ActionTaskFactory
-from tests.test_common import SCOPE_WHERE_FULL_NAME, TEST_FULL_NAME
-from tests.utils import create_empty_test_table
+from ice_keeper.stm import STL
+from tests.test_common import TEST_FULL_NAME
+from tests.utils import create_empty_test_table, run_action_and_collect_journal
 
 
 def create_lifecycle_test_table(executor: TaskExecutor, properties: dict[str, str] = {}) -> None:  # noqa: B006
@@ -33,13 +31,8 @@ def create_lifecycle_test_table(executor: TaskExecutor, properties: dict[str, st
 @pytest.mark.integration
 def test_lifecycle_default_behaviour(executor: TaskExecutor) -> None:
     create_lifecycle_test_table(executor)
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
     # Test that default behaviour is to not run lifecycle
-    tasks = ActionTaskFactory.make_tasks(Action.LIFECYCLE_DATA, maintenance_schedule)
-    assert len(tasks) == 1, "Should find only one entry"
-
-    executor.submit_tasks_and_wait(tasks)
-    rows = executor.get_journal().flush().stop().read(Scope()).collect()
+    rows = run_action_and_collect_journal(executor, Action.LIFECYCLE_DATA)
     # The default is should lifecycle = False
     assert len(rows) == 0
 
@@ -48,12 +41,8 @@ def test_lifecycle_default_behaviour(executor: TaskExecutor) -> None:
 def test_lifecycle_disabled_explicitly(executor: TaskExecutor) -> None:
     properties = {IceKeeperTblProperty.SHOULD_APPLY_LIFECYCLE: "false"}
     create_lifecycle_test_table(executor, properties)
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
     # Test that default behaviour is to not run lifecycle
-    tasks = ActionTaskFactory.make_tasks(Action.LIFECYCLE_DATA, maintenance_schedule)
-    assert len(tasks) == 1, "Should find only one entry"
-    executor.submit_tasks_and_wait(tasks)
-    rows = executor.get_journal().flush().stop().read(Scope()).collect()
+    rows = run_action_and_collect_journal(executor, Action.LIFECYCLE_DATA)
     # Explicitly should lifecycle = False
     assert len(rows) == 0
 
@@ -62,11 +51,7 @@ def test_lifecycle_disabled_explicitly(executor: TaskExecutor) -> None:
 def test_lifecycle_column_not_specified(executor: TaskExecutor) -> None:
     properties = {IceKeeperTblProperty.SHOULD_APPLY_LIFECYCLE: "true"}
     create_lifecycle_test_table(executor, properties)
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    tasks = ActionTaskFactory.make_tasks(Action.LIFECYCLE_DATA, maintenance_schedule)
-    assert len(tasks) == 1, "Should find only one entry"
-    executor.submit_tasks_and_wait(tasks)
-    rows = executor.get_journal().flush().stop().read(Scope()).collect()
+    rows = run_action_and_collect_journal(executor, Action.LIFECYCLE_DATA)
     assert len(rows) == 1
     assert rows[0].status == Status.FAILED.value
     assert "[] but this column does not exist." in rows[0].status_details
@@ -79,12 +64,8 @@ def test_lifecycle_column_does_not_exist(executor: TaskExecutor) -> None:
         IceKeeperTblProperty.LIFECYCLE_INGESTION_TIME_COLUMN: "column_xyz",
     }
     create_lifecycle_test_table(executor, properties)
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
 
-    tasks = ActionTaskFactory.make_tasks(Action.LIFECYCLE_DATA, maintenance_schedule)
-    assert len(tasks) == 1, "Should find only one entry"
-    executor.submit_tasks_and_wait(tasks)
-    rows = executor.get_journal().flush().stop().read(Scope()).collect()
+    rows = run_action_and_collect_journal(executor, Action.LIFECYCLE_DATA)
     assert len(rows) == 1
     assert rows[0].status == Status.FAILED.value
     assert "[column_xyz] but this column does not exist." in rows[0].status_details
@@ -98,12 +79,8 @@ def test_lifecycle_default_num_days(executor: TaskExecutor) -> None:
     num_data_files_before = row.num_files
     num_rows_before = row.num_rows
     num_data_files_before = STL.sql(f"select * from {TEST_FULL_NAME}.data_files").count()
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
 
-    tasks = ActionTaskFactory.make_tasks(Action.LIFECYCLE_DATA, maintenance_schedule)
-    assert len(tasks) == 1, "Should find only one entry"
-    executor.submit_tasks_and_wait(tasks)
-    rows = executor.get_journal().flush().stop().read(Scope()).collect()
+    rows = run_action_and_collect_journal(executor, Action.LIFECYCLE_DATA)
     assert len(rows) == 1
     assert rows[0].status == Status.SUCCESS.value
     assert "where ts < current_date() - interval '330' days" in rows[0].sql_stm
@@ -125,12 +102,8 @@ def test_lifecycle_delete_past_one_day(executor: TaskExecutor) -> None:
         IceKeeperTblProperty.LIFECYCLE_MAX_DAYS: "1",
     }
     create_lifecycle_test_table(executor, properties)
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
 
-    tasks = ActionTaskFactory.make_tasks(Action.LIFECYCLE_DATA, maintenance_schedule)
-    assert len(tasks) == 1, "Should find only one entry"
-    executor.submit_tasks_and_wait(tasks)
-    rows = executor.get_journal().flush().stop().read(Scope()).collect()
+    rows = run_action_and_collect_journal(executor, Action.LIFECYCLE_DATA)
     assert len(rows) == 1
     assert rows[0].status == Status.SUCCESS.value
     assert "where ts < current_date() - interval '1' days" in rows[0].sql_stm
@@ -148,12 +121,8 @@ def test_lifecycle_delete_past_two_days(executor: TaskExecutor) -> None:
         IceKeeperTblProperty.LIFECYCLE_MAX_DAYS: "2",
     }
     create_lifecycle_test_table(executor, properties)
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
 
-    tasks = ActionTaskFactory.make_tasks(Action.LIFECYCLE_DATA, maintenance_schedule)
-    assert len(tasks) == 1, "Should find only one entry"
-    executor.submit_tasks_and_wait(tasks)
-    rows = executor.get_journal().flush().stop().read(Scope()).collect()
+    rows = run_action_and_collect_journal(executor, Action.LIFECYCLE_DATA)
     assert len(rows) == 1
     assert rows[0].status == Status.SUCCESS.value
     assert "where ts < current_date() - interval '2' days" in rows[0].sql_stm
@@ -167,12 +136,8 @@ def test_lifecycle_delete_past_two_days(executor: TaskExecutor) -> None:
 def test_lifecycle_using_none_time_column(executor: TaskExecutor) -> None:
     properties = {IceKeeperTblProperty.SHOULD_APPLY_LIFECYCLE: "true", IceKeeperTblProperty.LIFECYCLE_INGESTION_TIME_COLUMN: "id"}
     create_lifecycle_test_table(executor, properties)
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
 
-    tasks = ActionTaskFactory.make_tasks(Action.LIFECYCLE_DATA, maintenance_schedule)
-    assert len(tasks) == 1, "Should find only one entry"
-    executor.submit_tasks_and_wait(tasks)
-    rows = executor.get_journal().flush().stop().read(Scope()).collect()
+    rows = run_action_and_collect_journal(executor, Action.LIFECYCLE_DATA)
     assert len(rows) == 1
     assert rows[0].status == Status.FAILED.value
     assert "left and right operands of the binary operator have incompatible types" in rows[0].status_details

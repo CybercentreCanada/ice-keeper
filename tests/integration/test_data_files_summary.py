@@ -8,13 +8,9 @@ from pyspark.sql import Row
 from ice_keeper.ice_keeper import MaintenanceScheduleRecord
 from ice_keeper.pool import TaskExecutor
 from ice_keeper.stm import STL
-from ice_keeper.table import MaintenanceSchedule, MaintenanceScheduleEntry
+from ice_keeper.table import MaintenanceScheduleEntry
 from ice_keeper.task.action.optimization.datafile_summary import DataFilesSummary
-from tests.test_common import (
-    SCOPE_WHERE_FULL_NAME,
-    TEST_FULL_NAME,
-)
-from tests.utils import create_generic_test_table
+from tests.utils import create_generic_test_table, get_updated_mnt_props
 
 
 def set_mnt_props_age(mnt_props: MaintenanceScheduleEntry, min_age: int, max_age: int) -> MaintenanceScheduleEntry:
@@ -86,9 +82,7 @@ def test_summary_age_day(executor: TaskExecutor) -> None:
         properties=properties,
     )
 
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    mnt_props = maintenance_schedule.get_maintenance_entry(TEST_FULL_NAME)
-    assert mnt_props, "Should have maintenance properties for the table"
+    mnt_props = get_updated_mnt_props()
 
     # Consider all partitions (age 1 is current partition)
     mnt_props = set_mnt_props_age(mnt_props, 1, 2000)
@@ -126,9 +120,7 @@ def test_summary_identity_day(executor: TaskExecutor) -> None:
         properties=properties,
     )
 
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    mnt_props = maintenance_schedule.get_maintenance_entry(TEST_FULL_NAME)
-    assert mnt_props, "Should have maintenance properties for the table"
+    mnt_props = get_updated_mnt_props()
 
     # Consider all partitions
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "0d", "2000d")
@@ -184,9 +176,7 @@ def test_summary_partition_day(executor: TaskExecutor) -> None:
         properties=properties,
     )
 
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    mnt_props = maintenance_schedule.get_maintenance_entry(TEST_FULL_NAME)
-    assert mnt_props, "Should have maintenance properties for the table"
+    mnt_props = get_updated_mnt_props()
 
     # Consider all partitions
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "0d", "2000d")
@@ -242,9 +232,7 @@ def test_summary_partition_hour(executor: TaskExecutor) -> None:
         properties=properties,
     )
 
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    mnt_props = maintenance_schedule.get_maintenance_entry(TEST_FULL_NAME)
-    assert mnt_props, "Should have maintenance properties for the table"
+    mnt_props = get_updated_mnt_props()
 
     # Consider all partitions
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "0h", "2000h")
@@ -321,9 +309,7 @@ def test_summary_partition_month(executor: TaskExecutor) -> None:
         properties=properties,
     )
 
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    mnt_props = maintenance_schedule.get_maintenance_entry(TEST_FULL_NAME)
-    assert mnt_props
+    mnt_props = get_updated_mnt_props()
 
     # All months: 0M to 100M
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "0M", "100M")
@@ -366,9 +352,7 @@ def test_summary_partition_year(executor: TaskExecutor) -> None:
         properties=properties,
     )
 
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    mnt_props = maintenance_schedule.get_maintenance_entry(TEST_FULL_NAME)
-    assert mnt_props
+    mnt_props = get_updated_mnt_props()
 
     # All years
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "0Y", "100Y")
@@ -405,9 +389,7 @@ def test_summary_partition_negative_offset(executor: TaskExecutor) -> None:
         properties=properties,
     )
 
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    mnt_props = maintenance_schedule.get_maintenance_entry(TEST_FULL_NAME)
-    assert mnt_props
+    mnt_props = get_updated_mnt_props()
 
     # Negative min offset: -1d means include 1 day into the future from the reference point.
     # Since there are no future partitions, this should still include the most recent one.
@@ -432,9 +414,7 @@ def test_summary_partition_mismatched_units_rejected(executor: TaskExecutor) -> 
         properties=properties,
     )
 
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    mnt_props = maintenance_schedule.get_maintenance_entry(TEST_FULL_NAME)
-    assert mnt_props
+    mnt_props = get_updated_mnt_props()
 
     # Mismatched units: min in days, max in months
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "1d", "3M")
