@@ -5,12 +5,12 @@ from ice_keeper.pool import TaskExecutor
 from ice_keeper.stm import STL, Scope
 from ice_keeper.table import MaintenanceSchedule
 from ice_keeper.task import ActionTaskFactory
-from tests.test_common import SCOPE_SCHEMA, SCOPE_WHERE_FULL_NAME, TEST_FULL_NAME
-from tests.utils import create_empty_test_table, discover_tables
+from tests.test_common import SCOPE_WHERE_FULL_NAME, TEST_FULL_NAME
+from tests.utils import create_empty_test_table
 
 
 def create_lifecycle_test_table(executor: TaskExecutor, properties: dict[str, str] = {}) -> None:  # noqa: B006
-    create_empty_test_table(partitioned_by="days(ts)", properties=properties)
+    create_empty_test_table(executor=executor, partitioned_by="days(ts)", properties=properties)
     for i in range(4, 0, -1):
         n_days = i
         n_rows = 100
@@ -28,8 +28,6 @@ def create_lifecycle_test_table(executor: TaskExecutor, properties: dict[str, st
                         range(0, {n_rows})
                 """
         )
-
-    discover_tables(executor, SCOPE_SCHEMA)
 
 
 @pytest.mark.integration

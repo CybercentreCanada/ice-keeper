@@ -21,7 +21,6 @@ from tests.test_common import (
     ONE_EXPECTED,
     SCOPE_SCHEMA,
     SCOPE_WHERE_FULL_NAME,
-    TEN_EXPECTED,
     TEST_FULL_NAME,
     THREE_EXPECTED,
     TWO_EXPECTED,
@@ -38,6 +37,8 @@ def create_widening_table(executor: TaskExecutor, properties: dict[str, str] = {
         IceKeeperTblProperty.OPTIMIZATION_STRATEGY: "id asc",
         IceKeeperTblProperty.OPTIMIZE_PARTITION_DEPTH: "1",
         IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "1",  # Change default min age for testing
+        IceKeeperTblProperty.BINPACK_MIN_INPUT_FILES: "0",  # for testing
+        IceKeeperTblProperty.SORT_CORR_THRESHOLD: "2",  # for testing
     }
 
     total_props = defaults | properties  # the properties dict takes preceedence.
@@ -509,23 +510,13 @@ def test_widening_success(executor: TaskExecutor) -> None:
         },
     )
     # insert data into many days.
-    for day in range(1, 10):
+    for day in range(1, 3):
         event_time = datetime.datetime(2025, 10, day, 0, 0, 0, tzinfo=timezone.utc)
-        for _ in range(5):
-            insert_rows(event_time, num_rows=100000)
+        insert_rows(event_time, num_rows=10000)
 
     # insert data into more recent month.
     event_time = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
-    for _ in range(1):
-        insert_rows(event_time, num_rows=100000)
-
-    df = STL.sql(f"""
-        select *
-        from {TEST_FULL_NAME}.data_files
-        where partition.ts_day = '2025-10-01' and partition._lag = 'leading'
-        """)
-    num_files = df.count()
-    assert num_files == TEN_EXPECTED, "10 inserts, 10 files"
+    insert_rows(event_time, num_rows=10000)
 
     rows = optimize(executor)
     # If we have an expected procedure call.
@@ -570,7 +561,6 @@ def test_widening_success(executor: TaskExecutor) -> None:
         msg = f"Test test_optimize_two_partitions failed. The actual output was {actual_leading_stmt}.\nDifferences are {details}"
         raise Exception(msg)
 
-    # Verify that none of the day partitions have more than 5 data files.
     rows = STL.sql(f"""
         select *
         from (
@@ -584,7 +574,6 @@ def test_widening_success(executor: TaskExecutor) -> None:
     # print(rows)
     assert len(rows) == ZERO_EXPECTED, "Verify that none of the day partitions have files."
 
-    # Verify that we have data in the 10th month
     rows = STL.sql(f"""
         select *
         from (

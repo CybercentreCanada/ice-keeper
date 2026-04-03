@@ -20,7 +20,7 @@ from tests.test_common import (
 )
 from tests.utils import (
     compare_multiline_strings,
-    create_test_table_with_one_batch,
+    create_generic_test_table,
     discover_tables,
 )
 
@@ -400,8 +400,12 @@ def test_optimize(
         IceKeeperTblProperty.SORT_CORR_THRESHOLD: "2",
     }
     dt = datetime.datetime(2025, 3, 3, 18, 33, 59, tzinfo=datetime.timezone.utc)
-    create_test_table_with_one_batch(
-        event_time=dt, partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties
+    create_generic_test_table(
+        executor=executor,
+        partitions_to_insert_into=[dt],
+        partitioned_by=partitioned_by,
+        optimization_strategy=optimization_strategy,
+        properties=properties,
     )
     # add table to maintenance schedule
     discover_tables(executor, SCOPE_SCHEMA)
@@ -442,8 +446,12 @@ def test_dynamic_grouping_binpack_groups_all_buckets(executor: TaskExecutor) -> 
         IceKeeperTblProperty.BINPACK_MIN_INPUT_FILES: "0",
     }
     dt = datetime.datetime(2025, 3, 3, 18, 33, 59, tzinfo=datetime.timezone.utc)
-    create_test_table_with_one_batch(
-        event_time=dt, partitioned_by="days(ts), bucket(3, id)", optimization_strategy="binpack", properties=properties
+    create_generic_test_table(
+        executor=executor,
+        partitions_to_insert_into=[dt],
+        partitioned_by="days(ts), bucket(3, id)",
+        optimization_strategy="binpack",
+        properties=properties,
     )
     discover_tables(executor, SCOPE_SCHEMA)
     maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
@@ -483,8 +491,12 @@ def test_dynamic_grouping_binpack_splits_into_multiple_groups(executor: TaskExec
         IceKeeperTblProperty.BINPACK_MIN_INPUT_FILES: "0",
     }
     dt = datetime.datetime(2025, 3, 3, 18, 33, 59, tzinfo=datetime.timezone.utc)
-    create_test_table_with_one_batch(
-        event_time=dt, partitioned_by="days(ts), category", optimization_strategy="binpack", properties=properties
+    create_generic_test_table(
+        executor=executor,
+        partitions_to_insert_into=[dt],
+        partitioned_by="days(ts), category",
+        optimization_strategy="binpack",
+        properties=properties,
     )
 
     discover_tables(executor, SCOPE_SCHEMA)

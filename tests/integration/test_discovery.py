@@ -11,11 +11,12 @@ from tests.test_common import (
     ONE_EXPECTED,
     SCOPE_SCHEMA,
     TEST_CATALOG_NAME,
+    TEST_FULL_NAME,
     TWO_EXPECTED,
     get_admin_catalog_and_schema,
     set_tblproperties,
 )
-from tests.utils import create_test_table, discover_tables
+from tests.utils import create_empty_test_table, discover_tables
 
 
 @pytest.mark.integration
@@ -45,7 +46,7 @@ def test_discovery_of_local_catalog(executor: TaskExecutor) -> None:
 
 @pytest.mark.integration
 def test_discovery_of_local_catalog_multi_schemas(executor: TaskExecutor) -> None:
-    create_test_table(executor)
+    create_empty_test_table(executor)
     maintenance_schedule = MaintenanceSchedule(Scope())
     tasks = DiscoveryTask.make_tasks(maintenance_schedule, Scope(TEST_CATALOG_NAME))
     executor.submit_tasks_and_wait(tasks)
@@ -60,7 +61,7 @@ def test_discovery_of_local_catalog_multi_schemas(executor: TaskExecutor) -> Non
 @pytest.mark.integration
 def test_discovery_changed_properties(executor: TaskExecutor) -> None:
     initial_snap_history = 7
-    full_name = create_test_table(
+    create_empty_test_table(
         executor,
         properties={
             IceKeeperTblProperty.SHOULD_EXPIRE_SNAPSHOTS: "true",
@@ -73,7 +74,7 @@ def test_discovery_changed_properties(executor: TaskExecutor) -> None:
     tasks = DiscoveryTask.make_tasks(maintenance_schedule, SCOPE_SCHEMA)
     executor.submit_tasks_and_wait(tasks)
 
-    mnt_props = maintenance_schedule.get_maintenance_entry(full_name)
+    mnt_props = maintenance_schedule.get_maintenance_entry(TEST_FULL_NAME)
     assert mnt_props, "Should find it"
     mnt_props = maintenance_schedule.update_maintenance_schedule_entry(mnt_props)
     assert len(mnt_props.partition_specs.get_specifications()) == ONE_EXPECTED
@@ -97,7 +98,7 @@ def test_discovery_changed_properties(executor: TaskExecutor) -> None:
             IceKeeperTblProperty.SHOULD_OPTIMIZE: "true",
         }
     )
-    STL.sql_and_log(f"alter table {full_name} add partition field days(ts)")
+    STL.sql_and_log(f"alter table {TEST_FULL_NAME} add partition field days(ts)")
 
     new_entry = maintenance_schedule.update_maintenance_schedule_entry(mnt_props, force=True)
 

@@ -11,14 +11,14 @@ from tests.test_common import (
     SCOPE_WHERE_FULL_NAME,
     set_tblproperty,
 )
-from tests.utils import compare_multiline_strings, create_test_table
+from tests.utils import compare_multiline_strings, create_empty_test_table
 
 
 @pytest.mark.integration
 def test_expire_snapshots_default(executor: TaskExecutor) -> None:
     TimeProvider.set(datetime.datetime(2023, 3, 3, 15, 0, 0, tzinfo=datetime.timezone.utc))
 
-    create_test_table(executor)
+    create_empty_test_table(executor)
 
     maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
     tasks = ActionTaskFactory.make_tasks(Action.EXPIRE_SNAPSHOTS, maintenance_schedule)
@@ -47,7 +47,7 @@ def test_expire_snapshots_default(executor: TaskExecutor) -> None:
 def test_expire_snapshots_disabled_post_discovery(executor: TaskExecutor) -> None:
     TimeProvider.set(datetime.datetime(2023, 3, 3, 15, 0, 0, tzinfo=datetime.timezone.utc))
 
-    create_test_table(executor)
+    create_empty_test_table(executor)
     set_tblproperty(IceKeeperTblProperty.SHOULD_EXPIRE_SNAPSHOTS, "false")
 
     maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)

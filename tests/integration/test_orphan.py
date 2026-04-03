@@ -14,7 +14,7 @@ from tests.test_common import (
     load_test_table,
     set_tblproperty,
 )
-from tests.utils import compare_multiline_strings, create_test_table
+from tests.utils import compare_multiline_strings, create_empty_test_table
 
 
 def _empty_inventory_report() -> None:
@@ -46,7 +46,7 @@ def test_remove_orphan_files_with_no_inventory_report_should_fallback_to_directo
     # orphan task defaults to 500 days before current date
     expected_older_than = TimeProvider.current_date() - timedelta(days=500)
 
-    create_test_table(executor)
+    create_empty_test_table(executor)
 
     prev_storage_inventory_report_table_name = Config.instance().storage_inventory_report_table_name
     try:
@@ -77,7 +77,7 @@ def test_remove_orphan_files_with_no_inventory_report_should_fallback_to_directo
 
 @pytest.mark.integration
 def test_remove_orphan_files_no_file_paths_found_in_inventory(executor: TaskExecutor) -> None:
-    create_test_table(executor)
+    create_empty_test_table(executor)
 
     _inventory_report_single_data_file(1)
 
@@ -108,7 +108,7 @@ def test_remove_orphan_files_no_file_paths_found_in_inventory(executor: TaskExec
 
 @pytest.mark.integration
 def test_remove_orphan_files_with_file_paths_found_in_inventory(executor: TaskExecutor) -> None:
-    create_test_table(executor)
+    create_empty_test_table(executor)
 
     _inventory_report_single_data_file(100)
 
@@ -141,7 +141,7 @@ def test_remove_orphan_files_with_file_paths_found_in_inventory(executor: TaskEx
 
 @pytest.mark.integration
 def test_remove_orphan_files_explicit_disabled(executor: TaskExecutor) -> None:
-    create_test_table(executor)
+    create_empty_test_table(executor)
     set_tblproperty(IceKeeperTblProperty.SHOULD_REMOVE_ORPHAN_FILES, "false")
     _inventory_report_single_data_file(100)
 

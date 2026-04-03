@@ -8,17 +8,19 @@ from ice_keeper.pool import TaskExecutor
 from ice_keeper.stm import STL, Scope
 from ice_keeper.table import MaintenanceSchedule
 from ice_keeper.task import DiscoveryTask
-from tests.test_common import SCOPE_SCHEMA, TEST_CATALOG_NAME, TEST_FULL_NAME, TEST_SCHEMA_NAME, TEST_TABLE_NAME
+from tests.test_common import TEST_CATALOG_NAME, TEST_SCHEMA_NAME, TEST_TABLE_NAME
 
 
-def create_test_table_with_one_batch(
-    event_time: datetime.datetime,
+def create_generic_test_table(
+    executor: TaskExecutor,
+    partitions_to_insert_into: list[datetime.datetime],
     catalog: str = TEST_CATALOG_NAME,
     schema: str = TEST_SCHEMA_NAME,
     table_name: str = TEST_TABLE_NAME,
     partitioned_by: str | None = None,
     optimization_strategy: str | None = None,
     properties: dict[str, str] | None = None,
+    num_inserts: int = 1,
 ) -> None:
     partition_by_stm = ""
     if partitioned_by:
@@ -36,28 +38,55 @@ def create_test_table_with_one_batch(
     if total_props:
         props_stm = ", ".join(f"'{key}' = '{value}'" for key, value in total_props.items())
         tblproperties_stm = f"tblproperties ({props_stm})"
-    STL.sql(
-        f"""
-            create table {catalog}.{schema}.{table_name}
-            using iceberg
-            {partition_by_stm}
-            {tblproperties_stm}
-            as (
-                select
-                    timestamp '{event_time}' as ts,
-                    CAST((rand() * 4294967296) - 2147483648 AS INT) as id,
-                    uuid() as name,
-                    'category_' || (id % 5) as category,
-                    (id % 5) as category_int,
-                    named_struct('ts', timestamp '{event_time}') as submission
-                from
-                    range(1, 10000)
+
+    full_name = f"{catalog}.{schema}.{table_name}"
+    if num_inserts == 0:
+        STL.sql(
+            f"""
+                create table {full_name}
+                (ts timestamp, id int, name string, category string, category_int int, submission struct<ts timestamp>)
+                using iceberg
+                {partition_by_stm}
+                {tblproperties_stm}
+            """,
+        )
+    else:
+        values_rows = ", ".join(f"(timestamp '{dt}')" for dt in partitions_to_insert_into)
+        STL.sql(
+            f"""
+                create table {full_name}
+                using iceberg
+                {partition_by_stm}
+                {tblproperties_stm}
+                as (
+                    select
+                        event_time as ts,
+                        CAST((rand() * 4294967296) - 2147483648 AS INT) as id,
+                        uuid() as name,
+                        'category_' || (id % 5) as category,
+                        (id % 5) as category_int,
+                        named_struct('ts', event_time) as submission
+                    from
+                        (select id from range(1, 10000))
+                    cross join
+                        (select * from values {values_rows} as t(event_time)) times
+                )
+            """,
+        )
+        if num_inserts > 1:
+            insert_data(
+                catalog=catalog,
+                schema=schema,
+                table_name=table_name,
+                partitions_to_insert_into=partitions_to_insert_into,
+                num_inserts=(num_inserts - 1),
             )
-        """,
-    )
+    # add table to maintenance schedule
+    discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
 
 
 def create_empty_test_table(
+    executor: TaskExecutor,
     catalog: str = TEST_CATALOG_NAME,
     schema: str = TEST_SCHEMA_NAME,
     table_name: str = TEST_TABLE_NAME,
@@ -65,30 +94,16 @@ def create_empty_test_table(
     optimization_strategy: str | None = None,
     properties: dict[str, str] | None = None,
 ) -> None:
-    partition_by_stm = ""
-    if partitioned_by:
-        partition_by_stm = f"partitioned by ({partitioned_by})"
-
-    props = {}
-    if optimization_strategy:
-        props[IceKeeperTblProperty.SHOULD_OPTIMIZE] = "true"
-        props[IceKeeperTblProperty.OPTIMIZATION_STRATEGY] = optimization_strategy
-    total_props = props
-    if properties:
-        total_props = total_props | properties
-
-    tblproperties_stm = ""
-    if total_props:
-        props_stm = ", ".join(f"'{key}' = '{value}'" for key, value in total_props.items())
-        tblproperties_stm = f"tblproperties ({props_stm})"
-    STL.sql(
-        f"""
-            create table {catalog}.{schema}.{table_name}
-            (ts timestamp, id int, name string, category string, category_int int, submission struct<ts timestamp>)
-            using iceberg
-            {partition_by_stm}
-            {tblproperties_stm}
-        """,
+    create_generic_test_table(
+        executor=executor,
+        catalog=catalog,
+        schema=schema,
+        table_name=table_name,
+        partitions_to_insert_into=[],
+        partitioned_by=partitioned_by,
+        optimization_strategy=optimization_strategy,
+        properties=properties,
+        num_inserts=0,
     )
 
 
@@ -98,30 +113,34 @@ def discover_tables(executor: TaskExecutor, scope: Scope) -> None:
     executor.submit_tasks_and_wait(tasks)
 
 
-def create_test_table(
-    executor: TaskExecutor,
-    partitioned_by: str | None = None,
-    optimization_strategy: str | None = None,
-    properties: dict[str, str] = {},  # noqa: B006
-) -> str:
-    return _create_test_table(executor, partitioned_by, optimization_strategy, properties)
+# def create_test_table(
+#     executor: TaskExecutor,
+#     partitioned_by: str | None = None,
+#     optimization_strategy: str | None = None,
+#     properties: dict[str, str] = {},
+# ) -> str:
+#     return _create_test_table(executor, partitioned_by, optimization_strategy, properties)
 
 
-def _create_test_table(
-    executor: TaskExecutor,
-    partitioned_by: str | None = None,
-    optimization_strategy: str | None = None,
-    properties: dict[str, str] = {},  # noqa: B006
-) -> str:
-    create_empty_test_table(partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties)
-    # add table to maintenance schedule
-    discover_tables(executor, SCOPE_SCHEMA)
-    return TEST_FULL_NAME
+# def _create_test_table(
+#     executor: TaskExecutor,
+#     partitioned_by: str | None = None,
+#     optimization_strategy: str | None = None,
+#     properties: dict[str, str] = {},
+# ) -> str:
+#     create_empty_test_table(
+#         executor=executor, partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties
+#     )
+#     # add table to maintenance schedule
+#     discover_tables(executor, SCOPE_SCHEMA)
+#     return TEST_FULL_NAME
 
 
 def insert_data(
+    catalog: str = TEST_CATALOG_NAME,
+    schema: str = TEST_SCHEMA_NAME,
     table_name: str = TEST_TABLE_NAME,
-    event_time: datetime.datetime = TimeProvider.current_datetime(),  # noqa: B008
+    partitions_to_insert_into: list[datetime.datetime] = [TimeProvider.current_datetime()],  # noqa: B006, B008
     num_inserts: int = 20,
 ) -> None:
     """Inserts synthetic data into the specified table.
@@ -137,39 +156,25 @@ def insert_data(
           like 'category_0', 'category_1', ..., 'category_4'.
         - submission (struct): A named struct containing the provided event_time as `ts`.
     """
-    catalog = TEST_CATALOG_NAME
-    schema = TEST_SCHEMA_NAME
     full_name = f"{catalog}.{schema}.{table_name}"
+    values_rows = ", ".join(f"(timestamp '{dt}')" for dt in partitions_to_insert_into)
     for _i in range(num_inserts):
         STL.sql(
             f"""
                 insert into {full_name}
                     select
-                        timestamp '{event_time}' as ts,
+                        event_time as ts,
                         CAST((rand() * 4294967296) - 2147483648 AS INT) as id,
                         uuid() as name,
                         'category_' || (id % 5) as category,
                         (id % 5) as category_int,
-                        named_struct('ts', timestamp '{event_time}') as submission
+                        named_struct('ts', event_time) as submission
                     from
-                        range(1, 10000)
+                        (select id from range(1, 10000))
+                    cross join
+                        (select * from values {values_rows} as t(event_time)) times
                 """,
         )
-
-
-def create_test_table_with_data(
-    executor: TaskExecutor,
-    partitioned_by: str | None = None,
-    optimization_strategy: str | None = None,
-    properties: dict[str, str] = {},  # noqa: B006
-) -> str:
-    create_empty_test_table(partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties)
-    # use a fixed timestamp
-    dt = datetime.datetime(2025, 3, 3, 18, 33, 59, tzinfo=datetime.timezone.utc)
-    insert_data(event_time=dt, num_inserts=8)
-    # add table to maintenance schedule
-    discover_tables(executor, SCOPE_SCHEMA)
-    return TEST_FULL_NAME
 
 
 def delete_test_tables() -> None:

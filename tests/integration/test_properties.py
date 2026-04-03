@@ -8,12 +8,12 @@ from ice_keeper.pool import TaskExecutor
 from ice_keeper.spec.optimization import OptimizationSpec
 from ice_keeper.table.schedule_entry import DEFAULTS, MaintenanceScheduleRecord
 from tests.test_common import load_test_table
-from tests.utils import create_test_table
+from tests.utils import create_empty_test_table
 
 
 @pytest.fixture
 def table(executor: TaskExecutor) -> Table:
-    create_test_table(executor)
+    create_empty_test_table(executor)
     return load_test_table()
 
 
