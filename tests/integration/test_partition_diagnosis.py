@@ -6,7 +6,6 @@ import pytest
 
 from ice_keeper.ice_keeper import OptimizationStrategy
 from ice_keeper.pool import TaskExecutor
-from ice_keeper.stm import STL
 from ice_keeper.table import MaintenanceSchedule
 from ice_keeper.table.schedule_entry import IceKeeperTblProperty
 from ice_keeper.task import PartitionSummary
@@ -17,7 +16,6 @@ from tests.test_common import (
     ONE_EXPECTED,
     SCOPE_SCHEMA,
     SCOPE_WHERE_FULL_NAME,
-    TEST_FULL_NAME,
     THREE_EXPECTED,
 )
 from tests.utils import (
@@ -398,13 +396,13 @@ def test_optimize(
         "write.delete.mode": "merge-on-read",
         IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
         IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",
+        IceKeeperTblProperty.BINPACK_MIN_INPUT_FILES: "0",
+        IceKeeperTblProperty.SORT_CORR_THRESHOLD: "2",
     }
     dt = datetime.datetime(2025, 3, 3, 18, 33, 59, tzinfo=datetime.timezone.utc)
     create_test_table_with_one_batch(
         event_time=dt, partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties
     )
-    sql = f"delete from {TEST_FULL_NAME} where id = (select id from {TEST_FULL_NAME} where ts = '{dt}' limit 1)"
-    STL.get().sql(sql)
     # add table to maintenance schedule
     discover_tables(executor, SCOPE_SCHEMA)
     maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)

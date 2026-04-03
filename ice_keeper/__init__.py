@@ -51,6 +51,7 @@ class IceKeeperTblProperty:
     WIDENING_RULE_DST_PARTITION = "ice-keeper.widening.rule.dst.partition"
     OPTIMIZATION_GROUPING_SIZE_BYTES = "ice-keeper.optimization-grouping-size-bytes"
     BINPACK_MIN_INPUT_FILES = "ice-keeper.binpack-min-input-files"
+    SORT_CORR_THRESHOLD = "ice-keeper.sort-corr-threshold"
     WIDENING_RULE_MIN_AGE_TO_WIDEN = "ice-keeper.widening.rule.min.age.to.widen"
     WIDENING_RULE_MIN_PARTITION_TO_WIDEN = "ice-keeper.widening.rule.min-partition-to-widen"
     WIDENING_RULE_MAX_PARTITION_TO_WIDEN = "ice-keeper.widening.rule.max-partition-to-widen"

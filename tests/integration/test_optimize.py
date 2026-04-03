@@ -27,6 +27,7 @@ from tests.utils import (
     compare_multiline_strings,
     create_empty_test_table,
     create_test_table_with_data,
+    create_test_table_with_one_batch,
     discover_tables,
     insert_data,
 )
@@ -36,11 +37,18 @@ from tests.utils import (
 def test_optimize_two_partitions(executor: TaskExecutor) -> None:
     partitioned_by = "days(ts)"
     optimization_strategy = "id asc"
-    properties = {IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d", IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d"}
-    create_test_table_with_data(executor, partitioned_by, optimization_strategy, properties)
+    properties = {
+        IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
+        IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",
+        IceKeeperTblProperty.BINPACK_MIN_INPUT_FILES: "0",
+        IceKeeperTblProperty.SORT_CORR_THRESHOLD: "2",
+    }
     dt = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
-    insert_data(event_time=dt)
-
+    create_test_table_with_one_batch(
+        event_time=dt, partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties
+    )
+    dt = datetime.datetime(2025, 3, 3, 0, 0, 0, tzinfo=timezone.utc)
+    insert_data(event_time=dt, num_inserts=1)
     maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
     assert len(maintenance_schedule.entries()) == 1, "Scoped to one table, should have one maintenance entry."
 

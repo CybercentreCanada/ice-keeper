@@ -22,9 +22,19 @@ class Bounds(ABC):
     def __init__(self, mnt_props: MaintenanceScheduleEntry) -> None:
         self.mnt_props = mnt_props
 
-    @abstractmethod
     def make_corr_threshold_expr_stmt(self) -> str:
-        """Abstract method to generate a correlation threshold expression."""
+        """Return the correlation threshold expression.
+
+        If `sort_corr_threshold` is set (>= 0), it overrides the subclass default.
+        """
+        threshold = self.mnt_props.sort_corr_threshold
+        if threshold >= 0:
+            return str(threshold)
+        return self._default_corr_threshold_expr_stmt()
+
+    @abstractmethod
+    def _default_corr_threshold_expr_stmt(self) -> str:
+        """Subclass-specific default correlation threshold expression."""
 
     def make_lower_bounds_expr_stmt(self) -> str:
         """Constructs and returns the SQL expression for the lower bounds."""
@@ -72,7 +82,7 @@ class Bounds(ABC):
 
 class BoundsBinpack(Bounds):
     @override
-    def make_corr_threshold_expr_stmt(self) -> str:
+    def _default_corr_threshold_expr_stmt(self) -> str:
         """Returns a fixed correlation threshold expression for binpack optimization.
 
         Binpack strategy does not rely on calculating correlation of bounds, return 1.
@@ -91,7 +101,7 @@ class BoundsBinpack(Bounds):
 
 class BoundsSort(Bounds):
     @override
-    def make_corr_threshold_expr_stmt(self) -> str:
+    def _default_corr_threshold_expr_stmt(self) -> str:
         """Returns a fixed correlation threshold expression for sort optimization."""
         return "0.97"
 
@@ -113,7 +123,7 @@ class BoundsSort(Bounds):
 
 class BoundsZorderSort(Bounds):
     @override
-    def make_corr_threshold_expr_stmt(self) -> str:
+    def _default_corr_threshold_expr_stmt(self) -> str:
         """Computes a correlation threshold for z-order sorting.
 
         The correlation factor depends on
