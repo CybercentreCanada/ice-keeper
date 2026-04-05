@@ -35,22 +35,19 @@ from tests.utils import (
 
 @pytest.mark.integration
 def test_two_partitions(executor: TaskExecutor) -> None:
-    partitioned_by = "days(ts)"
-    optimization_strategy = "id asc"
-    properties = {
-        IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
-        IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",
-        IceKeeperTblProperty.BINPACK_MIN_INPUT_FILES: "0",
-        IceKeeperTblProperty.SORT_CORR_THRESHOLD: "2",
-    }
     dt1 = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
     dt2 = datetime.datetime(2025, 3, 3, 0, 0, 0, tzinfo=timezone.utc)
     create_generic_test_table(
         executor=executor,
         partitions_to_insert_into=[dt1, dt2],
-        partitioned_by=partitioned_by,
-        optimization_strategy=optimization_strategy,
-        properties=properties,
+        partitioned_by="days(ts)",
+        optimization_strategy="id asc",
+        properties={
+            IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
+            IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",
+            IceKeeperTblProperty.BINPACK_MIN_INPUT_FILES: "0",
+            IceKeeperTblProperty.SORT_CORR_THRESHOLD: "2",
+        },
     )
     rows = run_action_and_collect_journal(executor, Action.REWRITE_DATA_FILES)
     # If we have an expected procedure call.
@@ -103,21 +100,18 @@ def test_two_partitions(executor: TaskExecutor) -> None:
 
 @pytest.mark.integration
 def test_invalid_column(executor: TaskExecutor) -> None:
-    partitioned_by = "days(ts)"
-    optimization_strategy = "invalid_column_name asc"
-    properties = {
-        IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
-        IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",
-        IceKeeperTblProperty.BINPACK_MIN_INPUT_FILES: "0",
-        IceKeeperTblProperty.SORT_CORR_THRESHOLD: "2",
-    }
     dt1 = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
     create_generic_test_table(
         executor=executor,
         partitions_to_insert_into=[dt1],
-        partitioned_by=partitioned_by,
-        optimization_strategy=optimization_strategy,
-        properties=properties,
+        partitioned_by="days(ts)",
+        optimization_strategy="invalid_column_name asc",
+        properties={
+            IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
+            IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",
+            IceKeeperTblProperty.BINPACK_MIN_INPUT_FILES: "0",
+            IceKeeperTblProperty.SORT_CORR_THRESHOLD: "2",
+        },
     )
 
     rows = run_action_and_collect_journal(executor, Action.REWRITE_DATA_FILES)
@@ -131,20 +125,17 @@ def test_invalid_column(executor: TaskExecutor) -> None:
 
 @pytest.mark.integration
 def test_binpack_min_1_files_skip(executor: TaskExecutor) -> None:
-    partitioned_by = "days(ts)"
-    optimization_strategy = "binpack"
-    properties = {
-        IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
-        IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",
-        IceKeeperTblProperty.BINPACK_MIN_INPUT_FILES: "1",
-    }
     dt1 = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
     create_generic_test_table(
         executor=executor,
         partitions_to_insert_into=[dt1],
-        partitioned_by=partitioned_by,
-        optimization_strategy=optimization_strategy,
-        properties=properties,
+        partitioned_by="days(ts)",
+        optimization_strategy="binpack",
+        properties={
+            IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
+            IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",
+            IceKeeperTblProperty.BINPACK_MIN_INPUT_FILES: "1",
+        },
         num_inserts=1,
     )
 
@@ -155,20 +146,17 @@ def test_binpack_min_1_files_skip(executor: TaskExecutor) -> None:
 
 @pytest.mark.integration
 def test_binpack_min_1_files_do(executor: TaskExecutor) -> None:
-    partitioned_by = "days(ts)"
-    optimization_strategy = "binpack"
-    properties = {
-        IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
-        IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",
-        IceKeeperTblProperty.BINPACK_MIN_INPUT_FILES: "1",
-    }
     dt1 = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
     create_generic_test_table(
         executor=executor,
         partitions_to_insert_into=[dt1],
-        partitioned_by=partitioned_by,
-        optimization_strategy=optimization_strategy,
-        properties=properties,
+        partitioned_by="days(ts)",
+        optimization_strategy="binpack",
+        properties={
+            IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
+            IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",
+            IceKeeperTblProperty.BINPACK_MIN_INPUT_FILES: "1",
+        },
         num_inserts=2,
     )
 
@@ -179,20 +167,17 @@ def test_binpack_min_1_files_do(executor: TaskExecutor) -> None:
 
 @pytest.mark.integration
 def test_partitioned_by_category_sorted_by_id_max_age_2(executor: TaskExecutor) -> None:
-    partitioned_by = "category"
-    optimization_strategy = "id ASC"
-    properties = {
-        IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "200",
-        IceKeeperTblProperty.MAX_AGE_TO_OPTIMIZE: "200",
-        IceKeeperTblProperty.SORT_CORR_THRESHOLD: "2",
-    }
     dt1 = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
     create_generic_test_table(
         executor=executor,
         partitions_to_insert_into=[dt1],
-        partitioned_by=partitioned_by,
-        optimization_strategy=optimization_strategy,
-        properties=properties,
+        partitioned_by="category",
+        optimization_strategy="id ASC",
+        properties={
+            IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "200",
+            IceKeeperTblProperty.MAX_AGE_TO_OPTIMIZE: "200",
+            IceKeeperTblProperty.SORT_CORR_THRESHOLD: "2",
+        },
     )
 
     rows = run_action_and_collect_journal(executor, Action.REWRITE_DATA_FILES)
@@ -204,20 +189,17 @@ def test_partitioned_by_category_sorted_by_id_max_age_2(executor: TaskExecutor) 
 
 @pytest.mark.integration
 def test_temporal_not_first_partition(executor: TaskExecutor) -> None:
-    partitioned_by = "category, days(ts)"
-    optimization_strategy = "id ASC"
-    properties = {
-        IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
-        IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",
-        IceKeeperTblProperty.SORT_CORR_THRESHOLD: "2",
-    }
     dt1 = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
     create_generic_test_table(
         executor=executor,
         partitions_to_insert_into=[dt1],
-        partitioned_by=partitioned_by,
-        optimization_strategy=optimization_strategy,
-        properties=properties,
+        partitioned_by="category, days(ts)",
+        optimization_strategy="id ASC",
+        properties={
+            IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
+            IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",
+            IceKeeperTblProperty.SORT_CORR_THRESHOLD: "2",
+        },
     )
 
     rows = run_action_and_collect_journal(executor, Action.REWRITE_DATA_FILES)
@@ -299,11 +281,11 @@ def test_special_partition_struct(executor: TaskExecutor) -> None:
 def test_optimize_null_category(executor: TaskExecutor) -> None:
     # This demonstrates the limitation of ice-keeper in handling null
     # See https://github.chimera.cyber.gc.ca/CCCS/ice-keeper/issues/103
-    partitioned_by = "category"
-    optimization_strategy = "id ASC"
-    properties = {IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "1", IceKeeperTblProperty.SORT_CORR_THRESHOLD: "2"}
     create_empty_test_table(
-        executor=executor, partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties
+        executor=executor,
+        partitioned_by="category",
+        optimization_strategy="id ASC",
+        properties={IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "1", IceKeeperTblProperty.SORT_CORR_THRESHOLD: "2"},
     )
     event_time = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
 
@@ -340,8 +322,6 @@ def test_optimize_null_category(executor: TaskExecutor) -> None:
     # │ 5             │ None       │
     # └───────────────┴────────────┘
 
-    # add table to maintenance schedule
-    discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
     maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
     assert len(maintenance_schedule.entries()) == 1, "Scoped to one table, should have one maintenance entry."
     tasks = ActionTaskFactory.make_tasks(Action.REWRITE_DATA_FILES, maintenance_schedule)
@@ -396,24 +376,19 @@ def test_optimize_null_category(executor: TaskExecutor) -> None:
 
 @pytest.mark.integration
 def test_diagnose_cli(executor: TaskExecutor) -> None:
-    partitioned_by = "days(ts)"
-    optimization_strategy = "id ASC"
-    properties = {IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "1"}
-    properties = {
-        IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
-        IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",
-        IceKeeperTblProperty.BINPACK_MIN_INPUT_FILES: "1",
-    }
     dt1 = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
     create_generic_test_table(
         executor=executor,
         partitions_to_insert_into=[dt1],
-        partitioned_by=partitioned_by,
-        optimization_strategy=optimization_strategy,
-        properties=properties,
+        partitioned_by="days(ts)",
+        optimization_strategy="id ASC",
+        properties={
+            IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
+            IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",
+            IceKeeperTblProperty.BINPACK_MIN_INPUT_FILES: "1",
+        },
         num_inserts=1,
     )
-    full_name = TEST_FULL_NAME
 
     # Use CliRunner to invoke the diagnose command
     runner = CliRunner()
@@ -421,7 +396,7 @@ def test_diagnose_cli(executor: TaskExecutor) -> None:
         diagnose,
         [
             "--full_name",
-            full_name,
+            TEST_FULL_NAME,
             "--min_age_to_diagnose",
             "1",
             "--max_age_to_diagnose",
@@ -439,11 +414,11 @@ def test_diagnose_cli(executor: TaskExecutor) -> None:
 
 @pytest.mark.integration
 def test_optimize_binpack_correct_hour(executor: TaskExecutor) -> None:
-    partitioned_by = "hours(ts)"
-    optimization_strategy = "binpack"
-    properties = {IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "2", IceKeeperTblProperty.MAX_AGE_TO_OPTIMIZE: "200"}
     create_empty_test_table(
-        executor=executor, partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties
+        executor=executor,
+        partitioned_by="hours(ts)",
+        optimization_strategy="binpack",
+        properties={IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "2", IceKeeperTblProperty.MAX_AGE_TO_OPTIMIZE: "200"},
     )
     # 6 files in hour 2025-12-01 00:00:00
     dt = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
@@ -457,9 +432,6 @@ def test_optimize_binpack_correct_hour(executor: TaskExecutor) -> None:
     dt = datetime.datetime(2025, 12, 1, 23, 59, 59, tzinfo=timezone.utc)
     insert_data(partitions_to_insert_into=[dt], num_inserts=4)
 
-    # add table to maintenance schedule
-    discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
-
     run_action_and_collect_journal(executor, Action.REWRITE_DATA_FILES)
 
     sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_hour = 490175 """
@@ -472,18 +444,16 @@ def test_optimize_binpack_correct_hour(executor: TaskExecutor) -> None:
 
 @pytest.mark.integration
 def test_optimize_binpack_correct_day(executor: TaskExecutor) -> None:
-    partitioned_by = "days(ts)"
-    optimization_strategy = "binpack"
-    properties = {IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "2", IceKeeperTblProperty.MAX_AGE_TO_OPTIMIZE: "200"}
     create_empty_test_table(
-        executor=executor, partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties
+        executor=executor,
+        partitioned_by="days(ts)",
+        optimization_strategy="binpack",
+        properties={IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "2", IceKeeperTblProperty.MAX_AGE_TO_OPTIMIZE: "200"},
     )
     dt = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
     insert_data(partitions_to_insert_into=[dt], num_inserts=6)
     dt = datetime.datetime(2025, 12, 2, 0, 0, 0, tzinfo=timezone.utc)
     insert_data(partitions_to_insert_into=[dt], num_inserts=7)
-    # add table to maintenance schedule
-    discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
 
     run_action_and_collect_journal(executor, Action.REWRITE_DATA_FILES)
     sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_day = '2025-12-02' """
@@ -496,11 +466,11 @@ def test_optimize_binpack_correct_day(executor: TaskExecutor) -> None:
 
 @pytest.mark.integration
 def test_optimize_binpack_correct_month(executor: TaskExecutor) -> None:
-    partitioned_by = "month(ts)"
-    optimization_strategy = "binpack"
-    properties = {IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "2", IceKeeperTblProperty.MAX_AGE_TO_OPTIMIZE: "200"}
     create_empty_test_table(
-        executor=executor, partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties
+        executor=executor,
+        partitioned_by="month(ts)",
+        optimization_strategy="binpack",
+        properties={IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "2", IceKeeperTblProperty.MAX_AGE_TO_OPTIMIZE: "200"},
     )
     # 6 files in month 2025-12-01
     dt = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
@@ -514,9 +484,6 @@ def test_optimize_binpack_correct_month(executor: TaskExecutor) -> None:
     dt = datetime.datetime(2026, 1, 1, 23, 59, 59, tzinfo=timezone.utc)
     insert_data(partitions_to_insert_into=[dt], num_inserts=4)
 
-    # add table to maintenance schedule
-    discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
-
     run_action_and_collect_journal(executor, Action.REWRITE_DATA_FILES)
 
     sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_month = 672 """
@@ -529,11 +496,11 @@ def test_optimize_binpack_correct_month(executor: TaskExecutor) -> None:
 
 @pytest.mark.integration
 def test_optimize_binpack_correct_year(executor: TaskExecutor) -> None:
-    partitioned_by = "year(ts)"
-    optimization_strategy = "binpack"
-    properties = {IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "2", IceKeeperTblProperty.MAX_AGE_TO_OPTIMIZE: "200"}
     create_empty_test_table(
-        executor=executor, partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties
+        executor=executor,
+        partitioned_by="year(ts)",
+        optimization_strategy="binpack",
+        properties={IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "2", IceKeeperTblProperty.MAX_AGE_TO_OPTIMIZE: "200"},
     )
     # 6 files in year 2024
     dt = datetime.datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
@@ -546,9 +513,6 @@ def test_optimize_binpack_correct_year(executor: TaskExecutor) -> None:
     insert_data(partitions_to_insert_into=[dt], num_inserts=3)
     dt = datetime.datetime(2025, 1, 1, 23, 59, 59, tzinfo=timezone.utc)
     insert_data(partitions_to_insert_into=[dt], num_inserts=4)
-
-    # add table to maintenance schedule
-    discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
 
     run_action_and_collect_journal(executor, Action.REWRITE_DATA_FILES)
 

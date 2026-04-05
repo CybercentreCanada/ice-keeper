@@ -5,7 +5,6 @@ import re
 from pyspark.sql import Row
 
 from ice_keeper import Action, IceKeeperTblProperty, TimeProvider
-from ice_keeper.config import Config
 from ice_keeper.pool import TaskExecutor
 from ice_keeper.stm import STL, Scope
 from ice_keeper.table import MaintenanceSchedule, MaintenanceScheduleEntry
@@ -61,7 +60,7 @@ def create_generic_test_table(
                 {partition_by_stm}
                 {tblproperties_stm}
                 as (
-                    select
+                    select /*+ repartition(1) */
                         event_time as ts,
                         CAST((rand() * 4294967296) - 2147483648 AS INT) as id,
                         uuid() as name,
@@ -85,6 +84,7 @@ def create_generic_test_table(
             )
     # add table to maintenance schedule
     discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
+    # discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
 
 
 def create_empty_test_table(
@@ -135,29 +135,6 @@ def run_action_and_collect_journal(
     return executor.get_journal().flush().stop().read(Scope()).collect()
 
 
-# def create_test_table(
-#     executor: TaskExecutor,
-#     partitioned_by: str | None = None,
-#     optimization_strategy: str | None = None,
-#     properties: dict[str, str] = {},
-# ) -> str:
-#     return _create_test_table(executor, partitioned_by, optimization_strategy, properties)
-
-
-# def _create_test_table(
-#     executor: TaskExecutor,
-#     partitioned_by: str | None = None,
-#     optimization_strategy: str | None = None,
-#     properties: dict[str, str] = {},
-# ) -> str:
-#     create_empty_test_table(
-#         executor=executor, partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties
-#     )
-#     # add table to maintenance schedule
-#     discover_tables(executor, SCOPE_SCHEMA)
-#     return TEST_FULL_NAME
-
-
 def insert_data(
     catalog: str = TEST_CATALOG_NAME,
     schema: str = TEST_SCHEMA_NAME,
@@ -197,20 +174,6 @@ def insert_data(
                         (select * from values {values_rows} as t(event_time)) times
                 """,
         )
-
-
-def delete_test_tables() -> None:
-    maintenance_schedule_table_name = Config.instance().maintenance_schedule_table_name
-    partition_health_table_name = Config.instance().partition_health_table_name
-    journal_table_name = Config.instance().journal_table_name
-    catalog = maintenance_schedule_table_name.split(".")[0]
-    schema = maintenance_schedule_table_name.split(".")[1]
-    rows = STL.get().sql(f"show tables in {catalog}.{schema}").collect()
-    for row in rows:
-        full_name = f"{catalog}.{schema}.{row.tableName}"
-        if full_name not in [maintenance_schedule_table_name, partition_health_table_name, journal_table_name]:
-            print(f"deleting test table named {full_name}")
-            STL.get().sql(f"drop table {full_name} purge")
 
 
 def normalize_whitespace(text: str) -> str:

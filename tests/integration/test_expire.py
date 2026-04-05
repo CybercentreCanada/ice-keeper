@@ -4,9 +4,6 @@ import pytest
 
 from ice_keeper import Action, IceKeeperTblProperty, TimeProvider
 from ice_keeper.pool import TaskExecutor
-from tests.test_common import (
-    set_tblproperty,
-)
 from tests.utils import compare_multiline_strings, create_empty_test_table, run_action_and_collect_journal
 
 
@@ -39,8 +36,7 @@ def test_expire_snapshots_default(executor: TaskExecutor) -> None:
 def test_expire_snapshots_disabled_post_discovery(executor: TaskExecutor) -> None:
     TimeProvider.set(datetime.datetime(2023, 3, 3, 15, 0, 0, tzinfo=datetime.timezone.utc))
 
-    create_empty_test_table(executor)
-    set_tblproperty(IceKeeperTblProperty.SHOULD_EXPIRE_SNAPSHOTS, "false")
+    create_empty_test_table(executor, properties={IceKeeperTblProperty.SHOULD_EXPIRE_SNAPSHOTS: "false"})
 
     rows = run_action_and_collect_journal(executor, Action.EXPIRE_SNAPSHOTS)
     assert len(rows) == 0, "test_expire_snapshots should be skipped"

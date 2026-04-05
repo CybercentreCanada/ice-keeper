@@ -1,31 +1,26 @@
+import datetime
+
 import pytest
 
 from ice_keeper import Action, IceKeeperTblProperty, Status
 from ice_keeper.pool import TaskExecutor
 from ice_keeper.stm import STL
 from tests.test_common import TEST_FULL_NAME
-from tests.utils import create_empty_test_table, run_action_and_collect_journal
+from tests.utils import create_generic_test_table, run_action_and_collect_journal
+
+# create_generic_test_table inserts 9999 rows per partition
+ROWS_PER_PARTITION = 9999
 
 
 def create_lifecycle_test_table(executor: TaskExecutor, properties: dict[str, str] = {}) -> None:  # noqa: B006
-    create_empty_test_table(executor=executor, partitioned_by="days(ts)", properties=properties)
-    for i in range(4, 0, -1):
-        n_days = i
-        n_rows = 100
-        STL.sql(
-            f"""
-                insert into {TEST_FULL_NAME}
-                    select
-                        now() - interval '{n_days}' days as ts,
-                        id,
-                        uuid() as name,
-                        null as category,
-                        null as category_int,
-                        null as submission
-                    from
-                        range(0, {n_rows})
-                """
-        )
+    now = datetime.datetime.now(datetime.timezone.utc)
+    partitions = [now - datetime.timedelta(days=i) for i in range(4, 0, -1)]
+    create_generic_test_table(
+        executor=executor,
+        partitions_to_insert_into=partitions,
+        partitioned_by="days(ts)",
+        properties=properties,
+    )
 
 
 @pytest.mark.integration
@@ -109,7 +104,7 @@ def test_lifecycle_delete_past_one_day(executor: TaskExecutor) -> None:
     assert "where ts < current_date() - interval '1' days" in rows[0].sql_stm
     expected_num_days_deleted = 3
     assert rows[0].lifecycle_deleted_data_files == expected_num_days_deleted
-    assert rows[0].lifecycle_deleted_records == expected_num_days_deleted * 100
+    assert rows[0].lifecycle_deleted_records == expected_num_days_deleted * ROWS_PER_PARTITION
     assert rows[0].lifecycle_changed_partition_count == expected_num_days_deleted
 
 
@@ -128,7 +123,7 @@ def test_lifecycle_delete_past_two_days(executor: TaskExecutor) -> None:
     assert "where ts < current_date() - interval '2' days" in rows[0].sql_stm
     expected_num_days_deleted = 2
     assert rows[0].lifecycle_deleted_data_files == expected_num_days_deleted
-    assert rows[0].lifecycle_deleted_records == expected_num_days_deleted * 100
+    assert rows[0].lifecycle_deleted_records == expected_num_days_deleted * ROWS_PER_PARTITION
     assert rows[0].lifecycle_changed_partition_count == expected_num_days_deleted
 
 

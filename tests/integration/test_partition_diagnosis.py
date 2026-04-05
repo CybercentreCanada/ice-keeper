@@ -406,8 +406,6 @@ def test_optimize(
         optimization_strategy=optimization_strategy,
         properties=properties,
     )
-    # add table to maintenance schedule
-    discover_tables(executor, SCOPE_SCHEMA)
     mnt_props = get_updated_mnt_props()
 
     os = OptimizationStrategy(mnt_props)
