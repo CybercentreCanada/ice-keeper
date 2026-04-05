@@ -92,7 +92,7 @@ class PartitionDiagnosis:
                         target_file_size,
                         dynamic_optimization_grouping_label
                         {% if is_partitioned %}
-                            , array_distinct(collect_list(struct({{ list_of_all_partition_alias_stmt }}))) as partition_filters
+                            , array_sort(array_distinct(collect_list(struct({{ list_of_all_partition_alias_stmt }})))) as partition_filters
                         {% endif %}
                     from
                         labeled_partition_groupings
@@ -134,7 +134,7 @@ class PartitionDiagnosis:
                     partition_age,
                     target_file_size
                     {% if is_partitioned %}
-                    , array_distinct(collect_list(struct({{ depth_grouping_stmt }}))) as partition_filters
+                    , array_sort(array_distinct(collect_list(struct({{ depth_grouping_stmt }})))) as partition_filters
                     {% endif %}
                 from
                     {{ summary_before_view_name }}
