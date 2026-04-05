@@ -420,7 +420,11 @@ class MaintenanceScheduleEntry:
 
     @property
     def optimization_grouping_size_bytes(self) -> int:
-        return self._record.get("optimization_grouping_size_bytes")
+        value = self._record.get("optimization_grouping_size_bytes")
+        if value <= 0:
+            msg = f"Invalid optimization_grouping_size_bytes={value} for table '{self.full_name}'. Must be greater than zero."
+            raise ValueError(msg)
+        return value
 
     @property
     def binpack_min_input_files(self) -> int:

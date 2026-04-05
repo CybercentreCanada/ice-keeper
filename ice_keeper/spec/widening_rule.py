@@ -153,7 +153,13 @@ class WideningRule:
         assert self.dst_widening
         assert len(self.dst_widening.partition.partition_field_alias) > 0
         partition_field_alias = self.dst_widening.partition.partition_field_alias
-        assert len(partition_diagnosys.partition_filters) == 1
+        if len(partition_diagnosys.partition_filters) != 1:
+            msg = (
+                "Widening validation requires exactly one partition filter, "
+                f"but got {len(partition_diagnosys.partition_filters)}. "
+                "Multiple partition filters are not supported by this widening rule."
+            )
+            raise ValueError(msg)
         partition_filter = partition_diagnosys.partition_filters[0]
         partition_field_value = partition_filter[partition_field_alias]
         dst_partition_date_range = self.dst_widening.partition.to_sql_predicate(partition_field_value)

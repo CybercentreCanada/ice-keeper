@@ -10,7 +10,6 @@ from ice_keeper.table.schedule_entry import IceKeeperTblProperty
 from ice_keeper.task import PartitionSummary
 from ice_keeper.task.action.optimization.optimization import SubOptimizationStrategy
 from ice_keeper.task.action.optimization.partition_diagnostic import PartitionDiagnosis
-from tests.integration.test_expire import run_action_and_collect_journal
 from tests.test_common import (
     FIVE_EXPECTED,
     ONE_EXPECTED,
@@ -22,6 +21,7 @@ from tests.utils import (
     compare_multiline_strings,
     create_generic_test_table,
     get_updated_mnt_props,
+    run_action_and_collect_journal,
 )
 
 
