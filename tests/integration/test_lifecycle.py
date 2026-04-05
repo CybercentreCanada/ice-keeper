@@ -34,8 +34,7 @@ def test_lifecycle_default_behaviour(executor: TaskExecutor) -> None:
 
 @pytest.mark.integration
 def test_lifecycle_disabled_explicitly(executor: TaskExecutor) -> None:
-    properties = {IceKeeperTblProperty.SHOULD_APPLY_LIFECYCLE: "false"}
-    create_lifecycle_test_table(executor, properties)
+    create_lifecycle_test_table(executor, {IceKeeperTblProperty.SHOULD_APPLY_LIFECYCLE: "false"})
     # Test that default behaviour is to not run lifecycle
     rows = run_action_and_collect_journal(executor, Action.LIFECYCLE_DATA)
     # Explicitly should lifecycle = False
@@ -44,8 +43,7 @@ def test_lifecycle_disabled_explicitly(executor: TaskExecutor) -> None:
 
 @pytest.mark.integration
 def test_lifecycle_column_not_specified(executor: TaskExecutor) -> None:
-    properties = {IceKeeperTblProperty.SHOULD_APPLY_LIFECYCLE: "true"}
-    create_lifecycle_test_table(executor, properties)
+    create_lifecycle_test_table(executor, {IceKeeperTblProperty.SHOULD_APPLY_LIFECYCLE: "true"})
     rows = run_action_and_collect_journal(executor, Action.LIFECYCLE_DATA)
     assert len(rows) == 1
     assert rows[0].status == Status.FAILED.value
@@ -54,11 +52,13 @@ def test_lifecycle_column_not_specified(executor: TaskExecutor) -> None:
 
 @pytest.mark.integration
 def test_lifecycle_column_does_not_exist(executor: TaskExecutor) -> None:
-    properties = {
-        IceKeeperTblProperty.SHOULD_APPLY_LIFECYCLE: "true",
-        IceKeeperTblProperty.LIFECYCLE_INGESTION_TIME_COLUMN: "column_xyz",
-    }
-    create_lifecycle_test_table(executor, properties)
+    create_lifecycle_test_table(
+        executor,
+        {
+            IceKeeperTblProperty.SHOULD_APPLY_LIFECYCLE: "true",
+            IceKeeperTblProperty.LIFECYCLE_INGESTION_TIME_COLUMN: "column_xyz",
+        },
+    )
 
     rows = run_action_and_collect_journal(executor, Action.LIFECYCLE_DATA)
     assert len(rows) == 1
@@ -68,8 +68,10 @@ def test_lifecycle_column_does_not_exist(executor: TaskExecutor) -> None:
 
 @pytest.mark.integration
 def test_lifecycle_default_num_days(executor: TaskExecutor) -> None:
-    properties = {IceKeeperTblProperty.SHOULD_APPLY_LIFECYCLE: "true", IceKeeperTblProperty.LIFECYCLE_INGESTION_TIME_COLUMN: "ts"}
-    create_lifecycle_test_table(executor, properties)
+    create_lifecycle_test_table(
+        executor,
+        {IceKeeperTblProperty.SHOULD_APPLY_LIFECYCLE: "true", IceKeeperTblProperty.LIFECYCLE_INGESTION_TIME_COLUMN: "ts"},
+    )
     row = STL.sql(f"select count(*) as num_files, sum(record_count) as num_rows from {TEST_FULL_NAME}.data_files").take(1)[0]
     num_data_files_before = row.num_files
     num_rows_before = row.num_rows
@@ -91,12 +93,14 @@ def test_lifecycle_default_num_days(executor: TaskExecutor) -> None:
 
 @pytest.mark.integration
 def test_lifecycle_delete_past_one_day(executor: TaskExecutor) -> None:
-    properties = {
-        IceKeeperTblProperty.SHOULD_APPLY_LIFECYCLE: "true",
-        IceKeeperTblProperty.LIFECYCLE_INGESTION_TIME_COLUMN: "ts",
-        IceKeeperTblProperty.LIFECYCLE_MAX_DAYS: "1",
-    }
-    create_lifecycle_test_table(executor, properties)
+    create_lifecycle_test_table(
+        executor,
+        {
+            IceKeeperTblProperty.SHOULD_APPLY_LIFECYCLE: "true",
+            IceKeeperTblProperty.LIFECYCLE_INGESTION_TIME_COLUMN: "ts",
+            IceKeeperTblProperty.LIFECYCLE_MAX_DAYS: "1",
+        },
+    )
 
     rows = run_action_and_collect_journal(executor, Action.LIFECYCLE_DATA)
     assert len(rows) == 1
@@ -110,12 +114,14 @@ def test_lifecycle_delete_past_one_day(executor: TaskExecutor) -> None:
 
 @pytest.mark.integration
 def test_lifecycle_delete_past_two_days(executor: TaskExecutor) -> None:
-    properties = {
-        IceKeeperTblProperty.SHOULD_APPLY_LIFECYCLE: "true",
-        IceKeeperTblProperty.LIFECYCLE_INGESTION_TIME_COLUMN: "ts",
-        IceKeeperTblProperty.LIFECYCLE_MAX_DAYS: "2",
-    }
-    create_lifecycle_test_table(executor, properties)
+    create_lifecycle_test_table(
+        executor,
+        {
+            IceKeeperTblProperty.SHOULD_APPLY_LIFECYCLE: "true",
+            IceKeeperTblProperty.LIFECYCLE_INGESTION_TIME_COLUMN: "ts",
+            IceKeeperTblProperty.LIFECYCLE_MAX_DAYS: "2",
+        },
+    )
 
     rows = run_action_and_collect_journal(executor, Action.LIFECYCLE_DATA)
     assert len(rows) == 1
@@ -129,8 +135,10 @@ def test_lifecycle_delete_past_two_days(executor: TaskExecutor) -> None:
 
 @pytest.mark.integration
 def test_lifecycle_using_none_time_column(executor: TaskExecutor) -> None:
-    properties = {IceKeeperTblProperty.SHOULD_APPLY_LIFECYCLE: "true", IceKeeperTblProperty.LIFECYCLE_INGESTION_TIME_COLUMN: "id"}
-    create_lifecycle_test_table(executor, properties)
+    create_lifecycle_test_table(
+        executor,
+        {IceKeeperTblProperty.SHOULD_APPLY_LIFECYCLE: "true", IceKeeperTblProperty.LIFECYCLE_INGESTION_TIME_COLUMN: "id"},
+    )
 
     rows = run_action_and_collect_journal(executor, Action.LIFECYCLE_DATA)
     assert len(rows) == 1

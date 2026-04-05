@@ -391,20 +391,19 @@ def test_optimize(
     test_name: str, partitioned_by: str, optimization_strategy: str, expected_output: str, executor: TaskExecutor
 ) -> None:
     # Change default min age for testing.
-    properties = {
-        "write.delete.mode": "merge-on-read",
-        IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
-        IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",
-        IceKeeperTblProperty.BINPACK_MIN_INPUT_FILES: "0",
-        IceKeeperTblProperty.SORT_CORR_THRESHOLD: "2",
-    }
     dt = datetime.datetime(2025, 3, 3, 18, 33, 59, tzinfo=datetime.timezone.utc)
     create_generic_test_table(
         executor=executor,
         partitions_to_insert_into=[dt],
         partitioned_by=partitioned_by,
         optimization_strategy=optimization_strategy,
-        properties=properties,
+        properties={
+            "write.delete.mode": "merge-on-read",
+            IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
+            IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",
+            IceKeeperTblProperty.BINPACK_MIN_INPUT_FILES: "0",
+            IceKeeperTblProperty.SORT_CORR_THRESHOLD: "2",
+        },
     )
     mnt_props = get_updated_mnt_props()
 
@@ -430,22 +429,21 @@ def test_optimize(
 @pytest.mark.integration
 def test_dynamic_grouping_binpack_groups_all_buckets(executor: TaskExecutor) -> None:
     """With a large grouping size, all buckets within the same age should be grouped into one PartitionDiagnosisResult."""
-    properties = {
-        "write.delete.mode": "merge-on-read",
-        IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
-        IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",
-        IceKeeperTblProperty.OPTIMIZE_PARTITION_DEPTH: "-1",
-        # Large threshold so all sub-partitions fit in one group
-        IceKeeperTblProperty.OPTIMIZATION_GROUPING_SIZE_BYTES: "1073741824",
-        IceKeeperTblProperty.BINPACK_MIN_INPUT_FILES: "0",
-    }
     dt = datetime.datetime(2025, 3, 3, 18, 33, 59, tzinfo=datetime.timezone.utc)
     create_generic_test_table(
         executor=executor,
         partitions_to_insert_into=[dt],
         partitioned_by="days(ts), bucket(3, id)",
         optimization_strategy="binpack",
-        properties=properties,
+        properties={
+            "write.delete.mode": "merge-on-read",
+            IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
+            IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",
+            IceKeeperTblProperty.OPTIMIZE_PARTITION_DEPTH: "-1",
+            # Large threshold so all sub-partitions fit in one group
+            IceKeeperTblProperty.OPTIMIZATION_GROUPING_SIZE_BYTES: "1073741824",
+            IceKeeperTblProperty.BINPACK_MIN_INPUT_FILES: "0",
+        },
     )
     discover_tables(executor, SCOPE_SCHEMA)
     mnt_props = get_updated_mnt_props()
@@ -474,22 +472,21 @@ def test_dynamic_grouping_binpack_groups_all_buckets(executor: TaskExecutor) -> 
 @pytest.mark.integration
 def test_dynamic_grouping_binpack_splits_into_multiple_groups(executor: TaskExecutor) -> None:
     """With a tiny grouping size, each bucket should end up in its own group."""
-    properties = {
-        "write.delete.mode": "merge-on-read",
-        IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
-        IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",
-        IceKeeperTblProperty.OPTIMIZE_PARTITION_DEPTH: "-1",
-        # Tiny threshold so each sub-partition exceeds the limit
-        IceKeeperTblProperty.OPTIMIZATION_GROUPING_SIZE_BYTES: "1",
-        IceKeeperTblProperty.BINPACK_MIN_INPUT_FILES: "0",
-    }
     dt = datetime.datetime(2025, 3, 3, 18, 33, 59, tzinfo=datetime.timezone.utc)
     create_generic_test_table(
         executor=executor,
         partitions_to_insert_into=[dt],
         partitioned_by="days(ts), category",
         optimization_strategy="binpack",
-        properties=properties,
+        properties={
+            "write.delete.mode": "merge-on-read",
+            IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
+            IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",
+            IceKeeperTblProperty.OPTIMIZE_PARTITION_DEPTH: "-1",
+            # Tiny threshold so each sub-partition exceeds the limit
+            IceKeeperTblProperty.OPTIMIZATION_GROUPING_SIZE_BYTES: "1",
+            IceKeeperTblProperty.BINPACK_MIN_INPUT_FILES: "0",
+        },
     )
 
     discover_tables(executor, SCOPE_SCHEMA)
