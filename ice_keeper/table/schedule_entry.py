@@ -41,8 +41,8 @@ DEFAULTS = {
     "lifecycle_max_days": 330,
     "lifecycle_ingestion_time_column": "",
     "optimization_grouping_size_bytes": 33554432,
-    "binpack_min_input_files": 5,
-    "sort_corr_threshold": -1.0,
+    "binpack_min_input_files": 5,  # Min number of files required to trigger a binpack, can be set to zero while testing to force binpacks.
+    "sort_corr_threshold": -1.0,  # Mostly used for testing. If not specified defaults to 1 (binpack), 0.97 (sort), scaled (zorder).
     "widening_rule_select_criteria": "",
     "widening_rule_required_partition_columns": "",
     "widening_rule_src_partition": "",
