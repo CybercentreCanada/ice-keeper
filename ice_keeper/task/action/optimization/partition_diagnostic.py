@@ -71,7 +71,7 @@ class PartitionDiagnosis:
                 /*
                 Computes a cumulative sum of subpartition_size ordered by partition_age (same-age rows stay together), with larger partitions first as tiebreaker
                 running_subpartition_size - subpartition_size gives the total before the current row
-                floor(... / 16GB) increments the id each time the preceding rows have filled a 16GB bucket
+                floor(... / optimization_grouping_size_threshold) increments the id each time the preceding rows have filled a 16GB bucket
                 */
                 labeled_partition_groupings as (
                     select
@@ -213,7 +213,7 @@ class PartitionDiagnosis:
             list[PartitionDiagnosisResult]: A list of PartitionDiagnosisResult, each containing partition information for
                        the partitions marked for optimization.
         """
-        if self.mnt_props.optimize_partition_depth > 0:
-            return self._find_partitions_to_optimize_fixed_depth(summary)
+        if self.mnt_props.optimize_partition_depth == -1:
+            return self._find_partitions_to_optimize_dynamic_grouping(summary)
 
-        return self._find_partitions_to_optimize_dynamic_grouping(summary)
+        return self._find_partitions_to_optimize_fixed_depth(summary)

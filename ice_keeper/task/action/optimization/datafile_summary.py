@@ -381,7 +381,7 @@ class DataFilesSummary:
         # so optimize-partition-depth must equal the number of partition levels.
         num_partition_levels = len(self.spec.partition_list)
         configured_depth = self.mnt_props.optimize_partition_depth
-        if configured_depth != num_partition_levels:
+        if self.spec.is_partitioned and configured_depth != num_partition_levels:
             msg = (
                 f"Auto target file size (ice-keeper.optimization-target-file-size-bytes=-1) requires "
                 f"ice-keeper.optimize-partition-depth to equal the number of partition levels. "

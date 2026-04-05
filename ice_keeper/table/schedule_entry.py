@@ -40,7 +40,7 @@ DEFAULTS = {
     "should_apply_lifecycle": False,
     "lifecycle_max_days": 330,
     "lifecycle_ingestion_time_column": "",
-    "optimization_grouping_size_bytes": 33554432,
+    "optimization_grouping_size_bytes": 17179869184,
     "binpack_min_input_files": 5,  # Min number of files required to trigger a binpack, can be set to zero while testing to force binpacks.
     "sort_corr_threshold": -1.0,  # Mostly used for testing. If not specified defaults to 1 (binpack), 0.97 (sort), scaled (zorder).
     "widening_rule_select_criteria": "",
@@ -240,7 +240,7 @@ class MaintenanceScheduleRecord(BaseModel):
             try:
                 value = int(value_str)
             except Exception:
-                logger.exception("Failed to parse tblproperty: {tblproperty}, in table {full_name}", stack_info=True)
+                logger.exception("Failed to parse tblproperty: {tblproperty}", stack_info=True)
         return value
 
     @classmethod
@@ -251,7 +251,7 @@ class MaintenanceScheduleRecord(BaseModel):
             try:
                 value = int(int(value_str) / 1000 / 60 / 60 / 24)
             except Exception:
-                logger.exception("Failed to parse tblproperty: {tblproperty}, in table {full_name}", stack_info=True)
+                logger.exception("Failed to parse tblproperty: {tblproperty}", stack_info=True)
         return value
 
     @classmethod
@@ -266,7 +266,7 @@ class MaintenanceScheduleRecord(BaseModel):
             try:
                 value = float(value_str)
             except Exception:
-                logger.exception("Failed to parse tblproperty: {tblproperty}, in table {full_name}", stack_info=True)
+                logger.exception("Failed to parse tblproperty: {tblproperty}", stack_info=True)
         return value
 
     @classmethod
@@ -409,7 +409,14 @@ class MaintenanceScheduleEntry:
 
     @property
     def optimize_partition_depth(self) -> int:
-        return self._record.get("optimize_partition_depth")
+        value = self._record.get("optimize_partition_depth")
+        if value != -1 and value < 1:
+            msg = (
+                f"Invalid optimize_partition_depth={value} for table '{self.full_name}'. "
+                f"Must be -1 (dynamic grouping) or a positive integer (1, 2, 3, ...)."
+            )
+            raise ValueError(msg)
+        return value
 
     @property
     def optimization_grouping_size_bytes(self) -> int:

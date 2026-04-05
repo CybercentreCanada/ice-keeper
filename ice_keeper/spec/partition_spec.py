@@ -94,7 +94,7 @@ class PartitionSpecification:
 
     def get_base_partition(self) -> Partition:
         if len(self.partition_list) == 0:
-            msg = "Can't get base partition of un-partitioned tables, check if table is partitioned before calling his method."
+            msg = "Can't get base partition of un-partitioned tables, check if table is partitioned before calling this method."
             raise RuntimeError(msg)
         return self.partition_list[0]
 
@@ -261,10 +261,13 @@ class PartitionSpecification:
         """
         max_possible_depth = len(self.partition_list)
 
-        # Determine the optimization depth (defaults to 1 if not specified or invalid)
         depth = optimize_partition_depth
-        if not depth or depth <= 0:
-            depth = 1
+        if depth < 1:
+            msg = (
+                f"Invalid optimize_partition_depth={depth} for make_diagnosis_grouping_stmt. "
+                f"Must be a positive integer (1, 2, 3, ...)."
+            )
+            raise ValueError(msg)
 
         # Ensure the depth does not exceed the maximum partition depth
         depth = min(depth, max_possible_depth)

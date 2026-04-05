@@ -83,7 +83,7 @@ def create_generic_test_table(
                 num_inserts=(num_inserts - 1),
             )
     # add table to maintenance schedule
-    discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
+    discover_tables(executor, Scope(catalog=catalog, schema=schema))
     # discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
 
 

@@ -514,12 +514,11 @@ def test_widening_no_data_in_src_partition(executor: TaskExecutor) -> None:  # n
         if lag in ("lagging", "leading"):
             sos = SubOptimizationStrategy(diagnosis_result, spec_id, mnt_props, widening_rule)
             stmt = sos.prepare_statement_to_execute()
-            print(stmt)
             expected = [
                 "( ts >= date('2025-12-01') and ts < date('2025-12-01') + interval 1 month ) and ( _lag = 'lagging' ) ",
                 "( ts >= date('2025-12-01') and ts < date('2025-12-01') + interval 1 month ) and ( _lag = 'leading' )",
             ]
-            assert expected[0] in stmt or expected[1] in stmt
+            assert expected[0] in stmt or expected[1] in stmt, f"Unexpected statement: {stmt}"
         elif lag is None:
             # Matches a specific part of the error message
             sos = SubOptimizationStrategy(diagnosis_result, spec_id, mnt_props, widening_rule)
