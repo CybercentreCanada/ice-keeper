@@ -69,7 +69,7 @@ def test_dynamic_grouping_binpack_groups_all_buckets(executor: TaskExecutor) -> 
 
     rows = run_action_and_collect_journal(executor, Action.REWRITE_DATA_FILES)
     assert len(rows) == 1
-    assert "" in rows[0].status_details
+    assert rows[0].status_details == ""
     assert rows[0].status == Status.SUCCESS.value
     actual_output = rows[0].sql_stm
     expected_output = """CALL local.system.rewrite_data_files(

@@ -240,7 +240,8 @@ class MaintenanceScheduleRecord(BaseModel):
             try:
                 value = int(value_str)
             except Exception:
-                logger.exception("Failed to parse tblproperty: {tblproperty}", stack_info=True)
+                msg = f"Failed to parse tblproperty: {key}:{value_str}"
+                logger.exception(msg, stack_info=True)
         return value
 
     @classmethod
@@ -251,7 +252,8 @@ class MaintenanceScheduleRecord(BaseModel):
             try:
                 value = int(int(value_str) / 1000 / 60 / 60 / 24)
             except Exception:
-                logger.exception("Failed to parse tblproperty: {tblproperty}", stack_info=True)
+                msg = f"Failed to parse tblproperty: {key}:{value_str}"
+                logger.exception(msg, stack_info=True)
         return value
 
     @classmethod
@@ -266,7 +268,8 @@ class MaintenanceScheduleRecord(BaseModel):
             try:
                 value = float(value_str)
             except Exception:
-                logger.exception("Failed to parse tblproperty: {tblproperty}", stack_info=True)
+                msg = f"Failed to parse tblproperty: {key}:{value_str}"
+                logger.exception(msg, stack_info=True)
         return value
 
     @classmethod
