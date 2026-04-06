@@ -9,6 +9,7 @@ from ice_keeper.ice_keeper import MaintenanceScheduleRecord
 from ice_keeper.pool import TaskExecutor
 from ice_keeper.stm import STL
 from ice_keeper.table import MaintenanceScheduleEntry
+from ice_keeper.table.schedule_entry import IceKeeperTblProperty
 from ice_keeper.task.action.optimization.datafile_summary import DataFilesSummary
 from tests.utils import create_generic_test_table, get_updated_mnt_props
 
@@ -425,3 +426,93 @@ def test_summary_partition_mismatched_units_rejected(executor: TaskExecutor) -> 
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "1h", "2Y")
     with pytest.raises(ValueError, match="must use the same unit"):
         get_partition_time_from_summary(mnt_props)
+
+
+def set_mnt_target_file_size_and_depth(
+    mnt_props: MaintenanceScheduleEntry, target_file_size: int, depth: int
+) -> MaintenanceScheduleEntry:
+    record_copy = mnt_props.record.model_copy()
+    record_copy.target_file_size_bytes = target_file_size
+    record_copy.optimize_partition_depth = depth
+    row = Row(**record_copy.model_dump(by_alias=True))
+    return MaintenanceScheduleRecord.from_row(row).to_entry()
+
+
+@pytest.mark.integration
+def test_auto_target_file_size_rejected_when_depth_does_not_match_partition_levels(executor: TaskExecutor) -> None:
+    """Auto target file size (-1) requires depth == num partition levels or depth == -1."""
+    create_generic_test_table(
+        executor=executor,
+        partitions_to_insert_into=[dt_first_utc],
+        partitioned_by="days(ts), bucket(3, id)",
+        optimization_strategy="binpack",
+    )
+    mnt_props = get_updated_mnt_props()
+
+    # Table has 2 partition levels, depth=1 should be rejected
+    mnt_props = set_mnt_target_file_size_and_depth(mnt_props, target_file_size=-1, depth=1)
+    with pytest.raises(ValueError, match="optimize-partition-depth to equal the number of partition levels"):
+        get_partition_time_from_summary(mnt_props)
+
+
+@pytest.mark.integration
+def test_auto_target_file_size_accepted_when_depth_equals_partition_levels(executor: TaskExecutor) -> None:
+    """Auto target file size (-1) should work when depth matches the number of partition levels."""
+    create_generic_test_table(
+        executor=executor,
+        partitions_to_insert_into=[dt_first_utc],
+        partitioned_by="days(ts), bucket(3, id)",
+        optimization_strategy="binpack",
+    )
+    mnt_props = get_updated_mnt_props()
+
+    # Table has 2 partition levels, depth=2 should be accepted
+    mnt_props = set_mnt_target_file_size_and_depth(mnt_props, target_file_size=-1, depth=2)
+    # Should not raise — just confirm it produces a result
+    get_partition_time_from_summary(mnt_props)
+
+
+@pytest.mark.integration
+def test_auto_target_file_size_accepted_with_dynamic_grouping(executor: TaskExecutor) -> None:
+    """Auto target file size (-1) should work when depth=-1 (dynamic grouping)."""
+    create_generic_test_table(
+        executor=executor,
+        partitions_to_insert_into=[dt_first_utc],
+        partitioned_by="days(ts), bucket(3, id)",
+        optimization_strategy="binpack",
+    )
+    mnt_props = get_updated_mnt_props()
+
+    # Table has 2 partition levels, depth=-1 (dynamic grouping) should be accepted
+    mnt_props = set_mnt_target_file_size_and_depth(mnt_props, target_file_size=-1, depth=-1)
+    # Should not raise
+    get_partition_time_from_summary(mnt_props)
+
+
+@pytest.mark.integration
+def test_auto_target_file_size_selects_smallest_tier_for_small_partitions(executor: TaskExecutor) -> None:
+    """With auto target file size (-1) and small data, the lowest tier (16 MB) should be selected."""
+    create_generic_test_table(
+        executor=executor,
+        partitions_to_insert_into=[dt_first_utc],
+        partitioned_by="days(ts)",
+        optimization_strategy="binpack",
+        properties={
+            IceKeeperTblProperty.OPTIMIZATION_TARGET_FILE_SIZE_BYTES: "-1",
+            IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
+            IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",
+            IceKeeperTblProperty.BINPACK_MIN_INPUT_FILES: "0",
+        },
+    )
+    mnt_props = get_updated_mnt_props()
+
+    spec_id = 0
+    spec = mnt_props.partition_specs[spec_id]
+    datafiles_summary = DataFilesSummary(mnt_props, spec, spec_id, None)
+    sql = datafiles_summary.create_summary_stmt()
+    df = STL.sql_and_log(sql, "Check auto target file size")
+
+    rows = df.select("target_file_size").distinct().collect()
+    assert len(rows) == 1, "All partitions should have the same auto-selected target file size"
+    # Small data (< 256 MB) should select the lowest tier: 16 MB = 16 * 1048576 = 16777216
+    assert rows[0].target_file_size == 16 * 1048576, f"Expected 16 MB target, got {rows[0].target_file_size}"

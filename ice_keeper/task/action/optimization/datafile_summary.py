@@ -141,6 +141,14 @@ class DataFilesWideningSort(DataFiles):
         Raises:
             Exception: If the required preconditions for widening are not met.
         """
+        if self.mnt_props.optimize_partition_depth == -1:
+            msg = (
+                f"Widening partition in table '{self.mnt_props.full_name}': Dynamic grouping "
+                f"('{IceKeeperTblProperty.OPTIMIZE_PARTITION_DEPTH}' = -1) is not compatible with widening rules. "
+                f"Set '{IceKeeperTblProperty.OPTIMIZE_PARTITION_DEPTH}' to at least "
+                f"{self.widening_rule.partition_depth_required} for this widening rule."
+            )
+            raise Exception(msg)
         if self.mnt_props.optimize_partition_depth < self.widening_rule.partition_depth_required:
             msg = (
                 f"Widening partition in table '{self.mnt_props.full_name}': The table is configured with "
@@ -362,13 +370,14 @@ class DataFilesSummary:
             return str(self.mnt_props.target_file_size_bytes)
 
         # Auto target file size requires each sub-partition to be optimized independently,
-        # so optimize-partition-depth must equal the number of partition levels.
+        # so optimize-partition-depth must equal the number of partition levels, or be -1
+        # (dynamic grouping) which already analyses each sub-partition individually.
         num_partition_levels = len(self.spec.partition_list)
         configured_depth = self.mnt_props.optimize_partition_depth
-        if self.spec.is_partitioned and configured_depth != num_partition_levels:
+        if self.spec.is_partitioned and configured_depth not in (-1, num_partition_levels):
             msg = (
                 f"Auto target file size (ice-keeper.optimization-target-file-size-bytes=-1) requires "
-                f"ice-keeper.optimize-partition-depth to equal the number of partition levels. "
+                f"ice-keeper.optimize-partition-depth to equal the number of partition levels or be -1 (dynamic grouping). "
                 f"Current depth is {configured_depth} but the table has {num_partition_levels} partition level(s)."
             )
             raise ValueError(msg)
