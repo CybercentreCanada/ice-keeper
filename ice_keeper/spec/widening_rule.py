@@ -135,7 +135,7 @@ class WideningRule:
         )
         raise ValueError(msg)
 
-    def make_widening_validation_filter(self, partition_diagnosys: PartitionDiagnosisResult) -> str:
+    def make_widening_validation_filter(self, partition_diagnosis: PartitionDiagnosisResult) -> str:
         """Generate a WHERE clause to validate that required columns do not contain NULL values.
 
         When performing a widening operation with `rewrite_data_files`, a filter is applied
@@ -153,14 +153,14 @@ class WideningRule:
         assert self.dst_widening
         assert len(self.dst_widening.partition.partition_field_alias) > 0
         partition_field_alias = self.dst_widening.partition.partition_field_alias
-        if len(partition_diagnosys.partition_filters) != 1:
+        if len(partition_diagnosis.partition_filters) != 1:
             msg = (
                 "Widening validation requires exactly one partition filter, "
-                f"but got {len(partition_diagnosys.partition_filters)}. "
+                f"but got {len(partition_diagnosis.partition_filters)}. "
                 "Multiple partition filters are not supported by this widening rule."
             )
             raise ValueError(msg)
-        partition_filter = partition_diagnosys.partition_filters[0]
+        partition_filter = partition_diagnosis.partition_filters[0]
         partition_field_value = partition_filter[partition_field_alias]
         dst_partition_date_range = self.dst_widening.partition.to_sql_predicate(partition_field_value)
         null_check_stmts = [f"{required_column} is null" for required_column in self.required_fixed_columns]
