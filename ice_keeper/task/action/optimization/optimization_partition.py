@@ -170,12 +170,15 @@ class SubOptimizationStrategy(ActionStrategy):
 
     def _sanity_check_partition_field_values(self) -> None:
         if len(self.partition_diagnosis.partition_filters) > 0:
-            try:
-                partition_filter = self.partition_diagnosis.partition_filters[0]
-                self.spec.sanity_check_partition_field_values(partition_filter)
-            except ValueError as e:
-                msg = f"Cannot optimize a partition in table {self.mnt_props.full_name}. Caused by {e!s}"
-                raise ActionWarning(msg)  # noqa: B904
+            for index, partition_filter in enumerate(self.partition_diagnosis.partition_filters):
+                try:
+                    self.spec.sanity_check_partition_field_values(partition_filter)
+                except ValueError as e:
+                    msg = (
+                        f"Cannot optimize a partition in table {self.mnt_props.full_name}. "
+                        f"Invalid partition filter at index {index} with partition filter [{partition_filter}]. Caused by {e!s}"
+                    )
+                    raise ActionWarning(msg)  # noqa: B904
 
     def _has_widening_rule(self) -> bool:
         """Check if a widening rule exists for the specified partition.

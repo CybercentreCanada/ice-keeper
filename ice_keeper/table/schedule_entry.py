@@ -240,7 +240,7 @@ class MaintenanceScheduleRecord(BaseModel):
             try:
                 value = int(value_str)
             except Exception:
-                msg = f"Failed to parse tblproperty: {key}:{value_str}"
+                msg = f"Failed to parse int tblproperty key={key}, value={value_str}"
                 logger.exception(msg, stack_info=True)
         return value
 
@@ -252,7 +252,7 @@ class MaintenanceScheduleRecord(BaseModel):
             try:
                 value = int(int(value_str) / 1000 / 60 / 60 / 24)
             except Exception:
-                msg = f"Failed to parse tblproperty: {key}:{value_str}"
+                msg = f"Failed to parse days from ms tblproperty key={key}, value={value_str}"
                 logger.exception(msg, stack_info=True)
         return value
 
@@ -268,7 +268,7 @@ class MaintenanceScheduleRecord(BaseModel):
             try:
                 value = float(value_str)
             except Exception:
-                msg = f"Failed to parse tblproperty: {key}:{value_str}"
+                msg = f"Failed to parse float tblproperty key={key}, value={value_str}"
                 logger.exception(msg, stack_info=True)
         return value
 
@@ -448,7 +448,9 @@ class MaintenanceScheduleEntry:
     def sort_corr_threshold(self) -> float:
         value = self._record.get("sort_corr_threshold")
         if value != -1 and value < 0:
-            msg = f"Invalid sort_corr_threshold={value} for table '{self.full_name}'. Must be greater than zero, or negative 1"
+            msg = (
+                f"Invalid sort_corr_threshold={value} for table '{self.full_name}'. Must be greater than or equal to zero, or -1."
+            )
             raise ValueError(msg)
         return value
 
