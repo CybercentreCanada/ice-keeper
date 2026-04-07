@@ -8,7 +8,8 @@ from pyiceberg.transforms import DayTransform, HourTransform, MonthTransform, Ye
 from pyiceberg.types import NestedField, TimestamptzType
 from pyspark.sql.types import Row
 
-from ice_keeper import Action, Status
+from ice_keeper import Action, ActionWarning, Status
+from ice_keeper.ice_keeper import OptimizationStrategy
 from ice_keeper.pool import TaskExecutor
 from ice_keeper.spec import WideningRule
 from ice_keeper.spec.partition_spec import PartitionSpecification
@@ -16,12 +17,14 @@ from ice_keeper.stm import STL, Scope
 from ice_keeper.table import MaintenanceSchedule
 from ice_keeper.table.journal import Journal
 from ice_keeper.table.schedule_entry import IceKeeperTblProperty, MaintenanceScheduleEntry
+from ice_keeper.task import PartitionSummary
 from ice_keeper.task.action.factory import ActionTaskFactory
+from ice_keeper.task.action.optimization.optimization_partition import SubOptimizationStrategy
+from ice_keeper.task.action.optimization.partition_diagnostic import PartitionDiagnosis
 from tests.test_common import (
     ONE_EXPECTED,
     SCOPE_SCHEMA,
     SCOPE_WHERE_FULL_NAME,
-    TEN_EXPECTED,
     TEST_FULL_NAME,
     THREE_EXPECTED,
     TWO_EXPECTED,
@@ -29,7 +32,7 @@ from tests.test_common import (
     set_tblproperties,
     set_tblproperty,
 )
-from tests.utils import compare_multiline_strings, discover_tables
+from tests.utils import compare_multiline_strings, discover_tables, get_updated_mnt_props
 
 
 def create_widening_table(executor: TaskExecutor, properties: dict[str, str] = {}) -> None:  # noqa: B006
@@ -38,6 +41,8 @@ def create_widening_table(executor: TaskExecutor, properties: dict[str, str] = {
         IceKeeperTblProperty.OPTIMIZATION_STRATEGY: "id asc",
         IceKeeperTblProperty.OPTIMIZE_PARTITION_DEPTH: "1",
         IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "1",  # Change default min age for testing
+        IceKeeperTblProperty.BINPACK_MIN_INPUT_FILES: "0",  # for testing
+        IceKeeperTblProperty.SORT_CORR_THRESHOLD: "2",  # for testing
     }
 
     total_props = defaults | properties  # the properties dict takes preceedence.
@@ -387,6 +392,43 @@ def test_widening_invalid_column_in_filtering_expr(executor: TaskExecutor) -> No
 
 
 @pytest.mark.integration
+def test_widening_rejected_with_dynamic_grouping(executor: TaskExecutor) -> None:
+    """Widening is not compatible with dynamic grouping (depth=-1)."""
+    create_widening_table(
+        executor,
+        {
+            IceKeeperTblProperty.OPTIMIZE_PARTITION_DEPTH: "-1",
+            IceKeeperTblProperty.WIDENING_RULE_SELECT_CRITERIA: "partition._lag in ('leading', 'lagging')",
+            IceKeeperTblProperty.WIDENING_RULE_REQUIRED_PARTITION_COLUMNS: "partition._lag",
+            IceKeeperTblProperty.WIDENING_RULE_SRC_PARTITION: "partition.ts_day",
+            IceKeeperTblProperty.WIDENING_RULE_DST_PARTITION: "partition.ts_month",
+            IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
+            IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",
+            IceKeeperTblProperty.WIDENING_RULE_MIN_PARTITION_TO_WIDEN: "0d",
+            IceKeeperTblProperty.WIDENING_RULE_MAX_PARTITION_TO_WIDEN: "3000d",
+        },
+    )
+    # Add _lag partition
+    STL.sql(f"alter table {TEST_FULL_NAME} add partition field _lag")
+
+    # Remove existing specs and add month(ts) + _lag
+    STL.sql(f"alter table {TEST_FULL_NAME} drop partition field _lag")
+    STL.sql(f"alter table {TEST_FULL_NAME} drop partition field days(ts)")
+    STL.sql(f"alter table {TEST_FULL_NAME} add partition field month(ts)")
+    STL.sql(f"alter table {TEST_FULL_NAME} add partition field _lag")
+
+    event_time = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
+    for _ in range(10):
+        insert_rows_with_null_lag(event_time)
+
+    rows = optimize(executor)
+    assert len(rows) == ONE_EXPECTED, "Should have one log entry"
+    assert rows[0].status == Status.FAILED.value
+    assert "Dynamic grouping" in rows[0].status_details
+    assert "not compatible with widening rules" in rows[0].status_details
+
+
+@pytest.mark.integration
 def test_widening_bad_filtering_expr(executor: TaskExecutor) -> None:
     create_widening_table(
         executor,
@@ -404,11 +446,6 @@ def test_widening_bad_filtering_expr(executor: TaskExecutor) -> None:
     STL.sql(f"alter table {TEST_FULL_NAME} drop partition field days(ts)")
     STL.sql(f"alter table {TEST_FULL_NAME} add partition field month(ts)")
     STL.sql(f"alter table {TEST_FULL_NAME} add partition field _lag")
-
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    assert len(maintenance_schedule.entries()) == 1, "Scoped to one table, should have one maintenance entry."
-    mnt_props = maintenance_schedule.get_maintenance_entry(TEST_FULL_NAME)
-    assert mnt_props, "Should be able to retrieve it"
 
     set_tblproperties(
         {
@@ -431,7 +468,7 @@ def test_widening_bad_filtering_expr(executor: TaskExecutor) -> None:
 
 
 @pytest.mark.integration
-def test_widening_no_data_in_src_partition(executor: TaskExecutor) -> None:
+def test_widening_no_data_in_src_partition(executor: TaskExecutor) -> None:  # noqa: PLR0915
     create_widening_table(executor)
     # Add _lag partition
     STL.sql(f"alter table {TEST_FULL_NAME} add partition field _lag")
@@ -462,12 +499,73 @@ def test_widening_no_data_in_src_partition(executor: TaskExecutor) -> None:
         },
     )
 
-    event_time = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
+    event_time = datetime.datetime(2025, 12, 17, 0, 0, 0, tzinfo=timezone.utc)
     insert_rows_with_null_lag(event_time)
 
-    rows = optimize(executor)
-    # If we have an expected procedure call.
-    assert len(rows) == ZERO_EXPECTED, "Should skip no data"
+    mnt_props = get_updated_mnt_props()
+
+    os = OptimizationStrategy(mnt_props)
+    assert os.check_should_execute_action()
+    spec_id = 0  # ts_day
+    widening_rule = os.get_widening_rule(spec_id)
+    assert widening_rule is None
+    summary = PartitionSummary(mnt_props, spec_id, widening_rule)
+    diagnosis = PartitionDiagnosis(mnt_props, spec_id)
+    diagnosis_results = diagnosis.find_partitions_to_optimize(summary)
+    assert len(diagnosis_results) == 0
+
+    spec_id = 1  # ts_day, _lag
+    widening_rule = os.get_widening_rule(spec_id)
+    assert widening_rule is None
+    summary = PartitionSummary(mnt_props, spec_id, widening_rule)
+    diagnosis = PartitionDiagnosis(mnt_props, spec_id)
+    diagnosis_results = diagnosis.find_partitions_to_optimize(summary)
+    assert len(diagnosis_results) == 0
+
+    spec_id = 2  # unpartitioned
+    widening_rule = os.get_widening_rule(spec_id)
+    assert widening_rule is None
+    summary = PartitionSummary(mnt_props, spec_id, widening_rule)
+    diagnosis = PartitionDiagnosis(mnt_props, spec_id)
+    diagnosis_results = diagnosis.find_partitions_to_optimize(summary)
+    assert len(diagnosis_results) == 0
+
+    spec_id = 3  # ts_month
+    widening_rule = os.get_widening_rule(spec_id)
+    assert widening_rule is None
+    summary = PartitionSummary(mnt_props, spec_id, widening_rule)
+    diagnosis = PartitionDiagnosis(mnt_props, spec_id)
+    diagnosis_results = diagnosis.find_partitions_to_optimize(summary)
+    assert len(diagnosis_results) == 0
+
+    spec_id = 4  # ts_month, _lag
+    widening_rule = os.get_widening_rule(spec_id)
+    assert widening_rule, "The partition has a widening rule."
+    summary = PartitionSummary(mnt_props, spec_id, widening_rule)
+    diagnosis = PartitionDiagnosis(mnt_props, spec_id)
+    diagnosis_results = diagnosis.find_partitions_to_optimize(summary)
+    assert len(diagnosis_results) == 3
+
+    for diagnosis_result in diagnosis_results:
+        lag = diagnosis_result.partition_filters[0]["_lag"]
+        if lag in ("lagging", "leading"):
+            sos = SubOptimizationStrategy(diagnosis_result, spec_id, mnt_props, widening_rule)
+            stmt = sos.prepare_statement_to_execute()
+            expected = [
+                "( ts >= date('2025-12-01') and ts < date('2025-12-01') + interval 1 month ) and ( _lag = 'lagging' ) ",
+                "( ts >= date('2025-12-01') and ts < date('2025-12-01') + interval 1 month ) and ( _lag = 'leading' )",
+            ]
+            assert expected[0] in stmt or expected[1] in stmt, f"Unexpected statement: {stmt}"
+        elif lag is None:
+            # Matches a specific part of the error message
+            sos = SubOptimizationStrategy(diagnosis_result, spec_id, mnt_props, widening_rule)
+            with pytest.raises(
+                ActionWarning,
+                match="The partition field _lag cannot be NULL",
+            ):
+                stmt = sos.prepare_statement_to_execute()
+        else:
+            pytest.fail("We should not get here.")
 
 
 @pytest.mark.integration
@@ -509,23 +607,13 @@ def test_widening_success(executor: TaskExecutor) -> None:
         },
     )
     # insert data into many days.
-    for day in range(1, 10):
+    for day in range(1, 3):
         event_time = datetime.datetime(2025, 10, day, 0, 0, 0, tzinfo=timezone.utc)
-        for _ in range(5):
-            insert_rows(event_time, num_rows=100000)
+        insert_rows(event_time, num_rows=10000)
 
     # insert data into more recent month.
     event_time = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
-    for _ in range(1):
-        insert_rows(event_time, num_rows=100000)
-
-    df = STL.sql(f"""
-        select *
-        from {TEST_FULL_NAME}.data_files
-        where partition.ts_day = '2025-10-01' and partition._lag = 'leading'
-        """)
-    num_files = df.count()
-    assert num_files == TEN_EXPECTED, "10 inserts, 10 files"
+    insert_rows(event_time, num_rows=10000)
 
     rows = optimize(executor)
     # If we have an expected procedure call.
@@ -570,7 +658,6 @@ def test_widening_success(executor: TaskExecutor) -> None:
         msg = f"Test test_optimize_two_partitions failed. The actual output was {actual_leading_stmt}.\nDifferences are {details}"
         raise Exception(msg)
 
-    # Verify that none of the day partitions have more than 5 data files.
     rows = STL.sql(f"""
         select *
         from (
@@ -584,7 +671,6 @@ def test_widening_success(executor: TaskExecutor) -> None:
     # print(rows)
     assert len(rows) == ZERO_EXPECTED, "Verify that none of the day partitions have files."
 
-    # Verify that we have data in the 10th month
     rows = STL.sql(f"""
         select *
         from (

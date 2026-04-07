@@ -40,6 +40,9 @@ DEFAULTS = {
     "should_apply_lifecycle": False,
     "lifecycle_max_days": 330,
     "lifecycle_ingestion_time_column": "",
+    "optimization_grouping_size_bytes": 17179869184,
+    "binpack_min_input_files": 5,  # Min number of files required to trigger a binpack, can be set to zero while testing to force binpacks.
+    "sort_corr_threshold": -1.0,  # Mostly used for testing. If not specified defaults to 1 (binpack), 0.97 (sort), scaled (zorder).
     "widening_rule_select_criteria": "",
     "widening_rule_required_partition_columns": "",
     "widening_rule_src_partition": "",
@@ -84,6 +87,9 @@ class MaintenanceScheduleRecord(BaseModel):
     should_apply_lifecycle: bool | None = None
     lifecycle_max_days: int | None = None
     lifecycle_ingestion_time_column: str | None = None
+    optimization_grouping_size_bytes: int | None = None
+    binpack_min_input_files: int | None = None
+    sort_corr_threshold: float | None = None
     widening_rule_select_criteria: str | None = None
     widening_rule_required_partition_columns: str | None = None
     widening_rule_src_partition: str | None = None
@@ -123,6 +129,9 @@ class MaintenanceScheduleRecord(BaseModel):
             should_apply_lifecycle BOOLEAN,
             lifecycle_max_days INT,
             lifecycle_ingestion_time_column STRING,
+            optimization_grouping_size_bytes BIGINT,
+            binpack_min_input_files INT,
+            sort_corr_threshold DOUBLE,
             widening_rule_select_criteria STRING,
             widening_rule_required_partition_columns STRING,
             widening_rule_src_partition STRING,
@@ -231,7 +240,8 @@ class MaintenanceScheduleRecord(BaseModel):
             try:
                 value = int(value_str)
             except Exception:
-                logger.exception("Failed to parse tblproperty: {tblproperty}, in table {full_name}", stack_info=True)
+                msg = f"Failed to parse int tblproperty key={key}, value={value_str}"
+                logger.exception(msg, stack_info=True)
         return value
 
     @classmethod
@@ -242,12 +252,25 @@ class MaintenanceScheduleRecord(BaseModel):
             try:
                 value = int(int(value_str) / 1000 / 60 / 60 / 24)
             except Exception:
-                logger.exception("Failed to parse tblproperty: {tblproperty}, in table {full_name}", stack_info=True)
+                msg = f"Failed to parse days from ms tblproperty key={key}, value={value_str}"
+                logger.exception(msg, stack_info=True)
         return value
 
     @classmethod
     def _get_string(cls, tblproperties: dict[str, str], key: str) -> str | None:
         return tblproperties.get(key)
+
+    @classmethod
+    def _get_float(cls, tblproperties: dict[str, str], key: str) -> float | None:
+        value: float | None = None
+        value_str = tblproperties.get(key)
+        if value_str:
+            try:
+                value = float(value_str)
+            except Exception:
+                msg = f"Failed to parse float tblproperty key={key}, value={value_str}"
+                logger.exception(msg, stack_info=True)
+        return value
 
     @classmethod
     def _convert_to_columns(cls, tblproperties: dict[str, str]) -> dict[str, Any]:
@@ -288,6 +311,11 @@ class MaintenanceScheduleRecord(BaseModel):
             parsed["target_file_size_bytes"] = cls._get_int(tblproperties, IceKeeperTblProperty.WRITE_TARGET_FILE_SIZE_BYTES)
 
         parsed["optimize_partition_depth"] = cls._get_int(tblproperties, IceKeeperTblProperty.OPTIMIZE_PARTITION_DEPTH)
+        parsed["optimization_grouping_size_bytes"] = cls._get_int(
+            tblproperties, IceKeeperTblProperty.OPTIMIZATION_GROUPING_SIZE_BYTES
+        )
+        parsed["binpack_min_input_files"] = cls._get_int(tblproperties, IceKeeperTblProperty.BINPACK_MIN_INPUT_FILES)
+        parsed["sort_corr_threshold"] = cls._get_float(tblproperties, IceKeeperTblProperty.SORT_CORR_THRESHOLD)
 
         parsed["retention_num_snapshots"] = cls._get_int(tblproperties, IceKeeperTblProperty.HISTORY_EXPIRE_MIN_SNAPSHOTS_TO_KEEP)
         if tblproperties.get(IceKeeperTblProperty.RETENTION_NUM_SNAPSHOTS):
@@ -362,6 +390,13 @@ class MaintenanceScheduleEntry:
         """Access to underlying storage record."""
         return self._record
 
+    # The accessors that follow are used at runtime to get the properties of the maintenance schedule entry,
+    # and they also perform validation on the values when accessed. The values are stored in the underlying
+    # record, which is typically populated from the Iceberg table properties.
+    # During the discovery process, we read the Iceberg table properties, convert them into a
+    # MaintenanceScheduleRecord, and then create a MaintenanceScheduleEntry from that record. The accessors
+    # allow us to retrieve the properties in a structured way and also ensure that any necessary validation
+    # is performed when the properties are accessed.
     @property
     def full_name(self) -> str:
         return self._record.full_name
@@ -384,7 +419,40 @@ class MaintenanceScheduleEntry:
 
     @property
     def optimize_partition_depth(self) -> int:
-        return self._record.get("optimize_partition_depth")
+        value = self._record.get("optimize_partition_depth")
+        if value != -1 and value < 1:
+            msg = (
+                f"Invalid optimize_partition_depth={value} for table '{self.full_name}'. "
+                f"Must be -1 (dynamic grouping) or a positive integer (1, 2, 3, ...)."
+            )
+            raise ValueError(msg)
+        return value
+
+    @property
+    def optimization_grouping_size_bytes(self) -> int:
+        value = self._record.get("optimization_grouping_size_bytes")
+        if value <= 0:
+            msg = f"Invalid optimization_grouping_size_bytes={value} for table '{self.full_name}'. Must be greater than zero."
+            raise ValueError(msg)
+        return value
+
+    @property
+    def binpack_min_input_files(self) -> int:
+        value = self._record.get("binpack_min_input_files")
+        if value < 0:
+            msg = f"Invalid binpack_min_input_files={value} for table '{self.full_name}'. Must be greater or equal to zero."
+            raise ValueError(msg)
+        return value
+
+    @property
+    def sort_corr_threshold(self) -> float:
+        value = self._record.get("sort_corr_threshold")
+        if value != -1 and value < 0:
+            msg = (
+                f"Invalid sort_corr_threshold={value} for table '{self.full_name}'. Must be greater than or equal to zero, or -1."
+            )
+            raise ValueError(msg)
+        return value
 
     @property
     def optimization_strategy(self) -> str:
@@ -396,23 +464,105 @@ class MaintenanceScheduleEntry:
 
     @property
     def min_age_to_optimize(self) -> int:
-        return self._record.get("min_age_to_optimize")
+        value = self._record.get("min_age_to_optimize")
+        if value != -1 and value <= 0:
+            msg = f"Invalid min_age_to_optimize={value} for table '{self.full_name}'. Must be greater than zero or -1 if not set (deprecated)."
+            raise ValueError(msg)
+        return value
 
     @property
     def max_age_to_optimize(self) -> int:
-        return self._record.get("max_age_to_optimize")
+        value = self._record.get("max_age_to_optimize")
+        if value != -1 and value <= 0:
+            msg = f"Invalid max_age_to_optimize={value} for table '{self.full_name}'. Must be greater than zero or -1 if not set (deprecated)."
+            raise ValueError(msg)
+        return value
 
     @property
-    def min_partition_to_optimize(self) -> str:
-        return self._record.get("min_partition_to_optimize")
+    def min_partition_to_optimize(self) -> tuple[str, int]:
+        """Returns the min_partition_to_optimize as a tuple of (unit, amount), where unit is one of 'hour', 'day', 'month', 'year' and amount is an integer. The value is parsed from a string like '1d', '24h', '3M', or '1Y'."""
+        min_partition, _ = self._get_partition_to_optimize()
+        return min_partition
 
     @property
-    def max_partition_to_optimize(self) -> str:
-        return self._record.get("max_partition_to_optimize")
+    def max_partition_to_optimize(self) -> tuple[str, int]:
+        """Returns the max_partition_to_optimize as a tuple of (unit, amount), where unit is one of 'hour', 'day', 'month', 'year' and amount is an integer. The value is parsed from a string like '1d', '24h', '3M', or '1Y'."""
+        _, max_partition = self._get_partition_to_optimize()
+        return max_partition
+
+    @property
+    def widening_rule_min_partition_to_widen(self) -> tuple[str, int]:
+        min_partition, _ = self._get_partition_to_widen()
+        return min_partition
+
+    @property
+    def widening_rule_max_partition_to_widen(self) -> tuple[str, int]:
+        _, max_partition = self._get_partition_to_widen()
+        return max_partition
+
+    def _get_partition_to_widen(self) -> tuple[tuple[str, int], tuple[str, int]]:
+        min_partition_to_widen = self._record.get("widening_rule_min_partition_to_widen")
+        max_partition_to_widen = self._record.get("widening_rule_max_partition_to_widen")
+        return self._validate_partition_config(min_partition_to_widen, max_partition_to_widen)
+
+    def _get_partition_to_optimize(self) -> tuple[tuple[str, int], tuple[str, int]]:
+        min_partition_to_optimize = self._record.get("min_partition_to_optimize")
+        max_partition_to_optimize = self._record.get("max_partition_to_optimize")
+        min_partition, max_partition = self._validate_partition_config(min_partition_to_optimize, max_partition_to_optimize)
+        return min_partition, max_partition
+
+    def _validate_partition_config(self, min_partition: str, max_partition: str) -> tuple[tuple[str, int], tuple[str, int]]:
+        """Validates that the min and max partition to optimize configurations are valid and consistent."""
+        min_unit, min_amount = MaintenanceScheduleEntry._parse_interval(min_partition)
+        max_unit, max_amount = MaintenanceScheduleEntry._parse_interval(max_partition)
+        if min_unit != max_unit:
+            msg = (
+                f"min '{min_partition}' and max '{max_partition}' must use the same unit, but got '{min_unit}' and '{max_unit}'."
+            )
+            raise ValueError(msg)
+        if max_amount < min_amount:
+            msg = (
+                f"max '{max_partition}' "
+                f"must be greater than or equal to min '{min_partition}', "
+                f"but got max={max_amount} < min={min_amount}."
+            )
+            raise ValueError(msg)
+        return (min_unit, min_amount), (max_unit, max_amount)
+
+    @staticmethod
+    def _parse_interval(value: str) -> tuple[str, int]:
+        """Parse a relative time string (e.g. '1d', '24h', '3M', '1Y') into a parsed interval."""
+        if not value or len(value) < 2:  # noqa: PLR2004
+            msg = f"Invalid interval '{value!r}'. Expected a non-empty string like '1d', '24h', '3M', or '1Y'."
+            raise ValueError(msg)
+        unit_map = {
+            "h": "hour",
+            "d": "day",
+            "m": "month",
+            "y": "year",
+        }
+        suffix = value[-1].lower()
+        if suffix not in unit_map:
+            msg = f"Unsupported interval suffix '{suffix}' in '{value}'. Expected one of: {list(unit_map.keys())}"
+            raise ValueError(msg)
+        amount = value[:-1]
+        if not (amount.isdigit() or (amount.startswith("-") and amount[1:].isdigit())):
+            msg = f"Invalid interval amount '{amount}' in '{value}'. Expected an integer."
+            raise ValueError(msg)
+        unit = unit_map[suffix]
+        return (unit, int(amount))
+
+    @property
+    def is_dynamic_target_file_size_bytes(self) -> bool:
+        return self._record.get("target_file_size_bytes") == -1
 
     @property
     def target_file_size_bytes(self) -> int:
-        return self._record.get("target_file_size_bytes")
+        value = self._record.get("target_file_size_bytes")
+        if value <= 0:
+            msg = f"Invalid target_file_size_bytes={value} for table '{self.full_name}'. Must be greater than zero."
+            raise ValueError(msg)
+        return value
 
     @property
     def should_expire_snapshots(self) -> bool:
@@ -420,7 +570,11 @@ class MaintenanceScheduleEntry:
 
     @property
     def retention_days_snapshots(self) -> int:
-        return self._record.get("retention_days_snapshots")
+        value = self._record.get("retention_days_snapshots")
+        if value <= 0:
+            msg = f"Invalid retention_days_snapshots={value} for table '{self.full_name}'. Must be greater than zero."
+            raise ValueError(msg)
+        return value
 
     @property
     def should_remove_orphan_files(self) -> bool:
@@ -428,7 +582,11 @@ class MaintenanceScheduleEntry:
 
     @property
     def retention_days_orphan_files(self) -> int:
-        return self._record.get("retention_days_orphan_files")
+        value = self._record.get("retention_days_orphan_files")
+        if value <= 0:
+            msg = f"Invalid retention_days_orphan_files={value} for table '{self.full_name}'. Must be greater than zero."
+            raise ValueError(msg)
+        return value
 
     @property
     def last_updated_by(self) -> str:
@@ -436,7 +594,11 @@ class MaintenanceScheduleEntry:
 
     @property
     def retention_num_snapshots(self) -> int:
-        return self._record.get("retention_num_snapshots")
+        value = self._record.get("retention_num_snapshots")
+        if value <= 0:
+            msg = f"Invalid retention_num_snapshots={value} for table '{self.full_name}'. Must be greater than zero."
+            raise ValueError(msg)
+        return value
 
     @property
     def should_rewrite_manifest(self) -> bool:
@@ -452,7 +614,11 @@ class MaintenanceScheduleEntry:
 
     @property
     def lifecycle_max_days(self) -> int:
-        return self._record.get("lifecycle_max_days")
+        value = self._record.get("lifecycle_max_days")
+        if value <= 0:
+            msg = f"Invalid lifecycle_max_days={value} for table '{self.full_name}'. Must be greater than zero."
+            raise ValueError(msg)
+        return value
 
     @property
     def lifecycle_ingestion_time_column(self) -> str:
@@ -476,15 +642,11 @@ class MaintenanceScheduleEntry:
 
     @property
     def widening_rule_min_age_to_widen(self) -> int:
-        return self._record.get("widening_rule_min_age_to_widen")
-
-    @property
-    def widening_rule_min_partition_to_widen(self) -> str:
-        return self._record.get("widening_rule_min_partition_to_widen")
-
-    @property
-    def widening_rule_max_partition_to_widen(self) -> str:
-        return self._record.get("widening_rule_max_partition_to_widen")
+        value = self._record.get("widening_rule_min_age_to_widen")
+        if value != -1 and value <= 0:
+            msg = f"Invalid widening_rule_min_age_to_widen={value} for table '{self.full_name}'. Must be greater than zero or -1 if not set (deprecated)."
+            raise ValueError(msg)
+        return value
 
     def get_widening_rule_required_partition_columns(self) -> list[str]:
         """Parses the `widening_rule_required_partition_columns` attribute into a list of column names.

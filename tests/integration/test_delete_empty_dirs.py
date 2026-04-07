@@ -19,13 +19,13 @@ from tests.test_common import (
     ZERO_EXPECTED,
     load_test_table,
 )
-from tests.utils import create_test_table
+from tests.utils import create_empty_test_table
 
 
 @pytest.mark.integration
 def test_delete_empty_dir_recent(executor: TaskExecutor) -> None:
     TimeProvider.set(datetime.datetime(2025, 1, 12, 0, 0, 0, tzinfo=datetime.timezone.utc))
-    create_test_table(executor)
+    create_empty_test_table(executor)
     table_location = load_test_table().location().replace("file:///", "")
     loaded_at = "date '2025-01-10'"
     last_modified = "timestamp '2025-01-06'"
@@ -58,7 +58,7 @@ def test_delete_empty_dir_recent(executor: TaskExecutor) -> None:
 @pytest.mark.integration
 def test_delete_empty_dir_no_partition(executor: TaskExecutor) -> None:
     TimeProvider.set(datetime.datetime(2025, 1, 12, 0, 0, 0, tzinfo=datetime.timezone.utc))
-    create_test_table(executor)
+    create_empty_test_table(executor)
     table_location = load_test_table().location().replace("file:///", "")
     loaded_at = "date '2025-01-01'"
     last_modified = "timestamp '2025-01-01'"
@@ -88,7 +88,7 @@ def test_delete_empty_dir_no_partition(executor: TaskExecutor) -> None:
 @pytest.mark.integration
 def test_delete_empty_dir_no_partition_some_empty_dirs(executor: TaskExecutor) -> None:
     TimeProvider.set(datetime.datetime(2025, 1, 12, 0, 0, 0, tzinfo=datetime.timezone.utc))
-    create_test_table(executor)
+    create_empty_test_table(executor)
     table_location = load_test_table().location().replace("file:///", "")
     loaded_at = "date '2025-01-01'"
     last_modified = "timestamp '2025-01-01'"
@@ -120,7 +120,7 @@ def test_delete_empty_dir_no_partition_some_empty_dirs(executor: TaskExecutor) -
 @pytest.mark.integration
 def test_delete_empty_dir_no_partition_and_a_dir_with_zero_bytes_parquet(executor: TaskExecutor) -> None:
     TimeProvider.set(datetime.datetime(2025, 1, 12, 0, 0, 0, tzinfo=datetime.timezone.utc))
-    create_test_table(executor)
+    create_empty_test_table(executor)
     table_location = load_test_table().location().replace("file:///", "")
     loaded_at = "date '2025-01-01'"
     last_modified = "timestamp '2025-01-01'"
@@ -149,7 +149,7 @@ def test_delete_empty_dir_no_partition_and_a_dir_with_zero_bytes_parquet(executo
 @pytest.mark.integration
 def test_delete_empty_dir_no_partition_no_data_files(executor: TaskExecutor) -> None:
     TimeProvider.set(datetime.datetime(2025, 1, 12, 0, 0, 0, tzinfo=datetime.timezone.utc))
-    create_test_table(executor)
+    create_empty_test_table(executor)
     table_location = load_test_table().location().replace("file:///", "")
     loaded_at = "date '2025-01-01'"
     last_modified = "timestamp '2025-01-01'"
@@ -176,7 +176,7 @@ def test_delete_empty_dir_no_partition_no_data_files(executor: TaskExecutor) -> 
 @pytest.mark.integration
 def test_delete_empty_dir_empty_sub_dir(executor: TaskExecutor) -> None:
     TimeProvider.set(datetime.datetime(2025, 1, 12, 0, 0, 0, tzinfo=datetime.timezone.utc))
-    create_test_table(executor)
+    create_empty_test_table(executor)
     table_location = load_test_table().location().replace("file:///", "")
     loaded_at = "date '2025-01-01'"
     last_modified = "timestamp '2025-01-01'"
@@ -206,7 +206,7 @@ def test_delete_empty_dir_empty_sub_dir(executor: TaskExecutor) -> None:
 @pytest.mark.integration
 def test_delete_empty_dir_empty_sub_dir_and_sub_dir(executor: TaskExecutor) -> None:
     TimeProvider.set(datetime.datetime(2025, 1, 12, 0, 0, 0, tzinfo=datetime.timezone.utc))
-    create_test_table(executor)
+    create_empty_test_table(executor)
     table_location = load_test_table().location().replace("file:///", "")
     loaded_at = "date '2025-01-01'"
     last_modified = "timestamp '2025-01-01'"
@@ -237,7 +237,7 @@ def test_delete_empty_dir_empty_sub_dir_and_sub_dir(executor: TaskExecutor) -> N
 @pytest.mark.integration
 def test_delete_empty_dir_with_empty_branch(executor: TaskExecutor) -> None:
     TimeProvider.set(datetime.datetime(2025, 1, 12, 0, 0, 0, tzinfo=datetime.timezone.utc))
-    create_test_table(executor)
+    create_empty_test_table(executor)
     table_location = load_test_table().location().replace("file:///", "")
     loaded_at = "date '2025-01-01'"
     last_modified = "timestamp '2025-01-01'"

@@ -247,7 +247,7 @@ def reset(force: bool, schedule: bool, journal: bool, health: bool, all_tables: 
         schedule = journal = health = True
 
     if not (schedule or journal or health):
-        msg = "Specify at least one table to reset: -s (schedule), -j (journal), -p (health), or -a (all)."
+        msg = "Specify at least one table to reset: -s (--schedule), -j (--journal), -p (--health), or -a (--all)."
         raise click.UsageError(msg)
 
     if schedule:
@@ -299,6 +299,8 @@ def reset(force: bool, schedule: bool, journal: bool, health: bool, all_tables: 
     help="Maximum partition offset to diagnose (e.g., '7d', '3M'). Must be used with --min_partition_to_diagnose.",
 )
 @click.option("--optimization_strategy", help="Optional optimization strategy to use during diagnosis.")
+@click.option("--optimize_partition_depth", type=int, help="Optional optimization partition depth to use during diagnosis.")
+@click.option("--optimization_grouping_size_bytes", type=int, help="Optional optimization grouping size to use during diagnosis.")
 @click.option(
     "--target_file_size_bytes",
     type=int,
@@ -320,7 +322,7 @@ def reset(force: bool, schedule: bool, journal: bool, health: bool, all_tables: 
         "high-level estimate of potential changes, also without applying them."
     ),
 )
-def diagnose(  # noqa: C901
+def diagnose(  # noqa: C901, PLR0912
     full_name: str,
     min_age_to_diagnose: int | None,
     max_age_to_diagnose: int | None,
@@ -329,6 +331,8 @@ def diagnose(  # noqa: C901
     mode: str,
     optimization_strategy: str | None,
     target_file_size_bytes: int | None,
+    optimize_partition_depth: int | None,
+    optimization_grouping_size_bytes: int | None,
 ) -> int:
     """Diagnose table health by analyzing its partitions.
 
@@ -361,6 +365,10 @@ def diagnose(  # noqa: C901
             record_copy.optimization_strategy = optimization_strategy
         if target_file_size_bytes is not None:
             record_copy.target_file_size_bytes = target_file_size_bytes
+        if optimize_partition_depth is not None:
+            record_copy.optimize_partition_depth = optimize_partition_depth
+        if optimization_grouping_size_bytes is not None:
+            record_copy.optimization_grouping_size_bytes = optimization_grouping_size_bytes
         if has_partition:
             record_copy.min_age_to_optimize = None
             record_copy.max_age_to_optimize = None

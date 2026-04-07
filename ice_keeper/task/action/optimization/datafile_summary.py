@@ -44,11 +44,11 @@ class DataFiles(ABC):
         """Abstract method to fetch the maximum age for optimization."""
 
     @abstractmethod
-    def get_min_partition_to_optimize(self) -> str:
+    def get_min_partition_to_optimize(self) -> tuple[str, int]:
         """Abstract method to fetch the minimum partition for optimization."""
 
     @abstractmethod
-    def get_max_partition_to_optimize(self) -> str:
+    def get_max_partition_to_optimize(self) -> tuple[str, int]:
         """Abstract method to fetch the maximum partition for optimization."""
 
 
@@ -62,11 +62,11 @@ class DataFilesBinpack(DataFiles):
         return self.mnt_props.max_age_to_optimize
 
     @override
-    def get_min_partition_to_optimize(self) -> str:
+    def get_min_partition_to_optimize(self) -> tuple[str, int]:
         return self.mnt_props.min_partition_to_optimize
 
     @override
-    def get_max_partition_to_optimize(self) -> str:
+    def get_max_partition_to_optimize(self) -> tuple[str, int]:
         return self.mnt_props.max_partition_to_optimize
 
     @override
@@ -98,11 +98,11 @@ class DataFilesSort(DataFiles):
         return self.mnt_props.max_age_to_optimize
 
     @override
-    def get_min_partition_to_optimize(self) -> str:
+    def get_min_partition_to_optimize(self) -> tuple[str, int]:
         return self.mnt_props.min_partition_to_optimize
 
     @override
-    def get_max_partition_to_optimize(self) -> str:
+    def get_max_partition_to_optimize(self) -> tuple[str, int]:
         return self.mnt_props.max_partition_to_optimize
 
     @override
@@ -141,6 +141,14 @@ class DataFilesWideningSort(DataFiles):
         Raises:
             Exception: If the required preconditions for widening are not met.
         """
+        if self.mnt_props.optimize_partition_depth == -1:
+            msg = (
+                f"Widening partition in table '{self.mnt_props.full_name}': Dynamic grouping "
+                f"('{IceKeeperTblProperty.OPTIMIZE_PARTITION_DEPTH}' = -1) is not compatible with widening rules. "
+                f"Set '{IceKeeperTblProperty.OPTIMIZE_PARTITION_DEPTH}' to at least "
+                f"{self.widening_rule.partition_depth_required} for this widening rule."
+            )
+            raise Exception(msg)
         if self.mnt_props.optimize_partition_depth < self.widening_rule.partition_depth_required:
             msg = (
                 f"Widening partition in table '{self.mnt_props.full_name}': The table is configured with "
@@ -168,11 +176,11 @@ class DataFilesWideningSort(DataFiles):
         return self.mnt_props.max_age_to_optimize
 
     @override
-    def get_min_partition_to_optimize(self) -> str:
+    def get_min_partition_to_optimize(self) -> tuple[str, int]:
         return self.mnt_props.widening_rule_min_partition_to_widen
 
     @override
-    def get_max_partition_to_optimize(self) -> str:
+    def get_max_partition_to_optimize(self) -> tuple[str, int]:
         return self.mnt_props.widening_rule_max_partition_to_widen
 
     @override
@@ -298,24 +306,8 @@ class DataFilesSummary:
                 else:
                     # min/max partition to optimize are strings representing the number of days, hours, months, years
                     # relative to the current time for example 1d to 7d, 24h to 72h, 1M to 3M, 1Y to 2Y.
-                    min_partition_to_optimize = self.datafiles.get_min_partition_to_optimize()
-                    max_partition_to_optimize = self.datafiles.get_max_partition_to_optimize()
-                    min_unit, min_amount = self._parse_interval(min_partition_to_optimize)
-                    max_unit, max_amount = self._parse_interval(max_partition_to_optimize)
-                    if min_unit != max_unit:
-                        msg = (
-                            f"min-partition-to-optimize '{min_partition_to_optimize}' and "
-                            f"max-partition-to-optimize '{max_partition_to_optimize}' must use the same unit, "
-                            f"but got '{min_unit}' and '{max_unit}'."
-                        )
-                        raise ValueError(msg)
-                    if max_amount < min_amount:
-                        msg = (
-                            f"max-partition-to-optimize '{max_partition_to_optimize}' "
-                            f"must be greater than or equal to min-partition-to-optimize '{min_partition_to_optimize}', "
-                            f"but got max={max_amount} < min={min_amount}."
-                        )
-                        raise ValueError(msg)
+                    min_unit, min_amount = self.datafiles.get_min_partition_to_optimize()
+                    max_unit, max_amount = self.datafiles.get_max_partition_to_optimize()
                     # Round down the reference point to the next unit boundary (date_trunc).
                     # e.g. if max partition_time is 2025-10-15 and unit is 'month',
                     # the reference becomes 2025-10-01 (start of this month).
@@ -374,9 +366,21 @@ class DataFilesSummary:
 
     def _make_target_file_size_stmt(self) -> str:
         """Generate the SQL case statement for target file size based on partition size thresholds."""
-        if self.mnt_props.target_file_size_bytes > 0:
+        if not self.mnt_props.is_dynamic_target_file_size_bytes:
             return str(self.mnt_props.target_file_size_bytes)
 
+        # Auto target file size requires each sub-partition to be optimized independently,
+        # so optimize-partition-depth must equal the number of partition levels, or be -1
+        # (dynamic grouping) which already analyses each sub-partition individually.
+        num_partition_levels = len(self.spec.partition_list)
+        configured_depth = self.mnt_props.optimize_partition_depth
+        if self.spec.is_partitioned and configured_depth not in (-1, num_partition_levels):
+            msg = (
+                f"Auto target file size (ice-keeper.optimization-target-file-size-bytes=-1) requires "
+                f"ice-keeper.optimize-partition-depth to equal the number of partition levels or be -1 (dynamic grouping). "
+                f"Current depth is {configured_depth} but the table has {num_partition_levels} partition level(s)."
+            )
+            raise ValueError(msg)
         # Target file size based on size of partition from 16MB files up to 1GB.
         # +-----------------------+----------------+----------------------+------------------------+-----------------------------+----------------------------+
         # |num_partitions_in_table|table_total_size|table_total_file_count|partition_size_threshold|partition_num_files_threshold|recommended_target_file_size|
@@ -645,7 +649,7 @@ class DataFilesSummary:
                     -- Determine necessity for sorting based on correlation threshold or delete files
                     (corr < corr_threshold or n_delete_files > 0 or num_files_to_widen > 0) as should_sort,
                     -- Determine necessity for binpacking based on number of rewritten files or delete files
-                    (num_files_targetted_for_rewrite > {{ num_files_targetted_for_rewrite_threshold }} or n_delete_files > 0) as should_binpack
+                    (num_files_targetted_for_rewrite > {{ binpack_min_input_files }} or n_delete_files > 0) as should_binpack
                 from
                     agg_data_files
                 {% if partition_filter_stmt  %}
@@ -685,7 +689,7 @@ class DataFilesSummary:
             upper_bounds_expr=self.bounds.make_upper_bounds_expr_stmt(),
             target_file_size_stmt=self._make_target_file_size_stmt(),
             base_column_name_stmt=base_column_name_stmt,
-            num_files_targetted_for_rewrite_threshold=5,
+            binpack_min_input_files=self.mnt_props.binpack_min_input_files,
             partition_filter_stmt=partition_filter_stmt,
             order_by=order_by,
             format_sum_file_size=self._format_bytes_stmt("sum_file_size"),

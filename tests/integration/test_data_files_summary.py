@@ -5,27 +5,13 @@ import pyspark.sql.functions as F  # noqa:N812
 import pytest
 from pyspark.sql import Row
 
-from ice_keeper import Action
 from ice_keeper.ice_keeper import MaintenanceScheduleRecord
 from ice_keeper.pool import TaskExecutor
-from ice_keeper.stm import STL, Scope
-from ice_keeper.table import MaintenanceSchedule, MaintenanceScheduleEntry
+from ice_keeper.stm import STL
+from ice_keeper.table import MaintenanceScheduleEntry
 from ice_keeper.table.schedule_entry import IceKeeperTblProperty
-from ice_keeper.task import ActionTaskFactory
 from ice_keeper.task.action.optimization.datafile_summary import DataFilesSummary
-from tests.test_common import (
-    ONE_EXPECTED,
-    SCOPE_WHERE_FULL_NAME,
-    SEVEN_EXPECTED,
-    TEST_CATALOG_NAME,
-    TEST_FULL_NAME,
-    TEST_SCHEMA_NAME,
-)
-from tests.utils import (
-    create_empty_test_table,
-    discover_tables,
-    insert_data,
-)
+from tests.utils import create_generic_test_table, get_updated_mnt_props
 
 
 def set_mnt_props_age(mnt_props: MaintenanceScheduleEntry, min_age: int, max_age: int) -> MaintenanceScheduleEntry:
@@ -88,18 +74,16 @@ def test_summary_age_day(executor: TaskExecutor) -> None:
     partitioned_by = "days(ts)"
     optimization_strategy = "binpack"
     properties: dict[str, str] = {}
-    create_empty_test_table(partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties)
 
-    insert_data(event_time=dt_first_utc, num_inserts=1)
-    insert_data(event_time=dt_second_utc, num_inserts=1)
-    insert_data(event_time=dt_third_utc, num_inserts=1)
+    create_generic_test_table(
+        executor=executor,
+        partitions_to_insert_into=[dt_first_utc, dt_second_utc, dt_third_utc],
+        partitioned_by=partitioned_by,
+        optimization_strategy=optimization_strategy,
+        properties=properties,
+    )
 
-    # add table to maintenance schedule
-    discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
-
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    mnt_props = maintenance_schedule.get_maintenance_entry(TEST_FULL_NAME)
-    assert mnt_props, "Should have maintenance properties for the table"
+    mnt_props = get_updated_mnt_props()
 
     # Consider all partitions (age 1 is current partition)
     mnt_props = set_mnt_props_age(mnt_props, 1, 2000)
@@ -128,18 +112,16 @@ def test_summary_identity_day(executor: TaskExecutor) -> None:
     partitioned_by = "ts"
     optimization_strategy = "binpack"
     properties: dict[str, str] = {}
-    create_empty_test_table(partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties)
 
-    insert_data(event_time=dt_first_utc, num_inserts=1)
-    insert_data(event_time=dt_second_utc, num_inserts=1)
-    insert_data(event_time=dt_third_utc, num_inserts=1)
+    create_generic_test_table(
+        executor=executor,
+        partitions_to_insert_into=[dt_first_utc, dt_second_utc, dt_third_utc],
+        partitioned_by=partitioned_by,
+        optimization_strategy=optimization_strategy,
+        properties=properties,
+    )
 
-    # add table to maintenance schedule
-    discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
-
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    mnt_props = maintenance_schedule.get_maintenance_entry(TEST_FULL_NAME)
-    assert mnt_props, "Should have maintenance properties for the table"
+    mnt_props = get_updated_mnt_props()
 
     # Consider all partitions
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "0d", "2000d")
@@ -187,18 +169,15 @@ def test_summary_partition_day(executor: TaskExecutor) -> None:
     partitioned_by = "days(ts)"
     optimization_strategy = "binpack"
     properties: dict[str, str] = {}
-    create_empty_test_table(partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties)
+    create_generic_test_table(
+        executor=executor,
+        partitions_to_insert_into=[dt_first_utc, dt_second_utc, dt_third_utc],
+        partitioned_by=partitioned_by,
+        optimization_strategy=optimization_strategy,
+        properties=properties,
+    )
 
-    insert_data(event_time=dt_first_utc, num_inserts=1)
-    insert_data(event_time=dt_second_utc, num_inserts=1)
-    insert_data(event_time=dt_third_utc, num_inserts=1)
-
-    # add table to maintenance schedule
-    discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
-
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    mnt_props = maintenance_schedule.get_maintenance_entry(TEST_FULL_NAME)
-    assert mnt_props, "Should have maintenance properties for the table"
+    mnt_props = get_updated_mnt_props()
 
     # Consider all partitions
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "0d", "2000d")
@@ -242,22 +221,19 @@ def test_summary_partition_day(executor: TaskExecutor) -> None:
 
 
 @pytest.mark.integration
-def test_summary_partition_hour(executor: TaskExecutor) -> None:  # noqa: PLR0915
+def test_summary_partition_hour(executor: TaskExecutor) -> None:
     partitioned_by = "hours(ts)"
     optimization_strategy = "binpack"
     properties: dict[str, str] = {}
-    create_empty_test_table(partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties)
+    create_generic_test_table(
+        executor=executor,
+        partitions_to_insert_into=[dt_first_18h_utc, dt_first_19h_utc, dt_first_20h_utc],
+        partitioned_by=partitioned_by,
+        optimization_strategy=optimization_strategy,
+        properties=properties,
+    )
 
-    insert_data(event_time=dt_first_18h_utc, num_inserts=1)
-    insert_data(event_time=dt_first_19h_utc, num_inserts=1)
-    insert_data(event_time=dt_first_20h_utc, num_inserts=1)
-
-    # add table to maintenance schedule
-    discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
-
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    mnt_props = maintenance_schedule.get_maintenance_entry(TEST_FULL_NAME)
-    assert mnt_props, "Should have maintenance properties for the table"
+    mnt_props = get_updated_mnt_props()
 
     # Consider all partitions
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "0h", "2000h")
@@ -317,156 +293,24 @@ def test_summary_partition_hour(executor: TaskExecutor) -> None:  # noqa: PLR091
 
 
 @pytest.mark.integration
-def test_optimize_binpack_correct_hour(executor: TaskExecutor) -> None:
-    partitioned_by = "hours(ts)"
-    optimization_strategy = "binpack"
-    properties = {IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "2", IceKeeperTblProperty.MAX_AGE_TO_OPTIMIZE: "200"}
-    create_empty_test_table(partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties)
-    # 6 files in hour 2025-12-01 00:00:00
-    dt = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
-    insert_data(event_time=dt, num_inserts=3)
-    dt = datetime.datetime(2025, 12, 1, 0, 59, 59, tzinfo=timezone.utc)
-    insert_data(event_time=dt, num_inserts=3)
-
-    # 7 files in hour 2025-12-01 23:00:00
-    dt = datetime.datetime(2025, 12, 1, 23, 0, 0, tzinfo=timezone.utc)
-    insert_data(event_time=dt, num_inserts=3)
-    dt = datetime.datetime(2025, 12, 1, 23, 59, 59, tzinfo=timezone.utc)
-    insert_data(event_time=dt, num_inserts=4)
-
-    # add table to maintenance schedule
-    discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
-
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    assert len(maintenance_schedule.entries()) == 1, "Scoped to one table, should have one maintenance entry."
-    tasks = ActionTaskFactory.make_tasks(Action.REWRITE_DATA_FILES, maintenance_schedule)
-    assert len(tasks) == 1, "Should find the schedule entry for given table"
-    executor.submit_tasks_and_wait(tasks)
-
-    sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_hour = 490175 """
-    num_files_age_1 = STL.sql_and_log(sql).count()
-    assert num_files_age_1 == SEVEN_EXPECTED, "Most recent hour should not be optimized, should have 7 files."
-    sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_hour = 490152 """
-    num_files_age_2 = STL.sql_and_log(sql).count()
-    assert num_files_age_2 == ONE_EXPECTED, "Older hour should be optimized into one file."
-
-
-@pytest.mark.integration
-def test_optimize_binpack_correct_day(executor: TaskExecutor) -> None:
-    partitioned_by = "days(ts)"
-    optimization_strategy = "binpack"
-    properties = {IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "2", IceKeeperTblProperty.MAX_AGE_TO_OPTIMIZE: "200"}
-    create_empty_test_table(partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties)
-    dt = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
-    insert_data(event_time=dt, num_inserts=6)
-    dt = datetime.datetime(2025, 12, 2, 0, 0, 0, tzinfo=timezone.utc)
-    insert_data(event_time=dt, num_inserts=7)
-    # add table to maintenance schedule
-    discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
-
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    assert len(maintenance_schedule.entries()) == 1, "Scoped to one table, should have one maintenance entry."
-    tasks = ActionTaskFactory.make_tasks(Action.REWRITE_DATA_FILES, maintenance_schedule)
-    assert len(tasks) == 1, "Should find the schedule entry for given table"
-    executor.submit_tasks_and_wait(tasks)
-    sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_day = '2025-12-02' """
-    num_files_age_1 = STL.sql_and_log(sql).count()
-    assert num_files_age_1 == SEVEN_EXPECTED, "Most recent day should not be optimized, should have 7 files."
-    sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_day = '2025-12-01' """
-    num_files_age_2 = STL.sql_and_log(sql).count()
-    assert num_files_age_2 == ONE_EXPECTED, "Older day should be optimized into one file."
-
-
-@pytest.mark.integration
-def test_optimize_binpack_correct_month(executor: TaskExecutor) -> None:
-    partitioned_by = "month(ts)"
-    optimization_strategy = "binpack"
-    properties = {IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "2", IceKeeperTblProperty.MAX_AGE_TO_OPTIMIZE: "200"}
-    create_empty_test_table(partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties)
-    # 6 files in month 2025-12-01
-    dt = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
-    insert_data(event_time=dt, num_inserts=3)
-    dt = datetime.datetime(2025, 12, 31, 0, 59, 59, tzinfo=timezone.utc)
-    insert_data(event_time=dt, num_inserts=3)
-
-    # 7 files in month 2026-01-01
-    dt = datetime.datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    insert_data(event_time=dt, num_inserts=3)
-    dt = datetime.datetime(2026, 1, 1, 23, 59, 59, tzinfo=timezone.utc)
-    insert_data(event_time=dt, num_inserts=4)
-
-    # add table to maintenance schedule
-    discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
-
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    assert len(maintenance_schedule.entries()) == 1, "Scoped to one table, should have one maintenance entry."
-    tasks = ActionTaskFactory.make_tasks(Action.REWRITE_DATA_FILES, maintenance_schedule)
-    assert len(tasks) == 1, "Should find the schedule entry for given table"
-    executor.submit_tasks_and_wait(tasks)
-
-    sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_month = 672 """
-    num_files_age_1 = STL.sql_and_log(sql).count()
-    assert num_files_age_1 == SEVEN_EXPECTED, "Most recent month should not be optimized, should have 7 files."
-    sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_month = 671 """
-    num_files_age_2 = STL.sql_and_log(sql).count()
-    assert num_files_age_2 == ONE_EXPECTED, "Older month should be optimized into one file."
-
-
-@pytest.mark.integration
-def test_optimize_binpack_correct_year(executor: TaskExecutor) -> None:
-    partitioned_by = "year(ts)"
-    optimization_strategy = "binpack"
-    properties = {IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "2", IceKeeperTblProperty.MAX_AGE_TO_OPTIMIZE: "200"}
-    create_empty_test_table(partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties)
-    # 6 files in year 2024
-    dt = datetime.datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    insert_data(event_time=dt, num_inserts=3)
-    dt = datetime.datetime(2024, 12, 31, 0, 59, 59, tzinfo=timezone.utc)
-    insert_data(event_time=dt, num_inserts=3)
-
-    # 7 files in year 2025
-    dt = datetime.datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    insert_data(event_time=dt, num_inserts=3)
-    dt = datetime.datetime(2025, 1, 1, 23, 59, 59, tzinfo=timezone.utc)
-    insert_data(event_time=dt, num_inserts=4)
-
-    # add table to maintenance schedule
-    discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
-
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    assert len(maintenance_schedule.entries()) == 1, "Scoped to one table, should have one maintenance entry."
-    tasks = ActionTaskFactory.make_tasks(Action.REWRITE_DATA_FILES, maintenance_schedule)
-    assert len(tasks) == 1, "Should find the schedule entry for given table"
-    executor.submit_tasks_and_wait(tasks)
-
-    sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_year = 55 """
-    num_files_age_1 = STL.sql_and_log(sql).count()
-    assert num_files_age_1 == SEVEN_EXPECTED, "Most recent year should not be optimized, should have 7 files."
-    sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_year = 54 """
-    num_files_age_2 = STL.sql_and_log(sql).count()
-    assert num_files_age_2 == ONE_EXPECTED, "Older year should be optimized into one file."
-
-
-@pytest.mark.integration
 def test_summary_partition_month(executor: TaskExecutor) -> None:
     """Test partition filtering with month (M) intervals on a month-partitioned table."""
     partitioned_by = "month(ts)"
     optimization_strategy = "binpack"
     properties: dict[str, str] = {}
-    create_empty_test_table(partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties)
-
     # Insert data into 3 months: Oct, Nov, Dec 2025
     oct_utc = datetime.datetime(2025, 10, 15, 0, 0, 0, tzinfo=timezone.utc)
     nov_utc = datetime.datetime(2025, 11, 15, 0, 0, 0, tzinfo=timezone.utc)
     dec_utc = datetime.datetime(2025, 12, 15, 0, 0, 0, tzinfo=timezone.utc)
-    insert_data(event_time=oct_utc, num_inserts=1)
-    insert_data(event_time=nov_utc, num_inserts=1)
-    insert_data(event_time=dec_utc, num_inserts=1)
+    create_generic_test_table(
+        executor=executor,
+        partitions_to_insert_into=[oct_utc, nov_utc, dec_utc],
+        partitioned_by=partitioned_by,
+        optimization_strategy=optimization_strategy,
+        properties=properties,
+    )
 
-    discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    mnt_props = maintenance_schedule.get_maintenance_entry(TEST_FULL_NAME)
-    assert mnt_props
+    mnt_props = get_updated_mnt_props()
 
     # All months: 0M to 100M
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "0M", "100M")
@@ -496,20 +340,20 @@ def test_summary_partition_year(executor: TaskExecutor) -> None:
     partitioned_by = "year(ts)"
     optimization_strategy = "binpack"
     properties: dict[str, str] = {}
-    create_empty_test_table(partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties)
-
     # Insert data into 3 years: 2023, 2024, 2025
     y2023_utc = datetime.datetime(2023, 6, 15, 0, 0, 0, tzinfo=timezone.utc)
     y2024_utc = datetime.datetime(2024, 6, 15, 0, 0, 0, tzinfo=timezone.utc)
     y2025_utc = datetime.datetime(2025, 6, 15, 0, 0, 0, tzinfo=timezone.utc)
-    insert_data(event_time=y2023_utc, num_inserts=1)
-    insert_data(event_time=y2024_utc, num_inserts=1)
-    insert_data(event_time=y2025_utc, num_inserts=1)
 
-    discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    mnt_props = maintenance_schedule.get_maintenance_entry(TEST_FULL_NAME)
-    assert mnt_props
+    create_generic_test_table(
+        executor=executor,
+        partitions_to_insert_into=[y2023_utc, y2024_utc, y2025_utc],
+        partitioned_by=partitioned_by,
+        optimization_strategy=optimization_strategy,
+        properties=properties,
+    )
+
+    mnt_props = get_updated_mnt_props()
 
     # All years
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "0Y", "100Y")
@@ -538,16 +382,15 @@ def test_summary_partition_negative_offset(executor: TaskExecutor) -> None:
     partitioned_by = "days(ts)"
     optimization_strategy = "binpack"
     properties: dict[str, str] = {}
-    create_empty_test_table(partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties)
+    create_generic_test_table(
+        executor=executor,
+        partitions_to_insert_into=[dt_first_utc, dt_second_utc, dt_third_utc],
+        partitioned_by=partitioned_by,
+        optimization_strategy=optimization_strategy,
+        properties=properties,
+    )
 
-    insert_data(event_time=dt_first_utc, num_inserts=1)
-    insert_data(event_time=dt_second_utc, num_inserts=1)
-    insert_data(event_time=dt_third_utc, num_inserts=1)
-
-    discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    mnt_props = maintenance_schedule.get_maintenance_entry(TEST_FULL_NAME)
-    assert mnt_props
+    mnt_props = get_updated_mnt_props()
 
     # Negative min offset: -1d means include 1 day into the future from the reference point.
     # Since there are no future partitions, this should still include the most recent one.
@@ -564,14 +407,15 @@ def test_summary_partition_mismatched_units_rejected(executor: TaskExecutor) -> 
     partitioned_by = "days(ts)"
     optimization_strategy = "binpack"
     properties: dict[str, str] = {}
-    create_empty_test_table(partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties)
+    create_generic_test_table(
+        executor=executor,
+        partitions_to_insert_into=[dt_first_utc],
+        partitioned_by=partitioned_by,
+        optimization_strategy=optimization_strategy,
+        properties=properties,
+    )
 
-    insert_data(event_time=dt_first_utc, num_inserts=1)
-
-    discover_tables(executor, Scope(TEST_CATALOG_NAME, TEST_SCHEMA_NAME))
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    mnt_props = maintenance_schedule.get_maintenance_entry(TEST_FULL_NAME)
-    assert mnt_props
+    mnt_props = get_updated_mnt_props()
 
     # Mismatched units: min in days, max in months
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "1d", "3M")
@@ -582,3 +426,93 @@ def test_summary_partition_mismatched_units_rejected(executor: TaskExecutor) -> 
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "1h", "2Y")
     with pytest.raises(ValueError, match="must use the same unit"):
         get_partition_time_from_summary(mnt_props)
+
+
+def set_mnt_target_file_size_and_depth(
+    mnt_props: MaintenanceScheduleEntry, target_file_size: int, depth: int
+) -> MaintenanceScheduleEntry:
+    record_copy = mnt_props.record.model_copy()
+    record_copy.target_file_size_bytes = target_file_size
+    record_copy.optimize_partition_depth = depth
+    row = Row(**record_copy.model_dump(by_alias=True))
+    return MaintenanceScheduleRecord.from_row(row).to_entry()
+
+
+@pytest.mark.integration
+def test_auto_target_file_size_rejected_when_depth_does_not_match_partition_levels(executor: TaskExecutor) -> None:
+    """Auto target file size (-1) requires depth == num partition levels or depth == -1."""
+    create_generic_test_table(
+        executor=executor,
+        partitions_to_insert_into=[dt_first_utc],
+        partitioned_by="days(ts), bucket(3, id)",
+        optimization_strategy="binpack",
+    )
+    mnt_props = get_updated_mnt_props()
+
+    # Table has 2 partition levels, depth=1 should be rejected
+    mnt_props = set_mnt_target_file_size_and_depth(mnt_props, target_file_size=-1, depth=1)
+    with pytest.raises(ValueError, match="optimize-partition-depth to equal the number of partition levels"):
+        get_partition_time_from_summary(mnt_props)
+
+
+@pytest.mark.integration
+def test_auto_target_file_size_accepted_when_depth_equals_partition_levels(executor: TaskExecutor) -> None:
+    """Auto target file size (-1) should work when depth matches the number of partition levels."""
+    create_generic_test_table(
+        executor=executor,
+        partitions_to_insert_into=[dt_first_utc],
+        partitioned_by="days(ts), bucket(3, id)",
+        optimization_strategy="binpack",
+    )
+    mnt_props = get_updated_mnt_props()
+
+    # Table has 2 partition levels, depth=2 should be accepted
+    mnt_props = set_mnt_target_file_size_and_depth(mnt_props, target_file_size=-1, depth=2)
+    # Should not raise — just confirm it produces a result
+    get_partition_time_from_summary(mnt_props)
+
+
+@pytest.mark.integration
+def test_auto_target_file_size_accepted_with_dynamic_grouping(executor: TaskExecutor) -> None:
+    """Auto target file size (-1) should work when depth=-1 (dynamic grouping)."""
+    create_generic_test_table(
+        executor=executor,
+        partitions_to_insert_into=[dt_first_utc],
+        partitioned_by="days(ts), bucket(3, id)",
+        optimization_strategy="binpack",
+    )
+    mnt_props = get_updated_mnt_props()
+
+    # Table has 2 partition levels, depth=-1 (dynamic grouping) should be accepted
+    mnt_props = set_mnt_target_file_size_and_depth(mnt_props, target_file_size=-1, depth=-1)
+    # Should not raise
+    get_partition_time_from_summary(mnt_props)
+
+
+@pytest.mark.integration
+def test_auto_target_file_size_selects_smallest_tier_for_small_partitions(executor: TaskExecutor) -> None:
+    """With auto target file size (-1) and small data, the lowest tier (16 MB) should be selected."""
+    create_generic_test_table(
+        executor=executor,
+        partitions_to_insert_into=[dt_first_utc],
+        partitioned_by="days(ts)",
+        optimization_strategy="binpack",
+        properties={
+            IceKeeperTblProperty.OPTIMIZATION_TARGET_FILE_SIZE_BYTES: "-1",
+            IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
+            IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",
+            IceKeeperTblProperty.BINPACK_MIN_INPUT_FILES: "0",
+        },
+    )
+    mnt_props = get_updated_mnt_props()
+
+    spec_id = 0
+    spec = mnt_props.partition_specs[spec_id]
+    datafiles_summary = DataFilesSummary(mnt_props, spec, spec_id, None)
+    sql = datafiles_summary.create_summary_stmt()
+    df = STL.sql_and_log(sql, "Check auto target file size")
+
+    rows = df.select("target_file_size").distinct().collect()
+    assert len(rows) == 1, "All partitions should have the same auto-selected target file size"
+    # Small data (< 256 MB) should select the lowest tier: 16 MB = 16 * 1048576 = 16777216
+    assert rows[0].target_file_size == 16 * 1048576, f"Expected 16 MB target, got {rows[0].target_file_size}"

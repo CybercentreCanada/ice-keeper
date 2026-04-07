@@ -85,7 +85,7 @@ def fixture_for_every_test_function(reset_config: Any) -> Generator[TaskExecutor
 
 
 @pytest.fixture(scope="session", autouse=True)
-def spark_fixture_with_table_initialization(tmp_path_factory: pytest.TempPathFactory) -> None:
+def spark_fixture(tmp_path_factory: pytest.TempPathFactory) -> None:
     # 1. Set the TZ environment variable to UTC
     os.environ["TZ"] = "UTC"
 

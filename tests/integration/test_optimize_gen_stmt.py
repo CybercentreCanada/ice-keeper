@@ -6,22 +6,17 @@ import pytest
 
 from ice_keeper.ice_keeper import OptimizationStrategy
 from ice_keeper.pool import TaskExecutor
-from ice_keeper.stm import STL
-from ice_keeper.table import MaintenanceSchedule
 from ice_keeper.table.schedule_entry import IceKeeperTblProperty
 from ice_keeper.task import PartitionSummary
 from ice_keeper.task.action.optimization.optimization import SubOptimizationStrategy
 from ice_keeper.task.action.optimization.partition_diagnostic import PartitionDiagnosis
 from tests.test_common import (
     ONE_EXPECTED,
-    SCOPE_SCHEMA,
-    SCOPE_WHERE_FULL_NAME,
-    TEST_FULL_NAME,
 )
 from tests.utils import (
     compare_multiline_strings,
-    create_test_table_with_one_batch,
-    discover_tables,
+    create_generic_test_table,
+    get_updated_mnt_props,
 )
 
 default_sort_rewrite_data_files_options = f"""options => map(
@@ -388,27 +383,25 @@ optimize_test_scenarios = [
     ],
     ids=[test.test_name for test in optimize_test_scenarios],
 )
-def test_optimize(
+def test_optimize_gen_stmt(
     test_name: str, partitioned_by: str, optimization_strategy: str, expected_output: str, executor: TaskExecutor
 ) -> None:
     # Change default min age for testing.
-    properties = {
-        "write.delete.mode": "merge-on-read",
-        IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
-        IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",
-    }
     dt = datetime.datetime(2025, 3, 3, 18, 33, 59, tzinfo=datetime.timezone.utc)
-    create_test_table_with_one_batch(
-        event_time=dt, partitioned_by=partitioned_by, optimization_strategy=optimization_strategy, properties=properties
+    create_generic_test_table(
+        executor=executor,
+        partitions_to_insert_into=[dt],
+        partitioned_by=partitioned_by,
+        optimization_strategy=optimization_strategy,
+        properties={
+            "write.delete.mode": "merge-on-read",
+            IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
+            IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",
+            IceKeeperTblProperty.BINPACK_MIN_INPUT_FILES: "0",
+            IceKeeperTblProperty.SORT_CORR_THRESHOLD: "2",
+        },
     )
-    sql = f"delete from {TEST_FULL_NAME} where id = (select id from {TEST_FULL_NAME} where ts = '{dt}' limit 1)"
-    STL.get().sql(sql)
-    # add table to maintenance schedule
-    discover_tables(executor, SCOPE_SCHEMA)
-    maintenance_schedule = MaintenanceSchedule(SCOPE_WHERE_FULL_NAME)
-    assert len(maintenance_schedule.entries()) == 1, "Scoped to one table, should have one maintenance entry."
-    mnt_props = maintenance_schedule.entries()[0]
-    assert mnt_props
+    mnt_props = get_updated_mnt_props()
 
     os = OptimizationStrategy(mnt_props)
     if os.check_should_execute_action():

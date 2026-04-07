@@ -33,7 +33,7 @@ class Transformation(BaseModel):
     """
 
     @abstractmethod
-    def make_rewrite_data_files_partition_filter_stmt(self, partition_value: Any) -> str:  # noqa: ANN401
+    def to_sql_predicate(self, partition_value: Any) -> str:  # noqa: ANN401
         """Abstract method to build a filter condition for the `rewrite_data_files` operation in SQL.
 
         This is used when rewriting Iceberg tables based on partition transformations.
@@ -135,15 +135,15 @@ class Transformation(BaseModel):
 
 
 class IdentityTransformation(Transformation):
-    def make_rewrite_data_files_partition_filter_stmt(self, partition_value: Any) -> str:  # noqa: ANN401
+    def to_sql_predicate(self, partition_value: Any) -> str:  # noqa: ANN401
         """Make an sql expression selecting the specific value provided.
 
         Example:
         >>> transform = IdentityTransformation(source_field_path_escaped="col", partition_field_escaped="col")
-        >>> transform.make_rewrite_data_files_partition_filter_stmt("category1")
+        >>> transform.to_sql_predicate("category1")
         "( col = 'category1' )"
         >>> transform = IdentityTransformation(source_field_path_escaped="col", partition_field_escaped="col")
-        >>> transform.make_rewrite_data_files_partition_filter_stmt(123)
+        >>> transform.to_sql_predicate(123)
         "( col = 123 )"
         """
         if isinstance(partition_value, int | float):
@@ -158,18 +158,18 @@ class IdentityTransformation(Transformation):
 
 
 class NotPartitionedTransformation(Transformation):
-    def make_rewrite_data_files_partition_filter_stmt(self, partition_value: Any) -> str:  # noqa: ANN401, ARG002
+    def to_sql_predicate(self, partition_value: Any) -> str:  # noqa: ANN401, ARG002
         msg = "Should never be called."
         raise Exception(msg)
 
 
 class YearTransformation(Transformation):
-    def make_rewrite_data_files_partition_filter_stmt(self, partition_value: Any) -> str:  # noqa: ANN401
+    def to_sql_predicate(self, partition_value: Any) -> str:  # noqa: ANN401
         """Make an sql expression selecting the specific value provided.
 
         Example:
         >>> transform = YearTransformation(source_field_path_escaped="ts", partition_field_escaped="ts_year")
-        >>> transform.make_rewrite_data_files_partition_filter_stmt(57)
+        >>> transform.to_sql_predicate(57)
         "( ts >= date('2027-01-01') and ts < date('2027-01-01') + interval 1 year )"
         """
         if not isinstance(partition_value, int):
@@ -200,12 +200,12 @@ class YearTransformation(Transformation):
 
 
 class MonthTransformation(Transformation):
-    def make_rewrite_data_files_partition_filter_stmt(self, partition_value: Any) -> str:  # noqa: ANN401
+    def to_sql_predicate(self, partition_value: Any) -> str:  # noqa: ANN401
         """Make an sql expression selecting the specific value provided.
 
         Example:
         >>> transform = MonthTransformation(source_field_path_escaped="ts", partition_field_escaped="ts_month")
-        >>> transform.make_rewrite_data_files_partition_filter_stmt(649)
+        >>> transform.to_sql_predicate(649)
         "( ts >= date('2024-02-01') and ts < date('2024-02-01') + interval 1 month )"
         """
         if not isinstance(partition_value, int):
@@ -235,12 +235,12 @@ class MonthTransformation(Transformation):
 
 
 class DayTransformation(Transformation):
-    def make_rewrite_data_files_partition_filter_stmt(self, partition_value: Any) -> str:  # noqa: ANN401
+    def to_sql_predicate(self, partition_value: Any) -> str:  # noqa: ANN401
         """Make an sql expression selecting the specific value provided.
 
         Example:
         >>> transform = DayTransformation(source_field_path_escaped="ts", partition_field_escaped="ts_day")
-        >>> transform.make_rewrite_data_files_partition_filter_stmt(datetime(2025,1,28))
+        >>> transform.to_sql_predicate(datetime(2025,1,28))
         "( ts >= date('2025-01-28 00:00:00') and ts < date('2025-01-28 00:00:00') + interval 1 day )"
         """
         if not isinstance(partition_value, datetime | date):
@@ -260,12 +260,12 @@ class DayTransformation(Transformation):
 
 
 class HourTransformation(Transformation):
-    def make_rewrite_data_files_partition_filter_stmt(self, partition_value: Any) -> str:  # noqa: ANN401
+    def to_sql_predicate(self, partition_value: Any) -> str:  # noqa: ANN401
         """Make an sql expression selecting the specific value provided.
 
         Example:
         >>> transform = HourTransformation(source_field_path_escaped="ts", partition_field_escaped="ts_hour")
-        >>> transform.make_rewrite_data_files_partition_filter_stmt(466992)
+        >>> transform.to_sql_predicate(466992)
         "( ts >= timestamp('2023-04-11 00:00:00') and ts < timestamp('2023-04-11 00:00:00') + interval 1 hour )"
         """
         if not isinstance(partition_value, int):
@@ -285,14 +285,14 @@ class TruncateTransformation(Transformation):
     width: int
 
     # To filter rewrite_data_files we use Iceberg's truncate function on the column.
-    def make_rewrite_data_files_partition_filter_stmt(self, partition_value: Any) -> str:  # noqa: ANN401
+    def to_sql_predicate(self, partition_value: Any) -> str:  # noqa: ANN401
         """Make an sql expression selecting the specific value provided.
 
         Example:
         >>> transform = TruncateTransformation(source_field_path_escaped="col", partition_field_escaped="col_trunc", catalog="cat", width=4)
-        >>> transform.make_rewrite_data_files_partition_filter_stmt(123)
+        >>> transform.to_sql_predicate(123)
         '( col_trunc.system.truncate(4, col) = 123 )'
-        >>> transform.make_rewrite_data_files_partition_filter_stmt("abcd")
+        >>> transform.to_sql_predicate("abcd")
         "( col_trunc.system.truncate(4, col) = 'abcd' )"
         """
         if isinstance(partition_value, int | float):
@@ -311,14 +311,14 @@ class BucketTransformation(Transformation):
     num_buckets: int
 
     # To filter rewrite_data_files we use Iceberg's bucket function on the column.
-    def make_rewrite_data_files_partition_filter_stmt(self, partition_value: Any) -> str:  # noqa: ANN401
+    def to_sql_predicate(self, partition_value: Any) -> str:  # noqa: ANN401
         """Make an sql expression selecting the specific value provided.
 
         Example:
         >>> transform = BucketTransformation(source_field_path_escaped="col", partition_field_escaped="col_bucket", catalog="cat", num_buckets=4)
-        >>> transform.make_rewrite_data_files_partition_filter_stmt(123)
+        >>> transform.to_sql_predicate(123)
         '( cat.system.bucket(4, col) = 123 )'
-        >>> transform.make_rewrite_data_files_partition_filter_stmt("abcd")
+        >>> transform.to_sql_predicate("abcd")
         "( cat.system.bucket(4, col) = 'abcd' )"
         """
         if isinstance(partition_value, int | float):
