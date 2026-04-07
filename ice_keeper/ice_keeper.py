@@ -299,8 +299,8 @@ def reset(force: bool, schedule: bool, journal: bool, health: bool, all_tables: 
     help="Maximum partition offset to diagnose (e.g., '7d', '3M'). Must be used with --min_partition_to_diagnose.",
 )
 @click.option("--optimization_strategy", help="Optional optimization strategy to use during diagnosis.")
-@click.option("--optimize_partition_depth", help="Optional optimization partition depth to use during diagnosis.")
-@click.option("--optimization_grouping_size_bytes", help="Optional optimization grouping size to use during diagnosis.")
+@click.option("--optimize_partition_depth", type=int, help="Optional optimization partition depth to use during diagnosis.")
+@click.option("--optimization_grouping_size_bytes", type=int, help="Optional optimization grouping size to use during diagnosis.")
 @click.option(
     "--target_file_size_bytes",
     type=int,
@@ -365,9 +365,9 @@ def diagnose(  # noqa: C901
             record_copy.optimization_strategy = optimization_strategy
         if target_file_size_bytes is not None:
             record_copy.target_file_size_bytes = target_file_size_bytes
-        if optimize_partition_depth:
+        if optimize_partition_depth is not None:
             record_copy.optimize_partition_depth = optimize_partition_depth
-        if optimization_grouping_size_bytes:
+        if optimization_grouping_size_bytes is not None:
             record_copy.optimization_grouping_size_bytes = optimization_grouping_size_bytes
         if has_partition:
             record_copy.min_age_to_optimize = None
