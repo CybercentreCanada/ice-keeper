@@ -138,7 +138,7 @@ def test_dynamic_grouping_binpack_splits_into_multiple_groups(executor: TaskExec
     rows = run_action_and_collect_journal(executor, Action.REWRITE_DATA_FILES)
     assert len(rows) == FIVE_EXPECTED
     for i, row in enumerate(rows):
-        assert "" in row.status_details
+        assert row.status_details == ""
         assert row.status == Status.SUCCESS.value, f"Row {i} failed with status {row.status} and details {row.status_details}"
         actual_output = row.sql_stm
         assert any(
