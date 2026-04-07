@@ -163,7 +163,7 @@ class OptimizationStrategy(ActionStrategy):
                 sql = datafiles_summary.create_summary_stmt(estimate_optimization_results=estimate_optimization_results)
                 rows = STL.sql_and_log(sql, "Retrieve rows from partition summary").take(10000)
                 rows_log_debug(rows, f"Diagnostic Partition Summary of {self.mnt_props.full_name}, spec: {spec}")
-            except Exception:  # noqa: BLE001
+            except Exception:
                 logger.exception("Failed diagnosing spec_id: %s -> %s", spec_id, spec)
             finally:
                 logger.debug("END Diagnosing spec_id: %s -> %s", spec_id, spec)
