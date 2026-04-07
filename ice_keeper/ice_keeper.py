@@ -322,7 +322,7 @@ def reset(force: bool, schedule: bool, journal: bool, health: bool, all_tables: 
         "high-level estimate of potential changes, also without applying them."
     ),
 )
-def diagnose(  # noqa: C901
+def diagnose(  # noqa: C901, PLR0912
     full_name: str,
     min_age_to_diagnose: int | None,
     max_age_to_diagnose: int | None,
