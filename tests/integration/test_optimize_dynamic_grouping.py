@@ -306,3 +306,49 @@ def test_dynamic_grouping_large_sub_partition_alone_small_ones_grouped(executor:
     # At least one group should have multiple filters (the grouped small categories)
     multi_filter_groups = [r for r in results if len(r.partition_filters) > 1]
     assert len(multi_filter_groups) >= ONE_EXPECTED, "Expected at least one group with multiple small categories grouped together"
+
+
+@pytest.mark.integration
+def test_dynamic_grouping_falls_back_for_unpartitioned_table(executor: TaskExecutor) -> None:
+    """Dynamic grouping (depth=-1) on an unpartitioned table must not produce invalid SQL.
+
+    Before the fix, _find_partitions_to_optimize_dynamic_grouping injected an empty
+    list_of_all_partition_alias_stmt, producing SQL with dangling commas like
+    ``select partition_age, , target_file_size``.  The fix routes unpartitioned tables
+    to the fixed-depth query which already guards columns with ``{% if is_partitioned %}``.
+    """
+    dt = datetime.datetime(2025, 3, 3, 18, 33, 59, tzinfo=datetime.timezone.utc)
+    create_generic_test_table(
+        executor=executor,
+        partitions_to_insert_into=[dt],
+        partitioned_by=None,  # unpartitioned
+        optimization_strategy="binpack",
+        properties={
+            IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
+            IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",
+            IceKeeperTblProperty.OPTIMIZE_PARTITION_DEPTH: "-1",
+            IceKeeperTblProperty.OPTIMIZATION_GROUPING_SIZE_BYTES: "1073741824",
+            IceKeeperTblProperty.BINPACK_MIN_INPUT_FILES: "0",
+        },
+    )
+
+    mnt_props = get_updated_mnt_props()
+
+    os = OptimizationStrategy(mnt_props)
+    assert os.check_should_execute_action()
+
+    spec_id = 0
+    summary = PartitionSummary(mnt_props, spec_id, None)
+    diagnosis = PartitionDiagnosis(mnt_props, spec_id)
+    results = diagnosis.find_partitions_to_optimize(summary)
+
+    # Unpartitioned table → single result with no partition filters
+    assert len(results) == ONE_EXPECTED, f"Expected 1 diagnosis result for unpartitioned table, got {len(results)}"
+    assert results[0].partition_filters == [], f"Expected empty partition_filters, got {results[0].partition_filters}"
+
+    rows = run_action_and_collect_journal(executor, Action.REWRITE_DATA_FILES)
+    assert len(rows) == ONE_EXPECTED
+    assert rows[0].status == Status.SUCCESS.value
+    assert rows[0].status_details == ""
+    # WHERE clause should be (1 = 1) for unpartitioned tables
+    assert "(1 = 1)" in rows[0].sql_stm, f"Expected (1 = 1) WHERE for unpartitioned table, got: {rows[0].sql_stm}"

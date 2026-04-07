@@ -157,7 +157,9 @@ class PartitionDiagnosis:
         sql = sql_template.render(
             is_partitioned=self.spec.is_partitioned,
             is_binpack=self.mnt_props.optimization_spec.is_binpack(),
-            depth_grouping_stmt=self.spec.make_diagnosis_grouping_stmt(self.mnt_props.optimize_partition_depth),
+            depth_grouping_stmt=self.spec.make_diagnosis_grouping_stmt(self.mnt_props.optimize_partition_depth)
+            if self.spec.is_partitioned
+            else "",
             summary_before_view_name=summary.summary_before_view_name,
             full_name=self.mnt_props.full_name,
         )
@@ -213,7 +215,7 @@ class PartitionDiagnosis:
             list[PartitionDiagnosisResult]: A list of PartitionDiagnosisResult, each containing partition information for
                        the partitions marked for optimization.
         """
-        if self.mnt_props.optimize_partition_depth == -1:
-            return self._find_partitions_to_optimize_dynamic_grouping(summary)
+        if not self.spec.is_partitioned or self.mnt_props.optimize_partition_depth != -1:
+            return self._find_partitions_to_optimize_fixed_depth(summary)
 
-        return self._find_partitions_to_optimize_fixed_depth(summary)
+        return self._find_partitions_to_optimize_dynamic_grouping(summary)
