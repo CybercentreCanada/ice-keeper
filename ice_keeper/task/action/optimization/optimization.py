@@ -151,20 +151,22 @@ class OptimizationStrategy(ActionStrategy):
     def _run_partition_spec_diagnostics(self, *, estimate_optimization_results: bool) -> None:
         unique_spec_ids = self._find_specs_to_optimize()
         for spec_id in unique_spec_ids:
+            spec = self.mnt_props.partition_specs[spec_id]
             try:
                 logger.debug(
                     "START Diagnosing spec_id: %s -> %s",
                     spec_id,
-                    self.mnt_props.partition_specs[spec_id],
+                    spec,
                 )
-                spec = self.mnt_props.partition_specs[spec_id]
                 widening_rule = self.get_widening_rule(spec_id)
                 datafiles_summary = DataFilesSummary(self.mnt_props, spec, spec_id, widening_rule)
                 sql = datafiles_summary.create_summary_stmt(estimate_optimization_results=estimate_optimization_results)
                 rows = STL.sql_and_log(sql, "Retrieve rows from partition summary").take(10000)
                 rows_log_debug(rows, f"Diagnostic Partition Summary of {self.mnt_props.full_name}, spec: {spec}")
-            except Exception as e:  # noqa: BLE001
-                logger.error(e)
+            except Exception:  # noqa: BLE001
+                logger.exception("Failed diagnosing spec_id: %s -> %s", spec_id, spec)
+            finally:
+                logger.debug("END Diagnosing spec_id: %s -> %s", spec_id, spec)
 
     def diagnose_partition_specs(self) -> None:
         self._run_partition_spec_diagnostics(estimate_optimization_results=False)
