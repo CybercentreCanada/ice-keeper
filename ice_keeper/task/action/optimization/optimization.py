@@ -162,6 +162,7 @@ class OptimizationStrategy(ActionStrategy):
             except Exception:
                 logger.exception("Failed diagnosing spec_id: %s -> %s", spec_id, spec)
             finally:
+                partition_summary.uncache_views(did_some_optimizations=False)
                 logger.debug("END Diagnosing spec_id: %s -> %s", spec_id, spec)
 
     def create_widening_rule_if_any(self) -> None | WideningRule:
