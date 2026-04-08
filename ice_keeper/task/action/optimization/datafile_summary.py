@@ -404,7 +404,7 @@ class DataFilesSummary:
         else 1024L * 1048576 end
         """
 
-    def create_summary_stmt(self, *, estimate_optimization_results: bool = False) -> str:
+    def create_summary_stmt(self) -> str:
         """Generate an SQL query for creating a partition diagnostics summary.
 
         This method generates a complex SQL query to analyze the health and optimization
@@ -604,30 +604,6 @@ class DataFilesSummary:
                     {{ grouping_stmt }}
             ),
             -- Add should optimize flags to the aggregate.
-            {% if estimate_optimization_results %}
-            final as (
-                select
-                    {{ grouping_stmt }},
-                    partition_age,
-                    {{ format_sum_file_size }} as partition_size,
-                    {{ format_avg_file_size }} as avg_file_size,
-                    {{ format_target_file_size }} as target_file_size,
-                    n_files as partition_num_files,
-                    ceil(sum_file_size / target_file_size) as partition_target_num_files,
-                    sum(n_files) over(partition by partition_age) as num_files_per_age,
-                    sum(ceil(sum_file_size / target_file_size)) over(partition by partition_age) as target_num_files_per_age
-                from
-                    agg_data_files
-                {% if partition_filter_stmt %}
-                where
-                    {{ partition_filter_stmt }}
-                {% endif %}
-                order by
-                    partition_age,
-                    n_files desc,
-                    avg_file_size desc
-            )
-            {% else %}
             final as (
                 select
                     {{ grouping_stmt }},
@@ -649,7 +625,14 @@ class DataFilesSummary:
                     -- Determine necessity for sorting based on correlation threshold or delete files
                     (corr < corr_threshold or n_delete_files > 0 or num_files_to_widen > 0) as should_sort,
                     -- Determine necessity for binpacking based on number of rewritten files or delete files
-                    (num_files_targetted_for_rewrite > {{ binpack_min_input_files }} or n_delete_files > 0) as should_binpack
+                    (num_files_targetted_for_rewrite > {{ binpack_min_input_files }} or n_delete_files > 0) as should_binpack,
+                    {{ format_sum_file_size }} as partition_size_h,
+                    {{ format_avg_file_size }} as avg_file_size_h,
+                    {{ format_target_file_size }} as target_file_size_h,
+                    n_files as current_partition_num_files,
+                    ceil(sum_file_size / target_file_size) as estimated_partition_num_files,
+                    sum(n_files) over(partition by partition_age) as current_num_files_per_age,
+                    sum(ceil(sum_file_size / target_file_size)) over(partition by partition_age) as estimated_num_files_per_age
                 from
                     agg_data_files
                 {% if partition_filter_stmt  %}
@@ -661,7 +644,6 @@ class DataFilesSummary:
                     {{ order_by }}
                 {% endif %}
             )
-            {% endif %}
 
             select * from final
         """)
@@ -670,13 +652,8 @@ class DataFilesSummary:
         base_column_name_stmt = self.spec.get_base_partition().partition_field_alias if self.spec.is_partitioned else ""
         partition_time_alias_stmt = self.spec.make_partition_time_alias_stmt()
 
-        order_by = ""
-        if not estimate_optimization_results:
-            order_by = self.spec.make_order_stmt()
-
         # Render the SQL query with all required variables
         return sql_template.render(
-            estimate_optimization_results=estimate_optimization_results,
             is_partitioned=self.spec.is_partitioned,
             partition_time_alias_stmt=partition_time_alias_stmt,
             spec_id=self.spec_id,
@@ -691,7 +668,7 @@ class DataFilesSummary:
             base_column_name_stmt=base_column_name_stmt,
             binpack_min_input_files=self.mnt_props.binpack_min_input_files,
             partition_filter_stmt=partition_filter_stmt,
-            order_by=order_by,
+            order_by=self.spec.make_order_stmt(),
             format_sum_file_size=self._format_bytes_stmt("sum_file_size"),
             format_avg_file_size=self._format_bytes_stmt("avg_file_size"),
             format_target_file_size=self._format_bytes_stmt("target_file_size"),

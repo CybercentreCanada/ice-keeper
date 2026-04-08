@@ -311,24 +311,12 @@ def reset(force: bool, schedule: bool, journal: bool, health: bool, all_tables: 
         "characteristics."
     ),
 )
-@click.option(
-    "--mode",
-    type=click.Choice(["simulate", "dry_run"], case_sensitive=False),
-    default="simulate",
-    show_default=True,
-    help=(
-        "Execution mode. 'dry_run' runs the optimizer logic and prints a detailed "
-        "decision summary without applying any changes. 'simulate' prints only a "
-        "high-level estimate of potential changes, also without applying them."
-    ),
-)
-def diagnose(  # noqa: C901, PLR0912
+def diagnose(  # noqa: C901
     full_name: str,
     min_age_to_diagnose: int | None,
     max_age_to_diagnose: int | None,
     min_partition_to_diagnose: str | None,
     max_partition_to_diagnose: str | None,
-    mode: str,
     optimization_strategy: str | None,
     target_file_size_bytes: int | None,
     optimize_partition_depth: int | None,
@@ -384,14 +372,10 @@ def diagnose(  # noqa: C901, PLR0912
         entry = MaintenanceScheduleRecord.from_row(row).to_entry()
         strategy = OptimizationStrategy(entry)
         try:
-            if mode == "dry_run":
-                strategy.diagnose_partition_specs()
-            else:
-                strategy.estimate_optimization_results_partition_specs()
+            strategy.diagnose_partition_specs()
         except Exception as e:  # noqa: BLE001
             msg = f"An error occurred while diagnosing table '{full_name}': {e}"
             raise click.ClickException(msg)  # noqa: B904
-
     else:
         # Preserve expected CLI behavior: emit an error and non-zero exit
         # when the table is not present in the maintenance schedule.
