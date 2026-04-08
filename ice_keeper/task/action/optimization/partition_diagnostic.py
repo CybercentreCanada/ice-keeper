@@ -184,7 +184,10 @@ class PartitionDiagnosis:
         The query groups partitions based on the `grouping_stmt` and sorts them by
         their age in ascending order to prioritize older partitions for optimization.
 
-        The summary will look like this:
+        Unpartitioned tables and tables with a fixed depth always use the fixed-depth
+        query. Dynamic grouping (depth=-1) is used only for partitioned tables.
+
+        The summary (input) will look like this:
         ┏━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
         ┃ spec_id ┃ partition_time ┃ ts_day     ┃ id_bucket ┃ partition_age ┃ partition_desc                        ┃ n_files ┃ num_files_targetted_for_rewrite ┃ n_records ┃ target_file_size ┃ avg_file_size ┃ min_file_size ┃ max_file_size ┃ sum_file_size ┃ num_files_to_widen ┃ corr ┃ corr_threshold ┃ n_delete_files ┃ n_delete_records ┃ should_sort ┃ should_binpack ┃
         ┡━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━╇━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
@@ -193,13 +196,14 @@ class PartitionDiagnosis:
         │ 0       │ 2025-03-03     │ 2025-03-03 │ 0         │ 1             │ {"ts_day":"2025-03-03","id_bucket":0} │ 8       │ 8                               │ 26886     │ 536870912        │ 86628.75      │ 83885         │ 88055         │ 693030        │ 0                  │ 1.0  │ 1.00           │ 0              │ 0                │ False       │ True           │
         └─────────┴────────────────┴────────────┴───────────┴───────────────┴───────────────────────────────────────┴─────────┴─────────────────────────────────┴───────────┴──────────────────┴───────────────┴───────────────┴───────────────┴───────────────┴────────────────────┴──────┴────────────────┴────────────────┴──────────────────┴─────────────┴────────────────┘
 
-        The function returns rows like this:
+        The function returns rows like this (fixed depth=1, groups by ts_day only):
         ┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━┓
         ┃ partition_age ┃ target_file_size ┃ partition_filters     ┃
         ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━┩
         │ 1             │ 536870912        │ [{ts_day:2025-03-03}] │
         └───────────────┴──────────────────┴───────────────────────┘
-        If the depth is set to two, then it will output
+
+        If the depth is set to two, then it will output (fixed depth=2):
         ┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
         ┃ partition_age ┃ target_file_size ┃ partition_filters                   ┃
         ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
@@ -207,6 +211,14 @@ class PartitionDiagnosis:
         │ 1             │ 536870912        │ [{ts_day:2025-03-03, id_bucket: 1}] │
         │ 1             │ 536870912        │ [{ts_day:2025-03-03, id_bucket: 0}] │
         └───────────────┴──────────────────┴─────────────────────────────────────┘
+
+        For unpartitioned tables, partition_filters is absent (defaults to []):
+        ┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┓
+        ┃ partition_age ┃ target_file_size ┃
+        ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━┩
+        │ 0             │ 536870912        │
+        └───────────────┴──────────────────┘
+
         Args:
             summary (PartitionSummary): An instance that contains summary data about
                 the partitions, including metrics to evaluate optimization criteria.
