@@ -5,14 +5,12 @@ from pyspark.sql.types import StructType
 from typing_extensions import override
 
 from ice_keeper import Action
-from ice_keeper.output import rows_log_debug
 from ice_keeper.spec import WideningRule
 from ice_keeper.spec.partition_diagnosis_result import PartitionDiagnosisResult
 from ice_keeper.stm import STL
 from ice_keeper.table import PartitionHealth
 from ice_keeper.task import SparkTask
 from ice_keeper.task.action.action import ActionStrategy, ActionTask
-from ice_keeper.task.action.optimization.datafile_summary import DataFilesSummary
 from ice_keeper.task.task import SubTaskExecutor
 
 from .optimization_partition import SubOptimizationStrategy
@@ -148,7 +146,7 @@ class OptimizationStrategy(ActionStrategy):
                 logger.debug("END Optimizing spec_id: %s", spec_id)
                 summary.uncache_views(did_some_optimizations=did_some_optimizations)
 
-    def _run_partition_spec_diagnostics(self, *, estimate_optimization_results: bool) -> None:
+    def diagnose_partition_specs(self) -> None:
         unique_spec_ids = self._find_specs_to_optimize()
         for spec_id in unique_spec_ids:
             spec = self.mnt_props.partition_specs[spec_id]
@@ -158,21 +156,15 @@ class OptimizationStrategy(ActionStrategy):
                     spec_id,
                     spec,
                 )
-                widening_rule = self.get_widening_rule(spec_id)
-                datafiles_summary = DataFilesSummary(self.mnt_props, spec, spec_id, widening_rule)
-                sql = datafiles_summary.create_summary_stmt(estimate_optimization_results=estimate_optimization_results)
-                rows = STL.sql_and_log(sql, "Retrieve rows from partition summary").take(10000)
-                rows_log_debug(rows, f"Diagnostic Partition Summary of {self.mnt_props.full_name}, spec: {spec}")
+                partition_summary = PartitionSummary(self.mnt_props, spec_id, self.get_widening_rule(spec_id))
+                diagnosis = PartitionDiagnosis(self.mnt_props, spec_id)
+                diagnosis.find_partitions_to_optimize(partition_summary)
             except Exception:
                 logger.exception("Failed diagnosing spec_id: %s -> %s", spec_id, spec)
             finally:
+                if partition_summary:
+                    partition_summary.uncache_views(did_some_optimizations=False)
                 logger.debug("END Diagnosing spec_id: %s -> %s", spec_id, spec)
-
-    def diagnose_partition_specs(self) -> None:
-        self._run_partition_spec_diagnostics(estimate_optimization_results=False)
-
-    def estimate_optimization_results_partition_specs(self) -> None:
-        self._run_partition_spec_diagnostics(estimate_optimization_results=True)
 
     def create_widening_rule_if_any(self) -> None | WideningRule:
         """Attach a widening rule to the partition specs, if defined in the table configuration.

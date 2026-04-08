@@ -404,28 +404,27 @@ class DataFilesSummary:
         else 1024L * 1048576 end
         """
 
-    def create_summary_stmt(self, *, estimate_optimization_results: bool = False) -> str:
+    def create_summary_stmt(self) -> str:
         """Generate an SQL query for creating a partition diagnostics summary.
 
         This method generates a complex SQL query to analyze the health and optimization
         readiness of partitions in a table. The query includes metrics such as correlation
         factors, the number of files to optimize, and flags to determine optimization needs.
 
-        Args:
-            estimate_optimization_results (bool, optional): If True, generates an estimate
-                of optimization results instead of the final decision. Defaults to False.
-
         Returns:
             str: The generated SQL query for analyzing partition health and optimization readiness.
 
         Notes:
-            - The query uses multiple Common Table Expressions (CTEs) to structure the analysis.
-            - The `final_decision` CTE is used for the final optimization decision, while
-              `final_estimate` is used for estimating optimization results.
             - The target file size is dynamically calculated based on partition size thresholds
               if not explicitly set.
             - The method relies on several helper methods to generate specific SQL fragments,
               such as grouping, bounds, and age filters.
+            - The diagnosis step (see ``PartitionDiagnosis``) consumes the summary view
+              produced by this query and returns ``PartitionDiagnosisResult`` rows. Those
+              results always contain ``partition_age`` and ``target_file_size``. For
+              partitioned tables the result also includes a ``partition_filters`` column
+              (an array of structs). For unpartitioned tables ``partition_filters`` is
+              absent and defaults to an empty list.
 
             Example output structure:
 
@@ -436,7 +435,7 @@ class DataFilesSummary:
             │ 0       │ 0             │ not partitioned │ 176     │ 176                             │ 79992     │ 536870912        │ 13150.352272727272 │ 13118         │ 13211         │ 2314462       │ 0                  │ 1.0  │ 1.00           │ 0              │ 0                │ False       │ True           │
             └─────────┴───────────────┴─────────────────┴─────────┴─────────────────────────────────┴───────────┴──────────────────┴────────────────────┴───────────────┴───────────────┴───────────────┴────────────────────┴──────┴────────────────┴────────────────┴──────────────────┴─────────────┴────────────────┘
 
-            Diagnosis result
+            Diagnosis result (no partition_filters column — defaults to [])
             ┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┓
             ┃ partition_age ┃ target_file_size ┃
             ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━┩
@@ -450,12 +449,12 @@ class DataFilesSummary:
             │ 0       │ 2025-03-03 18:00:00 │ 483618             │ 1             │ {"submission_ts_hour":483618} │ 8       │ 8                               │ 79992     │ 536870912        │ 247131.25     │ 246909        │ 247565        │ 1977050       │ 0                  │ 1.0  │ 1.00           │ 0              │ 0                │ False       │ True           │
             └─────────┴─────────────────────┴────────────────────┴───────────────┴───────────────────────────────┴─────────┴─────────────────────────────────┴───────────┴──────────────────┴───────────────┴───────────────┴───────────────┴───────────────┴────────────────────┴──────┴────────────────┴────────────────┴──────────────────┴─────────────┴────────────────┘
 
-            Diagnosis result
-            ┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┓
-            ┃ partition_age ┃ submission_ts_hour ┃ target_file_size ┃
-            ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━┩
-            │ 1             │ 483618             │ 536870912        │
-            └───────────────┴────────────────────┴──────────────────┘
+            Diagnosis result (fixed depth=1)
+            ┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+            ┃ partition_age ┃ target_file_size ┃ partition_filters               ┃
+            ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+            │ 1             │ 536870912        │ [{submission_ts_hour: 483618}]  │
+            └───────────────┴──────────────────┴──────────────────────────────────┘
 
             Data file summary: Partitioned by day and bucket
             ┏━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
@@ -466,12 +465,28 @@ class DataFilesSummary:
             │ 0       │ 2025-03-03     │ 2025-03-03 │ 0         │ 1             │ {"ts_day":"2025-03-03","id_bucket":0} │ 8       │ 8                               │ 26886     │ 536870912        │ 86628.75      │ 83885         │ 88055         │ 693030        │ 0                  │ 1.0  │ 1.00           │ 0              │ 0                │ False       │ True           │
             └─────────┴────────────────┴────────────┴───────────┴───────────────┴───────────────────────────────────────┴─────────┴─────────────────────────────────┴───────────┴──────────────────┴───────────────┴───────────────┴───────────────┴───────────────┴────────────────────┴──────┴────────────────┴────────────────┴──────────────────┴─────────────┴────────────────┘
 
-            Diagnosis result
-            ┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┓
-            ┃ partition_age ┃ ts_day     ┃ target_file_size ┃
-            ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━┩
-            │ 1             │ 2025-03-03 │ 536870912        │
-            └───────────────┴────────────┴──────────────────┘
+            Diagnosis result (fixed depth=1, groups by ts_day only)
+            ┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━┓
+            ┃ partition_age ┃ target_file_size ┃ partition_filters     ┃
+            ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━┩
+            │ 1             │ 536870912        │ [{ts_day:2025-03-03}] │
+            └───────────────┴──────────────────┴───────────────────────┘
+
+            Diagnosis result (fixed depth=2, groups by ts_day and id_bucket)
+            ┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+            ┃ partition_age ┃ target_file_size ┃ partition_filters                   ┃
+            ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+            │ 1             │ 536870912        │ [{ts_day:2025-03-03, id_bucket: 2}] │
+            │ 1             │ 536870912        │ [{ts_day:2025-03-03, id_bucket: 1}] │
+            │ 1             │ 536870912        │ [{ts_day:2025-03-03, id_bucket: 0}] │
+            └───────────────┴──────────────────┴─────────────────────────────────────┘
+
+            Diagnosis result (dynamic grouping, depth=-1, all buckets fit in one group)
+            ┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+            ┃ partition_age ┃ target_file_size ┃ dynamic_optimization_grouping_label                              ┃ partition_filters                                                                                ┃
+            ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+            │ 1             │ 536870912        │ partition_age:1 target_file_size:536870912 optimization_group:0  │ [{ts_day:2025-03-03, id_bucket: 0}, {ts_day:2025-03-03, id_bucket: 1}, {ts_day:2025-03-03, ...}] │
+            └───────────────┴──────────────────┴──────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────────┘
 
         """
         if self.mnt_props.optimization_spec.is_zordered:
@@ -604,30 +619,6 @@ class DataFilesSummary:
                     {{ grouping_stmt }}
             ),
             -- Add should optimize flags to the aggregate.
-            {% if estimate_optimization_results %}
-            final as (
-                select
-                    {{ grouping_stmt }},
-                    partition_age,
-                    {{ format_sum_file_size }} as partition_size,
-                    {{ format_avg_file_size }} as avg_file_size,
-                    {{ format_target_file_size }} as target_file_size,
-                    n_files as partition_num_files,
-                    ceil(sum_file_size / target_file_size) as partition_target_num_files,
-                    sum(n_files) over(partition by partition_age) as num_files_per_age,
-                    sum(ceil(sum_file_size / target_file_size)) over(partition by partition_age) as target_num_files_per_age
-                from
-                    agg_data_files
-                {% if partition_filter_stmt %}
-                where
-                    {{ partition_filter_stmt }}
-                {% endif %}
-                order by
-                    partition_age,
-                    n_files desc,
-                    avg_file_size desc
-            )
-            {% else %}
             final as (
                 select
                     {{ grouping_stmt }},
@@ -649,7 +640,14 @@ class DataFilesSummary:
                     -- Determine necessity for sorting based on correlation threshold or delete files
                     (corr < corr_threshold or n_delete_files > 0 or num_files_to_widen > 0) as should_sort,
                     -- Determine necessity for binpacking based on number of rewritten files or delete files
-                    (num_files_targetted_for_rewrite > {{ binpack_min_input_files }} or n_delete_files > 0) as should_binpack
+                    (num_files_targetted_for_rewrite > {{ binpack_min_input_files }} or n_delete_files > 0) as should_binpack,
+                    {{ format_sum_file_size }} as partition_size_h,
+                    {{ format_avg_file_size }} as avg_file_size_h,
+                    {{ format_target_file_size }} as target_file_size_h,
+                    n_files as current_partition_num_files,
+                    ceil(sum_file_size / target_file_size) as estimated_partition_num_files,
+                    sum(n_files) over(partition by partition_age) as current_num_files_per_age,
+                    sum(ceil(sum_file_size / target_file_size)) over(partition by partition_age) as estimated_num_files_per_age
                 from
                     agg_data_files
                 {% if partition_filter_stmt  %}
@@ -661,7 +659,6 @@ class DataFilesSummary:
                     {{ order_by }}
                 {% endif %}
             )
-            {% endif %}
 
             select * from final
         """)
@@ -670,13 +667,8 @@ class DataFilesSummary:
         base_column_name_stmt = self.spec.get_base_partition().partition_field_alias if self.spec.is_partitioned else ""
         partition_time_alias_stmt = self.spec.make_partition_time_alias_stmt()
 
-        order_by = ""
-        if not estimate_optimization_results:
-            order_by = self.spec.make_order_stmt()
-
         # Render the SQL query with all required variables
         return sql_template.render(
-            estimate_optimization_results=estimate_optimization_results,
             is_partitioned=self.spec.is_partitioned,
             partition_time_alias_stmt=partition_time_alias_stmt,
             spec_id=self.spec_id,
@@ -691,7 +683,7 @@ class DataFilesSummary:
             base_column_name_stmt=base_column_name_stmt,
             binpack_min_input_files=self.mnt_props.binpack_min_input_files,
             partition_filter_stmt=partition_filter_stmt,
-            order_by=order_by,
+            order_by=self.spec.make_order_stmt(),
             format_sum_file_size=self._format_bytes_stmt("sum_file_size"),
             format_avg_file_size=self._format_bytes_stmt("avg_file_size"),
             format_target_file_size=self._format_bytes_stmt("target_file_size"),

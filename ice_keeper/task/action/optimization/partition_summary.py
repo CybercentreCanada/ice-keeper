@@ -17,11 +17,11 @@ class PartitionSummary:
     which partitions need optimization. It uses cached views for staged evaluation.
     """
 
-    def __init__(self, mnt_props: MaintenanceScheduleEntry, spec_id: int, windening_rule: None | WideningRule = None) -> None:
+    def __init__(self, mnt_props: MaintenanceScheduleEntry, spec_id: int, widening_rule: None | WideningRule = None) -> None:
         """Initializes the PartitionSummary object."""
         self.mnt_props = mnt_props
         self.spec = mnt_props.partition_specs[spec_id]
-        self.datafiles_summary = DataFilesSummary(self.mnt_props, self.spec, spec_id, windening_rule)
+        self.datafiles_summary = DataFilesSummary(self.mnt_props, self.spec, spec_id, widening_rule)
 
         # Create meaningful names for cached Spark views for easier identification in the Spark UI
         view_name_base = f"{self.mnt_props.catalog}_{self.mnt_props.schema}_{self.mnt_props.table_name}"
