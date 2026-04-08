@@ -411,17 +411,10 @@ class DataFilesSummary:
         readiness of partitions in a table. The query includes metrics such as correlation
         factors, the number of files to optimize, and flags to determine optimization needs.
 
-        Args:
-            estimate_optimization_results (bool, optional): If True, generates an estimate
-                of optimization results instead of the final decision. Defaults to False.
-
         Returns:
             str: The generated SQL query for analyzing partition health and optimization readiness.
 
         Notes:
-            - The query uses multiple Common Table Expressions (CTEs) to structure the analysis.
-            - The `final_decision` CTE is used for the final optimization decision, while
-              `final_estimate` is used for estimating optimization results.
             - The target file size is dynamically calculated based on partition size thresholds
               if not explicitly set.
             - The method relies on several helper methods to generate specific SQL fragments,
