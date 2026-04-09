@@ -157,6 +157,7 @@ class OptimizationStrategy(ActionStrategy):
                     spec,
                 )
                 partition_summary = PartitionSummary(self.mnt_props, spec_id, self.get_widening_rule(spec_id))
+                partition_summary.show()
                 diagnosis = PartitionDiagnosis(self.mnt_props, spec_id)
                 diagnosis.find_partitions_to_optimize(partition_summary)
             except Exception:
