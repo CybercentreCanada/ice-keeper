@@ -311,7 +311,19 @@ def reset(force: bool, schedule: bool, journal: bool, health: bool, all_tables: 
         "characteristics."
     ),
 )
-def diagnose(  # noqa: C901
+@click.option(
+    "--binpack_min_input_files",
+    type=int,
+    default=None,
+    help=("Optional min input files to consider a binpack."),
+)
+@click.option(
+    "--sort_corr_threshold",
+    type=float,
+    default=None,
+    help=("Optional corr factor threshold to use when considering a sort."),
+)
+def diagnose(  # noqa: C901, PLR0912
     full_name: str,
     min_age_to_diagnose: int | None,
     max_age_to_diagnose: int | None,
@@ -321,6 +333,8 @@ def diagnose(  # noqa: C901
     target_file_size_bytes: int | None,
     optimize_partition_depth: int | None,
     optimization_grouping_size_bytes: int | None,
+    binpack_min_input_files: int | None,
+    sort_corr_threshold: float | None,
 ) -> int:
     """Diagnose table health by analyzing its partitions.
 
@@ -349,6 +363,10 @@ def diagnose(  # noqa: C901
         record = entry.record
         # Make a copy of the record before mutating
         record_copy = record.model_copy()
+        if binpack_min_input_files is not None:
+            record_copy.binpack_min_input_files = binpack_min_input_files
+        if sort_corr_threshold is not None:
+            record_copy.sort_corr_threshold = sort_corr_threshold
         if optimization_strategy:
             record_copy.optimization_strategy = optimization_strategy
         if target_file_size_bytes is not None:
