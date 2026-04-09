@@ -130,7 +130,7 @@ class OptimizationStrategy(ActionStrategy):
 
             try:
                 # Diagnose the partitions for optimization opportunities
-                diagnosis = PartitionDiagnosis(self.mnt_props, spec_id)
+                diagnosis = PartitionDiagnosis(self.mnt_props, spec_id, self.get_widening_rule(spec_id))
 
                 partitions_to_optimize = diagnosis.find_partitions_to_optimize(summary)
                 if len(partitions_to_optimize) > 0:
