@@ -319,7 +319,7 @@ def reset(force: bool, schedule: bool, journal: bool, health: bool, all_tables: 
 )
 @click.option(
     "--sort_corr_threshold",
-    type=int,
+    type=float,
     default=None,
     help=("Optional corr factor threshold to use when considering a sort."),
 )
