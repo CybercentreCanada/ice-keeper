@@ -405,6 +405,12 @@ def test_diagnose_cli(executor: TaskExecutor) -> None:
             "id ASC",
             "--target_file_size_bytes",
             "-1",
+            "--binpack_min_input_files",
+            "0",
+            "--sort_corr_threshold",
+            "2",
+            "--optimize_partition_depth",
+            "6",
         ],
     )
 

@@ -150,6 +150,7 @@ class OptimizationStrategy(ActionStrategy):
         unique_spec_ids = self._find_specs_to_optimize()
         for spec_id in unique_spec_ids:
             spec = self.mnt_props.partition_specs[spec_id]
+            partition_summary: PartitionSummary | None = None
             try:
                 logger.debug(
                     "START Diagnosing spec_id: %s -> %s",
