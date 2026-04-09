@@ -392,43 +392,6 @@ def test_widening_invalid_column_in_filtering_expr(executor: TaskExecutor) -> No
 
 
 @pytest.mark.integration
-def test_widening_rejected_with_dynamic_grouping(executor: TaskExecutor) -> None:
-    """Widening is not compatible with dynamic grouping (depth=-1)."""
-    create_widening_table(
-        executor,
-        {
-            IceKeeperTblProperty.OPTIMIZE_PARTITION_DEPTH: "-1",
-            IceKeeperTblProperty.WIDENING_RULE_SELECT_CRITERIA: "partition._lag in ('leading', 'lagging')",
-            IceKeeperTblProperty.WIDENING_RULE_REQUIRED_PARTITION_COLUMNS: "partition._lag",
-            IceKeeperTblProperty.WIDENING_RULE_SRC_PARTITION: "partition.ts_day",
-            IceKeeperTblProperty.WIDENING_RULE_DST_PARTITION: "partition.ts_month",
-            IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
-            IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",
-            IceKeeperTblProperty.WIDENING_RULE_MIN_PARTITION_TO_WIDEN: "0d",
-            IceKeeperTblProperty.WIDENING_RULE_MAX_PARTITION_TO_WIDEN: "3000d",
-        },
-    )
-    # Add _lag partition
-    STL.sql(f"alter table {TEST_FULL_NAME} add partition field _lag")
-
-    # Remove existing specs and add month(ts) + _lag
-    STL.sql(f"alter table {TEST_FULL_NAME} drop partition field _lag")
-    STL.sql(f"alter table {TEST_FULL_NAME} drop partition field days(ts)")
-    STL.sql(f"alter table {TEST_FULL_NAME} add partition field month(ts)")
-    STL.sql(f"alter table {TEST_FULL_NAME} add partition field _lag")
-
-    event_time = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
-    for _ in range(10):
-        insert_rows_with_null_lag(event_time)
-
-    rows = optimize(executor)
-    assert len(rows) == ONE_EXPECTED, "Should have one log entry"
-    assert rows[0].status == Status.FAILED.value
-    assert "Dynamic grouping" in rows[0].status_details
-    assert "not compatible with widening rules" in rows[0].status_details
-
-
-@pytest.mark.integration
 def test_widening_bad_filtering_expr(executor: TaskExecutor) -> None:
     create_widening_table(
         executor,
@@ -569,13 +532,14 @@ def test_widening_no_data_in_src_partition(executor: TaskExecutor) -> None:  # n
 
 
 @pytest.mark.integration
-def test_widening_success(executor: TaskExecutor) -> None:
+@pytest.mark.parametrize("optimize_partition_depth", ["2", "-1"], ids=["fixed-depth", "dynamic-grouping"])
+def test_widening_success(executor: TaskExecutor, optimize_partition_depth: str) -> None:
     create_widening_table(
         executor,
         {
             IceKeeperTblProperty.SHOULD_OPTIMIZE: "true",
             IceKeeperTblProperty.OPTIMIZATION_STRATEGY: "id asc",
-            IceKeeperTblProperty.OPTIMIZE_PARTITION_DEPTH: "2",
+            IceKeeperTblProperty.OPTIMIZE_PARTITION_DEPTH: optimize_partition_depth,
             IceKeeperTblProperty.WRITE_TARGET_FILE_SIZE_BYTES: "500000",  # write small files
             IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
             IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",

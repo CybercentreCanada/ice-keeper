@@ -5,6 +5,7 @@ from jinja2 import Template
 from ice_keeper.spec.partition_diagnosis_result import PartitionDiagnosisResult
 from ice_keeper.stm import STL
 from ice_keeper.table import MaintenanceScheduleEntry
+from ice_keeper.task.action.optimization.optimization import WideningRule
 
 from .partition_summary import PartitionSummary, rows_log_debug
 
@@ -20,7 +21,7 @@ class PartitionDiagnosis:
     in the maintenance properties.
     """
 
-    def __init__(self, mnt_props: MaintenanceScheduleEntry, spec_id: int) -> None:
+    def __init__(self, mnt_props: MaintenanceScheduleEntry, spec_id: int, widening_rule: None | WideningRule = None) -> None:
         """Initialize a `PartitionDiagnosis` instance.
 
         Args:
@@ -28,11 +29,16 @@ class PartitionDiagnosis:
                 details about the table and its optimization configuration.
             spec_id (int): The identifier of the partition specification used for
                 partition diagnostics.
+            widening_rule (WideningRule | None): An optional rule that determines how partitions should be widened during optimization.
         """
         self.mnt_props = mnt_props
         self.spec = mnt_props.partition_specs[spec_id]
+        self.widening_rule = widening_rule
 
     def _find_partitions_to_optimize_dynamic_grouping(self, summary: PartitionSummary) -> list[PartitionDiagnosisResult]:
+        # Assume tables will not have more than 100 sub-partition levels
+        # Effectively we will find the max number of sub-levels.
+        list_of_all_partition_alias_stmt = self.spec.make_diagnosis_grouping_stmt(100)
         # Construct SQL query to retrieve partitions that satisfy the optimization criteria
         sql_template = Template("""
                 -- Identifying partitions to optimize for table {{ full_name }}
@@ -112,7 +118,7 @@ class PartitionDiagnosis:
         sql = sql_template.render(
             is_partitioned=self.spec.is_partitioned,
             is_binpack=self.mnt_props.optimization_spec.is_binpack(),
-            list_of_all_partition_alias_stmt=self.spec.make_diagnosis_grouping_stmt(100),
+            list_of_all_partition_alias_stmt=list_of_all_partition_alias_stmt,
             summary_before_view_name=summary.summary_before_view_name,
             full_name=self.mnt_props.full_name,
             optimization_grouping_size_threshold=self.mnt_props.optimization_grouping_size_bytes,
@@ -123,6 +129,18 @@ class PartitionDiagnosis:
         return [PartitionDiagnosisResult.from_row(row) for row in rows]
 
     def _find_partitions_to_optimize_fixed_depth(self, summary: PartitionSummary) -> list[PartitionDiagnosisResult]:
+        # Use depth specified by user.
+        if not self.spec.is_partitioned:
+            depth_grouping_stmt = ""
+        elif self.mnt_props.optimize_partition_depth > 0:
+            depth_grouping_stmt = self.spec.make_diagnosis_grouping_stmt(self.mnt_props.optimize_partition_depth)
+        elif self.mnt_props.optimize_partition_depth == -1:
+            # User configured to use dynamic grouping, but because of widening rule on this partition specification
+            # we are forced to use a fix dpeth that includes all the sub-partition levels.
+            # Assume tables will not have more than 100 sub-partition levels
+            # Effectively we will find the max number of sub-levels.
+            depth_grouping_stmt = self.spec.make_diagnosis_grouping_stmt(100)
+
         # Generate the grouping statement based on the partition structure
         # The optimize_partition_depth determines if sub-partition are used.
         # For example if depth is set to 2, then we will return rows for id_bucket as well
@@ -157,9 +175,7 @@ class PartitionDiagnosis:
         sql = sql_template.render(
             is_partitioned=self.spec.is_partitioned,
             is_binpack=self.mnt_props.optimization_spec.is_binpack(),
-            depth_grouping_stmt=self.spec.make_diagnosis_grouping_stmt(self.mnt_props.optimize_partition_depth)
-            if self.spec.is_partitioned
-            else "",
+            depth_grouping_stmt=depth_grouping_stmt,
             summary_before_view_name=summary.summary_before_view_name,
             full_name=self.mnt_props.full_name,
         )
@@ -227,7 +243,12 @@ class PartitionDiagnosis:
             list[PartitionDiagnosisResult]: A list of PartitionDiagnosisResult, each containing partition information for
                        the partitions marked for optimization.
         """
-        if not self.spec.is_partitioned or self.mnt_props.optimize_partition_depth != -1:
-            return self._find_partitions_to_optimize_fixed_depth(summary)
+        use_dynamic_grouping = self.mnt_props.optimize_partition_depth == -1
+        if not self.spec.is_partitioned:
+            use_dynamic_grouping = False
+        if self.widening_rule:
+            use_dynamic_grouping = False
 
-        return self._find_partitions_to_optimize_dynamic_grouping(summary)
+        if use_dynamic_grouping:
+            return self._find_partitions_to_optimize_dynamic_grouping(summary)
+        return self._find_partitions_to_optimize_fixed_depth(summary)
