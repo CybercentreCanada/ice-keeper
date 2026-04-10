@@ -2,10 +2,9 @@ import logging
 
 from jinja2 import Template
 
-from ice_keeper.spec.partition_diagnosis_result import PartitionDiagnosisResult
+from ice_keeper.spec import PartitionDiagnosisResult, WideningRule
 from ice_keeper.stm import STL
 from ice_keeper.table import MaintenanceScheduleEntry
-from ice_keeper.task.action.optimization.optimization import WideningRule
 
 from .partition_summary import PartitionSummary, rows_log_debug
 
@@ -38,8 +37,35 @@ class PartitionDiagnosis:
     def _find_partitions_to_optimize_dynamic_grouping(
         self, summary: PartitionSummary, diagnostic_depth: int
     ) -> list[PartitionDiagnosisResult]:
-        # Construct SQL query to retrieve partitions that satisfy the optimization criteria.
-        # Aggregate the data file summary into the most granular partitions. Then group together these partitions into groups that are below the optimization_grouping_size_threshold.
+        """Find partitions to optimize using dynamic grouping based on cumulative size.
+
+        Instead of producing one result row per partition (as fixed-depth does),
+        this method packs multiple partitions into size-bounded groups. It computes
+        a running cumulative size over partitions (ordered by age, then descending
+        size) and assigns a group label each time the cumulative total crosses the
+        ``optimization_grouping_size_bytes`` threshold. Each group becomes a single
+        rewrite_data_files call whose WHERE clause OR's together all the partitions
+        in that group.
+
+        The query pipeline is:
+        1. **summary** – Selects the most granular sub-partitions from the summary
+           view at ``diagnostic_depth``.
+        2. **running_partition_size** – Filters to partitions needing optimization
+           (binpack or sort) and computes a running cumulative size within each
+           (partition_age, target_file_size) window.
+        3. **labeled_partition_groupings** – Assigns a bucket label by dividing the
+           cumulative size by the grouping threshold.
+        4. **final** – Aggregates partition column values into a
+           ``partition_filters`` array per group.
+
+        Args:
+            summary: The partition summary containing the data files metrics view.
+            diagnostic_depth: Number of partition levels to include in the grouping.
+
+        Returns:
+            A list of diagnosis results, each representing a dynamically grouped
+            set of partitions to optimize together.
+        """
         sql_template = Template("""
                 -- Identifying partitions to optimize for table {{ full_name }}
                 with summary as (
@@ -131,11 +157,29 @@ class PartitionDiagnosis:
     def _find_partitions_to_optimize_fixed_depth(
         self, summary: PartitionSummary, diagnostic_depth: int
     ) -> list[PartitionDiagnosisResult]:
-        # Generate the grouping statement based on the partition structure
-        # The optimize_partition_depth determines if sub-partition are used.
-        # For example if depth is set to 2, then we will return rows for id_bucket as well
-        # Not just for ts_day.
-        # Construct SQL query to retrieve partitions that satisfy the optimization criteria
+        """Find partitions to optimize using a fixed partition depth for grouping.
+
+        Produces one result row per distinct combination of partition columns up
+        to ``diagnostic_depth``. Each row becomes a single rewrite_data_files call.
+
+        For example, with partitions [ts_day, id_bucket]:
+        - depth=1 groups by ts_day only → one row per day (coarser, fewer calls).
+        - depth=2 groups by ts_day and id_bucket → one row per (day, bucket).
+
+        For partitioned tables, the result includes a ``partition_filters`` column
+        containing an array of structs with the partition column values. For
+        unpartitioned tables, only ``partition_age`` and ``target_file_size`` are
+        returned.
+
+        Args:
+            summary: The partition summary containing the data files metrics view.
+            diagnostic_depth: Number of partition levels to include in the SQL
+                GROUP BY clause.
+
+        Returns:
+            A list of diagnosis results, one per partition group, ordered by
+            ascending partition age.
+        """
         sql_template = Template("""
                 -- Identifying partitions to optimize for table {{ full_name }}
                 select
@@ -176,62 +220,36 @@ class PartitionDiagnosis:
         return [PartitionDiagnosisResult.from_row(row) for row in rows]
 
     def find_partitions_to_optimize(self, summary: PartitionSummary) -> list[PartitionDiagnosisResult]:
-        """Find partitions that need optimization based on the optimization criteria.
+        """Find partitions that need optimization based on the summary metrics.
 
-        The method determines which partitions require binpacking or sorting by evaluating
-        the `PartitionSummary`. The decision is based on the `should_binpack` or
-        `should_sort` flags from the summary view, depending on the optimization
-        configuration in `mnt_props.optimization_spec`.
+        Entry point that delegates to either the fixed-depth or dynamic-grouping
+        query depending on the diagnostic mode resolved by
+        ``_determine_diagnostic_depth_and_mode``.
 
-        A suitable SQL query is generated to retrieve the partition information:
-        - For binpacking, partitions flagged with `should_binpack = true` are selected.
-        - For sorting, partitions flagged with `should_sort = true` are selected.
+        The summary view is expected to contain per-partition rows with
+        ``should_binpack`` / ``should_sort`` flags. This method selects
+        partitions where the relevant flag is ``true`` (binpack or sort,
+        depending on ``mnt_props.optimization_spec``).
 
-        The query groups partitions based on the `grouping_stmt` and sorts them by
-        their age in ascending order to prioritize older partitions for optimization.
+        Each returned ``PartitionDiagnosisResult`` contains:
+        - ``partition_age`` and ``target_file_size`` — grouping keys.
+        - ``partition_filters`` — an array of partition column structs
+          identifying which partitions to rewrite (empty list for
+          unpartitioned tables).
+        - ``dynamic_optimization_grouping_label`` — present only in dynamic
+          mode, used to label size-bounded groups.
 
-        Unpartitioned tables and tables with a fixed depth always use the fixed-depth
-        query. Dynamic grouping (depth=-1) is used only for partitioned tables.
-
-        The summary (input) will look like this:
-        ┏━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
-        ┃ spec_id ┃ partition_time ┃ ts_day     ┃ id_bucket ┃ partition_age ┃ partition_desc                        ┃ n_files ┃ num_files_targetted_for_rewrite ┃ n_records ┃ target_file_size ┃ avg_file_size ┃ min_file_size ┃ max_file_size ┃ sum_file_size ┃ num_files_to_widen ┃ corr ┃ corr_threshold ┃ n_delete_files ┃ n_delete_records ┃ should_sort ┃ should_binpack ┃
-        ┡━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━╇━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
-        │ 0       │ 2025-03-03     │ 2025-03-03 │ 2         │ 1             │ {"ts_day":"2025-03-03","id_bucket":2} │ 8       │ 8                               │ 26801     │ 536870912        │ 86378.125     │ 85472         │ 87719         │ 691025        │ 0                  │ 1.0  │ 1.00           │ 0              │ 0                │ False       │ True           │
-        │ 0       │ 2025-03-03     │ 2025-03-03 │ 1         │ 1             │ {"ts_day":"2025-03-03","id_bucket":1} │ 8       │ 8                               │ 26305     │ 536870912        │ 84802.25      │ 83224         │ 86171         │ 678418        │ 0                  │ 1.0  │ 1.00           │ 0              │ 0                │ False       │ True           │
-        │ 0       │ 2025-03-03     │ 2025-03-03 │ 0         │ 1             │ {"ts_day":"2025-03-03","id_bucket":0} │ 8       │ 8                               │ 26886     │ 536870912        │ 86628.75      │ 83885         │ 88055         │ 693030        │ 0                  │ 1.0  │ 1.00           │ 0              │ 0                │ False       │ True           │
-        └─────────┴────────────────┴────────────┴───────────┴───────────────┴───────────────────────────────────────┴─────────┴─────────────────────────────────┴───────────┴──────────────────┴───────────────┴───────────────┴───────────────┴───────────────┴────────────────────┴──────┴────────────────┴────────────────┴──────────────────┴─────────────┴────────────────┘
-
-        The function returns rows like this (fixed depth=1, groups by ts_day only):
-        ┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━┓
-        ┃ partition_age ┃ target_file_size ┃ partition_filters     ┃
-        ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━┩
-        │ 1             │ 536870912        │ [{ts_day:2025-03-03}] │
-        └───────────────┴──────────────────┴───────────────────────┘
-
-        If the depth is set to two, then it will output (fixed depth=2):
-        ┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-        ┃ partition_age ┃ target_file_size ┃ partition_filters                   ┃
-        ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-        │ 1             │ 536870912        │ [{ts_day:2025-03-03, id_bucket: 2}] │
-        │ 1             │ 536870912        │ [{ts_day:2025-03-03, id_bucket: 1}] │
-        │ 1             │ 536870912        │ [{ts_day:2025-03-03, id_bucket: 0}] │
-        └───────────────┴──────────────────┴─────────────────────────────────────┘
-
-        For unpartitioned tables, partition_filters is absent (defaults to []):
-        ┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┓
-        ┃ partition_age ┃ target_file_size ┃
-        ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━┩
-        │ 0             │ 536870912        │
-        └───────────────┴──────────────────┘
+        See ``_find_partitions_to_optimize_fixed_depth`` and
+        ``_find_partitions_to_optimize_dynamic_grouping`` for details on
+        each strategy.
 
         Args:
-            summary (PartitionSummary): An instance that contains summary data about
-                the partitions, including metrics to evaluate optimization criteria.
+            summary: The partition summary containing data file metrics and
+                the ``should_binpack`` / ``should_sort`` flags per partition.
 
         Returns:
-            list[PartitionDiagnosisResult]: A list of PartitionDiagnosisResult, each containing partition information for
-                       the partitions marked for optimization.
+            A list of diagnosis results for partitions marked for optimization,
+            ordered by ascending partition age.
         """
         use_dynamic_grouping, diagnostic_depth = self._determine_diagnostic_depth_and_mode()
 
@@ -240,10 +258,31 @@ class PartitionDiagnosis:
         return self._find_partitions_to_optimize_fixed_depth(summary, diagnostic_depth)
 
     def _determine_diagnostic_depth_and_mode(self) -> tuple[bool, int]:
-        """This function determines the diagnostic mode (fixed or dynamic) and the depth (num sub-partition levels) at which to aggregate the data files summary.
+        """Determine the diagnostic mode (fixed or dynamic) and the partition depth for aggregating the data files summary.
 
-        A fixed mode means returning one partition per result row, these result rows are then converted into rewrite_data_files procedures. Dynamic means
-        partitions are packed together into a list and are then converted into the rewrite_data_files where clause, each of them OR together.
+        The depth controls how many partition levels are used in the SQL GROUP BY
+        when diagnosing partitions. For example, with partitions [ts_day, id_bucket]:
+        - depth=1 groups by ts_day only (coarser, fewer result rows)
+        - depth=2 groups by ts_day and id_bucket (finer, more result rows)
+        - depth=0 means no partition grouping (unpartitioned tables)
+
+        The mode determines how result rows map to rewrite_data_files procedures:
+        - Fixed mode: each result row becomes one rewrite_data_files call.
+        - Dynamic mode: partitions are packed into a list per result row and
+          OR'd together in the rewrite_data_files WHERE clause, grouped by a
+          cumulative size threshold (optimization_grouping_size_bytes).
+
+        Resolution logic:
+        - If ``optimize_partition_depth`` is -1 and no widening rule applies,
+          dynamic grouping is used at the maximum partition depth.
+        - If ``optimize_partition_depth`` is -1 but a widening rule is present,
+          fixed mode is used at the maximum depth (dynamic grouping is
+          incompatible with widening rules).
+        - Otherwise, fixed mode is used at ``min(optimize_partition_depth, max_depth)``.
+        - Unpartitioned tables always use fixed mode with depth=0.
+
+        Returns:
+            tuple[bool, int]: A tuple of (use_dynamic_grouping, diagnostic_depth).
         """
         max_possible_depth = len(self.spec.partition_list)
         # Ensure the depth does not exceed the maximum partition depth
