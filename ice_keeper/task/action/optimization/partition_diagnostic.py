@@ -35,11 +35,11 @@ class PartitionDiagnosis:
         self.spec = mnt_props.partition_specs[spec_id]
         self.widening_rule = widening_rule
 
-    def _find_partitions_to_optimize_dynamic_grouping(self, summary: PartitionSummary) -> list[PartitionDiagnosisResult]:
-        # Assume tables will not have more than 100 sub-partition levels
-        # Effectively we will find the max number of sub-levels.
-        list_of_all_partition_alias_stmt = self.spec.make_diagnosis_grouping_stmt(100)
-        # Construct SQL query to retrieve partitions that satisfy the optimization criteria
+    def _find_partitions_to_optimize_dynamic_grouping(
+        self, summary: PartitionSummary, diagnostic_depth: int
+    ) -> list[PartitionDiagnosisResult]:
+        # Construct SQL query to retrieve partitions that satisfy the optimization criteria.
+        # Aggregate the data file summary into the most granular partitions. Then group together these partitions into groups that are below the optimization_grouping_size_threshold.
         sql_template = Template("""
                 -- Identifying partitions to optimize for table {{ full_name }}
                 with summary as (
@@ -118,29 +118,19 @@ class PartitionDiagnosis:
         sql = sql_template.render(
             is_partitioned=self.spec.is_partitioned,
             is_binpack=self.mnt_props.optimization_spec.is_binpack(),
-            list_of_all_partition_alias_stmt=list_of_all_partition_alias_stmt,
+            list_of_all_partition_alias_stmt=self.spec.make_diagnosis_grouping_stmt(diagnostic_depth),
             summary_before_view_name=summary.summary_before_view_name,
             full_name=self.mnt_props.full_name,
             optimization_grouping_size_threshold=self.mnt_props.optimization_grouping_size_bytes,
         )
 
-        rows = STL.sql_and_log(sql, "Find partitions to optimize").collect()
-        rows_log_debug(rows, f"Partitions to optimize in {self.mnt_props.full_name}")
+        rows = STL.sql_and_log(sql, "Find partitions to optimize using dyanmic grouping").collect()
+        rows_log_debug(rows, f"Partitions to optimize in using dynamic grouping {self.mnt_props.full_name}")
         return [PartitionDiagnosisResult.from_row(row) for row in rows]
 
-    def _find_partitions_to_optimize_fixed_depth(self, summary: PartitionSummary) -> list[PartitionDiagnosisResult]:
-        # Use depth specified by user.
-        if not self.spec.is_partitioned:
-            depth_grouping_stmt = ""
-        elif self.mnt_props.optimize_partition_depth > 0:
-            depth_grouping_stmt = self.spec.make_diagnosis_grouping_stmt(self.mnt_props.optimize_partition_depth)
-        elif self.mnt_props.optimize_partition_depth == -1:
-            # User configured to use dynamic grouping, but because of widening rule on this partition specification
-            # we are forced to use a fix dpeth that includes all the sub-partition levels.
-            # Assume tables will not have more than 100 sub-partition levels
-            # Effectively we will find the max number of sub-levels.
-            depth_grouping_stmt = self.spec.make_diagnosis_grouping_stmt(100)
-
+    def _find_partitions_to_optimize_fixed_depth(
+        self, summary: PartitionSummary, diagnostic_depth: int
+    ) -> list[PartitionDiagnosisResult]:
         # Generate the grouping statement based on the partition structure
         # The optimize_partition_depth determines if sub-partition are used.
         # For example if depth is set to 2, then we will return rows for id_bucket as well
@@ -175,7 +165,7 @@ class PartitionDiagnosis:
         sql = sql_template.render(
             is_partitioned=self.spec.is_partitioned,
             is_binpack=self.mnt_props.optimization_spec.is_binpack(),
-            depth_grouping_stmt=depth_grouping_stmt,
+            depth_grouping_stmt=self.spec.make_diagnosis_grouping_stmt(diagnostic_depth),
             summary_before_view_name=summary.summary_before_view_name,
             full_name=self.mnt_props.full_name,
         )
@@ -243,12 +233,38 @@ class PartitionDiagnosis:
             list[PartitionDiagnosisResult]: A list of PartitionDiagnosisResult, each containing partition information for
                        the partitions marked for optimization.
         """
-        use_dynamic_grouping = self.mnt_props.optimize_partition_depth == -1
-        if not self.spec.is_partitioned:
-            use_dynamic_grouping = False
-        if self.widening_rule:
-            use_dynamic_grouping = False
+        use_dynamic_grouping, diagnostic_depth = self._determine_diagnostic_depth_and_mode()
 
         if use_dynamic_grouping:
-            return self._find_partitions_to_optimize_dynamic_grouping(summary)
-        return self._find_partitions_to_optimize_fixed_depth(summary)
+            return self._find_partitions_to_optimize_dynamic_grouping(summary, diagnostic_depth)
+        return self._find_partitions_to_optimize_fixed_depth(summary, diagnostic_depth)
+
+    def _determine_diagnostic_depth_and_mode(self) -> tuple[bool, int]:
+        """This function determines the diagnostic mode (fixed or dynamic) and the depth (num sub-partition levels) at which to aggregate the data files summary.
+
+        A fixed mode means returning one partition per result row, these result rows are then converted into rewrite_data_files procedures. Dynamic means
+        partitions are packed together into a list and are then converted into the rewrite_data_files where clause, each of them OR together.
+        """
+        max_possible_depth = len(self.spec.partition_list)
+        # Ensure the depth does not exceed the maximum partition depth
+        # Use user's depth unless it's -1 (dynamic grouping)
+        user_requested_depth = self.mnt_props.optimize_partition_depth
+        if self.mnt_props.optimize_partition_depth == -1:
+            user_requested_depth = max_possible_depth
+        else:
+            user_requested_depth = min(user_requested_depth, max_possible_depth)
+
+        # Default behaviour is to use the users depth in fixed mode.
+        use_dynamic_grouping = False
+        diagnostic_depth = user_requested_depth
+        if not self.spec.is_partitioned:
+            # Unless the table is not partitioned at all, then depth should be zero. No aggregation of data files summary.
+            diagnostic_depth = 0
+        elif self.mnt_props.optimize_partition_depth == -1 and not self.widening_rule:
+            # If the user requested dynamic grouping and the partition we are diagnosing does not have a widening rule
+            # then we can use dynamic grouping. Dynamic grouping is incompatible with widening rules.
+            # If that is the case, diagnose at the most refined granularity and aggregate list of partitions (dynamic grouping)
+            use_dynamic_grouping = True
+
+        logger.debug("Diagnostic use dynamic grouping %b, group-by determined (depth=%s)", use_dynamic_grouping, diagnostic_depth)
+        return (use_dynamic_grouping, diagnostic_depth)
