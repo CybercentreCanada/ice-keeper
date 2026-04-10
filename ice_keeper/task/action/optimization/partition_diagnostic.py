@@ -48,14 +48,14 @@ class PartitionDiagnosis:
         in that group.
 
         The query pipeline is:
-        1. **summary** – Selects the most granular sub-partitions from the summary
+        1. **summary** Selects the most granular sub-partitions from the summary
            view at ``diagnostic_depth``.
-        2. **running_partition_size** – Filters to partitions needing optimization
+        2. **running_partition_size** Filters to partitions needing optimization
            (binpack or sort) and computes a running cumulative size within each
            (partition_age, target_file_size) window.
-        3. **labeled_partition_groupings** – Assigns a bucket label by dividing the
+        3. **labeled_partition_groupings** Assigns a bucket label by dividing the
            cumulative size by the grouping threshold.
-        4. **final** – Aggregates partition column values into a
+        4. **final** Aggregates partition column values into a
            ``partition_filters`` array per group.
 
         Args:
