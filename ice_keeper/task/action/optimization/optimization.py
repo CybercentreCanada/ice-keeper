@@ -124,13 +124,14 @@ class OptimizationStrategy(ActionStrategy):
         for spec_id in unique_spec_ids:
             logger.debug("START Optimizing spec_id: %s -> %s", spec_id, self.mnt_props.partition_specs[spec_id])
             did_some_optimizations = False
+            widening_rule = self.get_widening_rule(spec_id)
             # Collect partition summary for the spec_id
-            summary = PartitionSummary(self.mnt_props, spec_id, self.get_widening_rule(spec_id))
+            summary = PartitionSummary(self.mnt_props, spec_id, widening_rule)
             summary.show(100)
 
             try:
                 # Diagnose the partitions for optimization opportunities
-                diagnosis = PartitionDiagnosis(self.mnt_props, spec_id)
+                diagnosis = PartitionDiagnosis(self.mnt_props, spec_id, widening_rule)
 
                 partitions_to_optimize = diagnosis.find_partitions_to_optimize(summary)
                 if len(partitions_to_optimize) > 0:
@@ -157,9 +158,10 @@ class OptimizationStrategy(ActionStrategy):
                     spec_id,
                     spec,
                 )
-                partition_summary = PartitionSummary(self.mnt_props, spec_id, self.get_widening_rule(spec_id))
+                widening_rule = self.get_widening_rule(spec_id)
+                partition_summary = PartitionSummary(self.mnt_props, spec_id, widening_rule)
                 partition_summary.show()
-                diagnosis = PartitionDiagnosis(self.mnt_props, spec_id)
+                diagnosis = PartitionDiagnosis(self.mnt_props, spec_id, widening_rule)
                 diagnosis.find_partitions_to_optimize(partition_summary)
             except Exception:
                 logger.exception("Failed diagnosing spec_id: %s -> %s", spec_id, spec)
