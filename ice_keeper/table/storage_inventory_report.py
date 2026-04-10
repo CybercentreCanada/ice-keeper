@@ -232,6 +232,4 @@ class StorageInventoryReport:
                 last_modified
             from
                 empty_folders
-            order by
-                file_path desc
             """
