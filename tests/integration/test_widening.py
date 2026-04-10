@@ -615,6 +615,17 @@ def test_widening_success(executor: TaskExecutor) -> None:
     event_time = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
     insert_rows(event_time, num_rows=10000)
 
+    # Verify that the monthly widening spec uses fixed-depth diagnosis, not dynamic grouping,
+    # even when optimize_partition_depth=-1.
+    mnt_props = get_updated_mnt_props()
+    os = OptimizationStrategy(mnt_props)
+    widening_spec_id = 4  # ts_month, _lag
+    widening_rule = os.get_widening_rule(widening_spec_id)
+    assert widening_rule, "The monthly partition should have a widening rule."
+    diagnosis = PartitionDiagnosis(mnt_props, widening_spec_id, widening_rule)
+    use_dynamic_grouping, _diagnostic_depth = diagnosis._determine_diagnostic_depth_and_mode()
+    assert not use_dynamic_grouping, "Widening rule is incompatible with dynamic grouping; fixed-depth must be used."
+
     rows = optimize(executor)
     # If we have an expected procedure call.
     assert len(rows) > ZERO_EXPECTED, (

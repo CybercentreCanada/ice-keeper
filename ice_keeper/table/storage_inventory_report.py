@@ -138,6 +138,10 @@ class StorageInventoryReport:
         base_path_with_scheme_sql = self.get_base_path_with_scheme_stmt()
         return f"""
             -- the remove_orphan_files procedure needs a view with 2 columns: file_path and last_modified.
+            -- Return a dataset sorted by the length of the file path in descending order to increase our
+            -- chances that sub-directories are processed before their parent directories.
+            -- This is not a guarantee since the list of files is handled by a delete thread pool,
+            -- but it should help reduce the chances of hitting "Directory not empty" errors when trying to delete folders.
             select
                 {base_path_with_scheme_sql} as file_path,
                 last_modified
@@ -146,6 +150,8 @@ class StorageInventoryReport:
                 union all
                 select file_path, last_modified from ({file_list_view_sql})
             )
+            order by
+                length(file_path) desc
             """
 
     def select_iceberg_files_from_inventory_stmt(self, older_than: date) -> str:
