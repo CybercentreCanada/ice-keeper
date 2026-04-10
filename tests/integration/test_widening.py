@@ -532,7 +532,7 @@ def test_widening_no_data_in_src_partition(executor: TaskExecutor) -> None:  # n
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("optimize_partition_depth", ["2", "-1"], ids=["fixed-depth", "dynamic-grouping"])
+@pytest.mark.parametrize("optimize_partition_depth", ["2", "-1"], ids=["fixed-depth", "dynamic-grouping-fallback-to-fixed-depth"])
 def test_widening_success(executor: TaskExecutor, optimize_partition_depth: str) -> None:
     create_widening_table(
         executor,

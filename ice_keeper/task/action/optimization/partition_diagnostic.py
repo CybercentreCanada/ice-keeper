@@ -150,7 +150,7 @@ class PartitionDiagnosis:
             optimization_grouping_size_threshold=self.mnt_props.optimization_grouping_size_bytes,
         )
 
-        rows = STL.sql_and_log(sql, "Find partitions to optimize using dyanmic grouping").collect()
+        rows = STL.sql_and_log(sql, "Find partitions to optimize using dynamic grouping").collect()
         rows_log_debug(rows, f"Partitions to optimize in using dynamic grouping {self.mnt_props.full_name}")
         return [PartitionDiagnosisResult.from_row(row) for row in rows]
 
@@ -236,8 +236,6 @@ class PartitionDiagnosis:
         - ``partition_filters`` — an array of partition column structs
           identifying which partitions to rewrite (empty list for
           unpartitioned tables).
-        - ``dynamic_optimization_grouping_label`` — present only in dynamic
-          mode, used to label size-bounded groups.
 
         See ``_find_partitions_to_optimize_fixed_depth`` and
         ``_find_partitions_to_optimize_dynamic_grouping`` for details on
@@ -305,5 +303,5 @@ class PartitionDiagnosis:
             # If that is the case, diagnose at the most refined granularity and aggregate list of partitions (dynamic grouping)
             use_dynamic_grouping = True
 
-        logger.debug("Diagnostic use dynamic grouping %b, group-by determined (depth=%s)", use_dynamic_grouping, diagnostic_depth)
+        logger.debug("Diagnostic use dynamic grouping %s, group-by determined (depth=%s)", use_dynamic_grouping, diagnostic_depth)
         return (use_dynamic_grouping, diagnostic_depth)
