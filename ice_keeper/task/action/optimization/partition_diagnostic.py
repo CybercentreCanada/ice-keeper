@@ -151,7 +151,7 @@ class PartitionDiagnosis:
         )
 
         rows = STL.sql_and_log(sql, "Find partitions to optimize using dynamic grouping").collect()
-        rows_log_debug(rows, f"Partitions to optimize in using dynamic grouping {self.mnt_props.full_name}")
+        rows_log_debug(rows, f"Partitions to optimize using dynamic grouping in {self.mnt_props.full_name}")
         return [PartitionDiagnosisResult.from_row(row) for row in rows]
 
     def _find_partitions_to_optimize_fixed_depth(
