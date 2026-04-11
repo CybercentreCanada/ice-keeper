@@ -134,7 +134,7 @@ class StorageInventoryReport:
 
     def select_files_and_empty_folders_from_inventory_stmt(self, older_than: date) -> str:
         file_list_view_sql = self.select_iceberg_files_from_inventory_stmt(older_than)
-        empty_dirs_sql = self.select_empty_folders_from_inventory_stmt(older_than)
+        empty_dirs_sql = self.select_empty_leaf_folders_from_inventory_stmt(older_than)
         base_path_with_scheme_sql = self.get_base_path_with_scheme_stmt()
         return f"""
             -- the remove_orphan_files procedure needs a view with 2 columns: file_path and last_modified.
@@ -171,7 +171,7 @@ class StorageInventoryReport:
                 and {StorageInventoryReport.ICEBERG_FILE_CRITERION}
             """
 
-    def select_empty_folders_from_inventory_stmt(self, older_than: date) -> str:
+    def select_empty_leaf_folders_from_inventory_stmt(self, older_than: date) -> str:
         full_name = Config.instance().storage_inventory_report_table_name
         if not full_name:
             msg = "Storage inventory report table name is not configured."
@@ -190,45 +190,42 @@ class StorageInventoryReport:
             ),
             all_folders as (
                 select
-                    distinct
-                    file_path,
-                    last_modified,
-                    posexplode(split(file_path, '/')) as (level, folder)
+                    file_path as folder_path,
+                    last_modified
                 from
                     all_paths
                 where
                     file_size_in_bytes = 0
                     and not {StorageInventoryReport.ICEBERG_FILE_CRITERION}
             ),
-            folders_with_data as (
+            all_paths_with_last_segment as (
                 select
                     file_path,
-                    last_modified,
-                    -- Remove the single file from array before exploding.
-                    posexplode(slice(folders_and_file_array, 1, size(folders_and_file_array) -1)) as (level, folder)
-                from (
-                    select
-                        file_path,
-                        last_modified,
-                        split(file_path, '/') as folders_and_file_array
-                    from
-                        all_paths
-                    where
-                        {StorageInventoryReport.ICEBERG_FILE_CRITERION}
-                )
+                    substring_index(file_path, '/', -1) AS last_segment
+                from
+                    all_paths
+            ),
+            parent_folders as (
+                select
+                    substring(file_path, 0, length(file_path) - length(last_segment) - 1) AS parent_folder_path
+                from
+                    all_paths_with_last_segment
+                where
+                    length(file_path) > length(last_segment)
             ),
             empty_folders as (
                 select
-                    distinct a.file_path,
-                    last_modified
+                    distinct
+                    f.folder_path,
+                    f.last_modified
                 from
-                    all_folders as a
-                    left anti join folders_with_data as d
-                    on (d.level = a.level and d.folder = a.folder)
+                    all_folders as f
+                    left anti join parent_folders as pf
+                    on (f.folder_path = pf.parent_folder_path)
             )
 
             select
-                '{self.location_file_path}/data/' || file_path as file_path,
+                '{self.location_file_path}/data/' || folder_path as file_path,
                 last_modified
             from
                 empty_folders
