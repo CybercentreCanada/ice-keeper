@@ -244,37 +244,21 @@ class PartitionSpecification:
             )
         return ", ".join(alias_stmts)
 
-    def make_diagnosis_grouping_stmt(self, optimize_partition_depth: int) -> str:
+    def make_diagnosis_grouping_stmt(self, diagnostic_depth: int) -> str:
         """Generate an SQL expression for grouping partitions for optimization.
 
-        Determines the group-by clause for optimizing partitions with a coarser
-        granularity, based on `optimize_partition_depth` property.
-
-        Example:
-            A table has 3 partitions: `hours(ts), department, action`. If the
-            `optimize_partition_depth` is set to 1, grouping occurs by `hours(ts)`.
-            This results in larger rewrite operations with fewer commits, while still
-            maintaining the desired optimization level.
+        Generate the group-by clause for diagnostic partitions.
 
         Returns:
             str: An SQL grouping statement representing the partitions' group-by keys.
         """
-        max_possible_depth = len(self.partition_list)
-
-        depth = optimize_partition_depth
-        if depth < 1:
-            msg = (
-                f"Invalid optimize_partition_depth={depth} for make_diagnosis_grouping_stmt. "
-                f"Must be a positive integer (1, 2, 3, ...)."
-            )
-            raise ValueError(msg)
-
-        # Ensure the depth does not exceed the maximum partition depth
-        depth = min(depth, max_possible_depth)
-
-        # Generate column statements for grouping based on the calculated depth
-        group_by_columns = ",".join(self.partition_list[idx].partition_field_alias for idx in range(depth))
-        logger.debug("Optimization partition group-by determined (depth=%s): %s", depth, group_by_columns)
+        group_by_columns = ""
+        if diagnostic_depth <= 0:
+            group_by_columns = ""
+        else:
+            # Generate column statements for grouping based on diagnostic_depth
+            group_by_columns = ",".join(self.partition_list[idx].partition_field_alias for idx in range(diagnostic_depth))
+        logger.debug("Diagnostic group-by using (depth=%s): %s", diagnostic_depth, group_by_columns)
         return group_by_columns
 
     @classmethod
