@@ -467,10 +467,10 @@ def test_widening_no_data_in_src_partition(executor: TaskExecutor) -> None:  # n
 
     mnt_props = get_updated_mnt_props()
 
-    os = OptimizationStrategy(mnt_props)
-    assert os.check_should_execute_action()
+    ops = OptimizationStrategy(mnt_props)
+    assert ops.check_should_execute_action()
     spec_id = 0  # ts_day
-    widening_rule = os.get_widening_rule(spec_id)
+    widening_rule = ops.get_widening_rule(spec_id)
     assert widening_rule is None
     summary = PartitionSummary(mnt_props, spec_id, widening_rule)
     diagnosis = PartitionDiagnosis(mnt_props, spec_id)
@@ -478,7 +478,7 @@ def test_widening_no_data_in_src_partition(executor: TaskExecutor) -> None:  # n
     assert len(diagnosis_results) == 0
 
     spec_id = 1  # ts_day, _lag
-    widening_rule = os.get_widening_rule(spec_id)
+    widening_rule = ops.get_widening_rule(spec_id)
     assert widening_rule is None
     summary = PartitionSummary(mnt_props, spec_id, widening_rule)
     diagnosis = PartitionDiagnosis(mnt_props, spec_id)
@@ -486,7 +486,7 @@ def test_widening_no_data_in_src_partition(executor: TaskExecutor) -> None:  # n
     assert len(diagnosis_results) == 0
 
     spec_id = 2  # unpartitioned
-    widening_rule = os.get_widening_rule(spec_id)
+    widening_rule = ops.get_widening_rule(spec_id)
     assert widening_rule is None
     summary = PartitionSummary(mnt_props, spec_id, widening_rule)
     diagnosis = PartitionDiagnosis(mnt_props, spec_id)
@@ -494,7 +494,7 @@ def test_widening_no_data_in_src_partition(executor: TaskExecutor) -> None:  # n
     assert len(diagnosis_results) == 0
 
     spec_id = 3  # ts_month
-    widening_rule = os.get_widening_rule(spec_id)
+    widening_rule = ops.get_widening_rule(spec_id)
     assert widening_rule is None
     summary = PartitionSummary(mnt_props, spec_id, widening_rule)
     diagnosis = PartitionDiagnosis(mnt_props, spec_id)
@@ -502,7 +502,7 @@ def test_widening_no_data_in_src_partition(executor: TaskExecutor) -> None:  # n
     assert len(diagnosis_results) == 0
 
     spec_id = 4  # ts_month, _lag
-    widening_rule = os.get_widening_rule(spec_id)
+    widening_rule = ops.get_widening_rule(spec_id)
     assert widening_rule, "The partition has a widening rule."
     summary = PartitionSummary(mnt_props, spec_id, widening_rule)
     diagnosis = PartitionDiagnosis(mnt_props, spec_id)

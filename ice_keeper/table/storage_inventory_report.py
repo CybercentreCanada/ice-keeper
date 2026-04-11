@@ -150,8 +150,6 @@ class StorageInventoryReport:
                 union all
                 select file_path, last_modified from ({file_list_view_sql})
             )
-            order by
-                length(file_path) desc
             """
 
     def select_iceberg_files_from_inventory_stmt(self, older_than: date) -> str:
@@ -187,6 +185,8 @@ class StorageInventoryReport:
                     {full_name}
                 where
                     {self._all_file_paths_criterion(older_than)}
+                    -- only consider paths under the data directory since iceberg doesn't create empty folders under metadata
+                    and startswith(file_path, '{self.location_file_path}/data/')
             ),
             all_folders as (
                 select
@@ -207,7 +207,7 @@ class StorageInventoryReport:
             ),
             parent_folders as (
                 select
-                    substring(file_path, 0, length(file_path) - length(last_segment) - 1) AS parent_folder_path
+                    substring(file_path, 1, length(file_path) - length(last_segment) - 1) AS parent_folder_path
                 from
                     all_paths_with_last_segment
                 where
