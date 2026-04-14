@@ -34,7 +34,7 @@ native-tls = true
 [dependency-groups]
 dev = [
   "ruff==0.14.0",
-  "pytest>=8.3.4,<9.0.0",
+  "pytest>=9.0.3,<10.0.0",
   "mypy==1.15.0",
   "pytest-env>=1.1.5,<2.0.0",
   "pyspark>=3.5.0,<4.0.0",
