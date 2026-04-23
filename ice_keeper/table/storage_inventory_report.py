@@ -161,9 +161,8 @@ class StorageInventoryReport:
                     endswith(file_path, '.parquet')
                     or endswith(file_path, '.avro')
                     or endswith(file_path, '.json')
-                    or endswith(file_path, 'version-hint.text'
+                    or endswith(file_path, 'version-hint.text')
                 )
-            )
             """
 
     def select_empty_leaf_folders_from_inventory_stmt(self, older_than: date) -> str:
