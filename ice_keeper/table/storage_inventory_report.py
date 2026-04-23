@@ -193,8 +193,8 @@ class StorageInventoryReport:
                 where
                     file_size_in_bytes = 0
                     and not (
-                            segments[cardinality(segments) - 1] like '%.parquet'
-                            or segments[cardinality(segments) - 1] like '%.avro'
+                            element_at(segments, -1) like '%.parquet'
+                            or element_at(segments, -1) like '%.avro'
                             )
             ),
             parent_folders as (
