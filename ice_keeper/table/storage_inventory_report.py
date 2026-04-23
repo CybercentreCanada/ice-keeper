@@ -35,15 +35,6 @@ class StorageInventoryReport:
     latest_inventory_report_date: date | None = TimeProvider.current_date()
     latest_date_resolved = False
 
-    ICEBERG_FILE_CRITERION = """
-            (
-                endswith(file_path, '.parquet')
-                or endswith(file_path, '.avro')
-                or endswith(file_path, '.json')
-                or endswith(file_path, 'version-hint.text')
-            )
-            """
-
     def __init__(self, mnt_props: MaintenanceScheduleEntry) -> None:
         """Initialize an inventory report for the given maintenance entry.
 
@@ -117,10 +108,6 @@ class StorageInventoryReport:
                 and last_modified < timestamp '{older_than}'
                 and storage_account = '{self.location_storage_account}'
                 and container = '{self.location_container}'
-                and (
-                    startswith(file_path, '{self.location_file_path}/metadata/')
-                    or startswith(file_path, '{self.location_file_path}/data/')
-                )
             )
             """
 
@@ -166,7 +153,16 @@ class StorageInventoryReport:
                 {full_name}
             where
                 {self._all_file_paths_criterion(older_than)}
-                and {StorageInventoryReport.ICEBERG_FILE_CRITERION}
+                and (
+                    startswith(file_path, '{self.location_file_path}/metadata/')
+                    or startswith(file_path, '{self.location_file_path}/data/')
+                )
+                and (
+                    endswith(file_path, '.parquet')
+                    or endswith(file_path, '.avro')
+                    or endswith(file_path, '.json')
+                    or endswith(file_path, 'version-hint.text')
+                )
             """
 
     def select_empty_leaf_folders_from_inventory_stmt(self, older_than: date) -> str:
@@ -178,7 +174,7 @@ class StorageInventoryReport:
         return f"""
             with all_paths as (
                 select
-                    replace(file_path, '{self.location_file_path}/data/', '') as file_path,
+                    split(file_path, '/') as segments,
                     last_modified,
                     file_size_in_bytes
                 from
@@ -190,42 +186,35 @@ class StorageInventoryReport:
             ),
             all_folders as (
                 select
-                    file_path as folder_path,
+                    segments,
                     last_modified
                 from
                     all_paths
                 where
                     file_size_in_bytes = 0
-                    and not {StorageInventoryReport.ICEBERG_FILE_CRITERION}
-            ),
-            all_paths_with_last_segment as (
-                select
-                    file_path,
-                    substring_index(file_path, '/', -1) AS last_segment
-                from
-                    all_paths
+                    and not (
+                            element_at(segments, -1) like '%.parquet'
+                            or element_at(segments, -1) like '%.avro'
+                            )
             ),
             parent_folders as (
                 select
-                    substring(file_path, 1, length(file_path) - length(last_segment) - 1) AS parent_folder_path
+                    distinct slice(segments, 1, cardinality(segments) - 1) as parent_segments
                 from
-                    all_paths_with_last_segment
-                where
-                    length(file_path) > length(last_segment)
+                    all_paths
             ),
             empty_folders as (
                 select
-                    distinct
-                    f.folder_path,
+                    f.segments,
                     f.last_modified
                 from
                     all_folders as f
                     left anti join parent_folders as pf
-                    on (f.folder_path = pf.parent_folder_path)
+                    on (f.segments = pf.parent_segments)
             )
 
             select
-                '{self.location_file_path}/data/' || folder_path as file_path,
+                concat_ws('/', segments) as file_path,
                 last_modified
             from
                 empty_folders
