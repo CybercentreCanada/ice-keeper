@@ -21,14 +21,14 @@ logger = logging.getLogger("ice-keeper")
 
 DEFAULTS = {
     "partition_by": "",
-    "optimize_partition_depth": 1,
+    "optimize_partition_depth": -1,
     "optimization_strategy": "",
     "should_optimize": False,
     "min_age_to_optimize": -1,  # Deprecated configuration, default to -1 indicating it is not set and we should be using min_partition_to_optimize instead.
     "max_age_to_optimize": -1,
     "min_partition_to_optimize": "1d",
     "max_partition_to_optimize": "7d",
-    "target_file_size_bytes": 536870912,
+    "target_file_size_bytes": -1,
     "should_expire_snapshots": True,
     "retention_days_snapshots": 7,
     "should_remove_orphan_files": True,
@@ -559,8 +559,8 @@ class MaintenanceScheduleEntry:
     @property
     def target_file_size_bytes(self) -> int:
         value = self._record.get("target_file_size_bytes")
-        if value <= 0:
-            msg = f"Invalid target_file_size_bytes={value} for table '{self.full_name}'. Must be greater than zero."
+        if not (value == -1 or value > 0):
+            msg = f"Invalid target_file_size_bytes={value} for table '{self.full_name}'. Must be greater than zero or -1 for dynamic sizing."
             raise ValueError(msg)
         return value
 

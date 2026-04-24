@@ -242,7 +242,7 @@ def test_discovery_succeeds_with_bad_property_values(executor: TaskExecutor) -> 
     assert mnt_props.retention_days_snapshots == 7
     assert mnt_props.retention_days_orphan_files == 5
     assert mnt_props.retention_num_snapshots == 1
-    assert mnt_props.target_file_size_bytes == 536870912
+    assert mnt_props.target_file_size_bytes == -1
     assert mnt_props.min_age_to_optimize == -1
     assert mnt_props.max_age_to_optimize == -1
     assert mnt_props.lifecycle_max_days == 330

@@ -25,11 +25,11 @@ default_sort_rewrite_data_files_options = f"""options => map(
                 'delete-file-threshold', '1',
                 'remove-dangling-deletes', 'true',
                 'max-file-group-size-bytes', '{humanfriendly.parse_size("200 GB", binary=True)!s}',
-                'target-file-size-bytes', '536870912',
+                'target-file-size-bytes', '16777216',
                 'output-spec-id', '0',
                 'rewrite-all', 'true',
                 'min-input-files', '1',
-                'shuffle-partitions-per-file', '8')"""
+                'shuffle-partitions-per-file', '1')"""
 
 default_binpack_rewrite_data_files_options = f"""options => map(
                 'max-concurrent-file-group-rewrites', '100',
@@ -37,7 +37,7 @@ default_binpack_rewrite_data_files_options = f"""options => map(
                 'delete-file-threshold', '1',
                 'remove-dangling-deletes', 'true',
                 'max-file-group-size-bytes', '{humanfriendly.parse_size("200 GB", binary=True)!s}',
-                'target-file-size-bytes', '536870912',
+                'target-file-size-bytes', '16777216',
                 'output-spec-id', '0',
                 'rewrite-all', 'false',
                 'min-input-files', '1')"""
@@ -105,7 +105,7 @@ optimize_test_scenarios = [
                 table => 'test.test'
                 , {default_binpack_rewrite_data_files_options}
                 , strategy => 'binpack'
-                , where => " ( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) "
+                , where => " (( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) and ( local.system.bucket(3, id) = 0 )) or (( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) and ( local.system.bucket(3, id) = 1 )) or (( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) and ( local.system.bucket(3, id) = 2 )) "
                  )
             """,
     ),
@@ -132,7 +132,7 @@ optimize_test_scenarios = [
             table => 'test.test'
             , {default_binpack_rewrite_data_files_options}
             , strategy => 'binpack'
-            , where => " ( ts >= date('2025-03-01') and ts < date('2025-03-01') + interval 1 month )  "
+            , where => " ( ts >= date('2025-03-01') and ts < date('2025-03-01') + interval 1 month ) and ( local.system.truncate(3, category) = 'cat' ) "
             )
         """,
     ),
@@ -187,7 +187,7 @@ optimize_test_scenarios = [
             table => 'test.test'
             , {default_sort_rewrite_data_files_options}
             , strategy => 'sort'
-            , where => " ( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) "
+            , where => " (( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) and ( local.system.bucket(4, id) = 0 )) or (( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) and ( local.system.bucket(4, id) = 1 )) or (( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) and ( local.system.bucket(4, id) = 2 )) or (( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) and ( local.system.bucket(4, id) = 3 )) "
             , sort_order => 'id'
             )
         """,
@@ -201,7 +201,7 @@ optimize_test_scenarios = [
             table => 'test.test'
             , {default_sort_rewrite_data_files_options}
             , strategy => 'sort'
-            , where => " ( ts >= date('2025-03-01') and ts < date('2025-03-01') + interval 1 month ) "
+            , where => " ( ts >= date('2025-03-01') and ts < date('2025-03-01') + interval 1 month ) and ( local.system.truncate(1, category) = 'c' ) "
             , sort_order => 'name'
             )
         """,
@@ -215,7 +215,7 @@ optimize_test_scenarios = [
             table => 'test.test'
             , {default_sort_rewrite_data_files_options}
             , strategy => 'sort'
-            , where => " ( ts >= date('2025-03-01') and ts < date('2025-03-01') + interval 1 month ) "
+            , where => " ( ts >= date('2025-03-01') and ts < date('2025-03-01') + interval 1 month ) and ( local.system.truncate(2, category) = 'ca' ) "
             , sort_order => 'name'
             )
         """,
@@ -229,7 +229,7 @@ optimize_test_scenarios = [
             table => 'test.test'
             , {default_sort_rewrite_data_files_options}
             , strategy => 'sort'
-            , where => " ( ts >= date('2025-03-01') and ts < date('2025-03-01') + interval 1 month ) "
+            , where => " ( ts >= date('2025-03-01') and ts < date('2025-03-01') + interval 1 month ) and ( local.system.truncate(4, category) = 'cate' ) "
             , sort_order => 'id'
             )
          """,
@@ -269,7 +269,7 @@ optimize_test_scenarios = [
             table => 'test.test'
             , {default_sort_rewrite_data_files_options}
             , strategy => 'sort'
-            , where => " ( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) "
+            , where => " (( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) and ( local.system.bucket(2, id) = 0 )) or (( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) and ( local.system.bucket(2, id) = 1 )) "
             , sort_order => 'id ASC NULLS LAST'
             )
         """,
@@ -324,7 +324,7 @@ optimize_test_scenarios = [
             table => 'test.test'
             , {default_sort_rewrite_data_files_options}
             , strategy => 'sort'
-            , where => " ( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) "
+            , where => " (( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) and ( local.system.bucket(5, id) = 0 ) and ( local.system.bucket(2, category) = 0 )) or (( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) and ( local.system.bucket(5, id) = 0 ) and ( local.system.bucket(2, category) = 1 )) or (( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) and ( local.system.bucket(5, id) = 1 ) and ( local.system.bucket(2, category) = 0 )) or (( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) and ( local.system.bucket(5, id) = 1 ) and ( local.system.bucket(2, category) = 1 )) or (( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) and ( local.system.bucket(5, id) = 2 ) and ( local.system.bucket(2, category) = 0 )) or (( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) and ( local.system.bucket(5, id) = 2 ) and ( local.system.bucket(2, category) = 1 )) or (( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) and ( local.system.bucket(5, id) = 3 ) and ( local.system.bucket(2, category) = 0 )) or (( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) and ( local.system.bucket(5, id) = 3 ) and ( local.system.bucket(2, category) = 1 )) or (( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) and ( local.system.bucket(5, id) = 4 ) and ( local.system.bucket(2, category) = 0 )) or (( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) and ( local.system.bucket(5, id) = 4 ) and ( local.system.bucket(2, category) = 1 )) "
             , sort_order => 'zorder(id, name)'
             )
         """,
@@ -338,7 +338,7 @@ optimize_test_scenarios = [
             table => 'test.test'
             , {default_sort_rewrite_data_files_options}
             , strategy => 'sort'
-            , where => " ( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) "
+            , where => " (( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) and ( local.system.bucket(5, id) = 0 ) and ( local.system.truncate(2, category) = 'ca' )) or (( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) and ( local.system.bucket(5, id) = 1 ) and ( local.system.truncate(2, category) = 'ca' )) or (( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) and ( local.system.bucket(5, id) = 2 ) and ( local.system.truncate(2, category) = 'ca' )) or (( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) and ( local.system.bucket(5, id) = 3 ) and ( local.system.truncate(2, category) = 'ca' )) or (( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) and ( local.system.bucket(5, id) = 4 ) and ( local.system.truncate(2, category) = 'ca' )) "
             , sort_order => 'zorder(id, name)'
             )
         """,
@@ -352,7 +352,7 @@ optimize_test_scenarios = [
             table => 'test.test'
             , {default_sort_rewrite_data_files_options}
             , strategy => 'sort'
-            , where => " ( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) "
+            , where => " (( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) and ( local.system.bucket(5, id) = 0 )) or (( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) and ( local.system.bucket(5, id) = 1 )) or (( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) and ( local.system.bucket(5, id) = 2 )) or (( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) and ( local.system.bucket(5, id) = 3 )) or (( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) and ( local.system.bucket(5, id) = 4 )) "
             , sort_order => 'zorder(id, name)'
             )
           """,
@@ -366,7 +366,7 @@ optimize_test_scenarios = [
             table => 'test.test'
             , {default_sort_rewrite_data_files_options}
             , strategy => 'sort'
-            , where => " ( ts >= date('2025-03-01') and ts < date('2025-03-01') + interval 1 month ) "
+            , where => " ( ts >= date('2025-03-01') and ts < date('2025-03-01') + interval 1 month ) and ( local.system.truncate(5, category) = 'categ' ) "
             , sort_order => 'zorder(id, name)'
             )
         """,

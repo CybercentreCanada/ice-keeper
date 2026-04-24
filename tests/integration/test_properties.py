@@ -41,7 +41,7 @@ def test_default_tblproperties(table: Table) -> None:
     assert not entry.should_rewrite_manifest, "Defaults to false"
     assert not entry.should_apply_lifecycle, "Defaults to false"
     assert not entry.should_optimize, "Defaults to false"
-    assert entry.target_file_size_bytes == 536870912, "Defaults to 512MB"
+    assert entry.target_file_size_bytes == -1, "Defaults to auto size"
 
 
 def test_explicit_diabled_tblproperties(table: Table) -> None:

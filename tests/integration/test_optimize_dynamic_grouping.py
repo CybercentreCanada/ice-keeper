@@ -80,7 +80,7 @@ def test_dynamic_grouping_binpack_groups_all_buckets(executor: TaskExecutor) -> 
                 'delete-file-threshold', '1',
                 'remove-dangling-deletes', 'true',
                 'max-file-group-size-bytes', '214748364800',
-                'target-file-size-bytes', '536870912',
+                'target-file-size-bytes', '16777216',
                 'output-spec-id', '0',
                 'rewrite-all', 'false',
                 'min-input-files', '1')
