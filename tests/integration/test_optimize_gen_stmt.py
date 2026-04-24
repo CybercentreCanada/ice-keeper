@@ -105,7 +105,7 @@ optimize_test_scenarios = [
                 table => 'test.test'
                 , {default_binpack_rewrite_data_files_options}
                 , strategy => 'binpack'
-                , where => " ( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) "
+                , where => " (( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) and ( local.system.bucket(3, id) = 0 )) or (( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) and ( local.system.bucket(3, id) = 1 )) or (( ts >= date('2025-03-03') and ts < date('2025-03-03') + interval 1 day ) and ( local.system.bucket(3, id) = 2 )) "
                  )
             """,
     ),
@@ -132,7 +132,7 @@ optimize_test_scenarios = [
             table => 'test.test'
             , {default_binpack_rewrite_data_files_options}
             , strategy => 'binpack'
-            , where => " ( ts >= date('2025-03-01') and ts < date('2025-03-01') + interval 1 month )  "
+            , where => " ( ts >= date('2025-03-01') and ts < date('2025-03-01') + interval 1 month ) and ( local.system.truncate(3, category) = 'cat' ) "
             )
         """,
     ),
