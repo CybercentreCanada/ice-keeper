@@ -80,7 +80,7 @@ def test_two_partitions(executor: TaskExecutor) -> None:
                     'delete-file-threshold', '1',
                     'remove-dangling-deletes', 'true',
                     'max-file-group-size-bytes', '214748364800',
-                    'target-file-size-bytes', '536870912',
+                    'target-file-size-bytes', '16777216',
                     'output-spec-id', '0',
                     'rewrite-all', 'true',
                     'min-input-files', '1',

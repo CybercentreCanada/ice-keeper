@@ -559,8 +559,8 @@ class MaintenanceScheduleEntry:
     @property
     def target_file_size_bytes(self) -> int:
         value = self._record.get("target_file_size_bytes")
-        if value <= 0:
-            msg = f"Invalid target_file_size_bytes={value} for table '{self.full_name}'. Must be greater than zero."
+        if not (value == -1 or value > 0):
+            msg = f"Invalid target_file_size_bytes={value} for table '{self.full_name}'. Must be greater than zero or -1 for dynamic sizing."
             raise ValueError(msg)
         return value
 
