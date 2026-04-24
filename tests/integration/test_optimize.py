@@ -84,7 +84,7 @@ def test_two_partitions(executor: TaskExecutor) -> None:
                     'output-spec-id', '0',
                     'rewrite-all', 'true',
                     'min-input-files', '1',
-                    'shuffle-partitions-per-file', '8')
+                    'shuffle-partitions-per-file', '1')
                 , strategy => 'sort'
                 , where => " ( ts >= date('2020-01-01') and ts < date('2020-01-01') + interval 1 day ) "
                 , sort_order => 'id asc'

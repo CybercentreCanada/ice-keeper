@@ -21,7 +21,7 @@ logger = logging.getLogger("ice-keeper")
 
 DEFAULTS = {
     "partition_by": "",
-    "optimize_partition_depth": 1,
+    "optimize_partition_depth": -1,
     "optimization_strategy": "",
     "should_optimize": False,
     "min_age_to_optimize": -1,  # Deprecated configuration, default to -1 indicating it is not set and we should be using min_partition_to_optimize instead.
