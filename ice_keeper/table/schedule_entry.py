@@ -28,7 +28,7 @@ DEFAULTS = {
     "max_age_to_optimize": -1,
     "min_partition_to_optimize": "1d",
     "max_partition_to_optimize": "7d",
-    "target_file_size_bytes": 536870912,
+    "target_file_size_bytes": -1,
     "should_expire_snapshots": True,
     "retention_days_snapshots": 7,
     "should_remove_orphan_files": True,
