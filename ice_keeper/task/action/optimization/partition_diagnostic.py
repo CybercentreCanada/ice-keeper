@@ -74,8 +74,7 @@ class PartitionDiagnosis:
                         {{ list_of_all_partition_alias_stmt }},
                         target_file_size,
                         sum_file_size as subpartition_size,
-                        should_sort,
-                        should_binpack
+                        should_optimize
                     from
                         {{ summary_before_view_name }}
                 ),
@@ -94,11 +93,7 @@ class PartitionDiagnosis:
                     from
                         summary
                     where
-                        {% if is_binpack %}
-                        should_binpack = true
-                        {% else %}
-                        should_sort = true
-                        {% endif %}
+                        should_optimize = true
                 ),
                 /*
                 Computes a cumulative sum of subpartition_size ordered by partition_age (same-age rows stay together), with larger partitions first as tiebreaker
@@ -143,7 +138,6 @@ class PartitionDiagnosis:
         # Render the SQL query with all required variables
         sql = sql_template.render(
             is_partitioned=self.spec.is_partitioned,
-            is_binpack=self.mnt_props.optimization_spec.is_binpack(),
             list_of_all_partition_alias_stmt=self.spec.make_diagnosis_grouping_stmt(diagnostic_depth),
             summary_before_view_name=summary.summary_before_view_name,
             full_name=self.mnt_props.full_name,
@@ -191,11 +185,7 @@ class PartitionDiagnosis:
                 from
                     {{ summary_before_view_name }}
                 where
-                    {% if is_binpack %}
-                    should_binpack = true
-                    {% else %}
-                    should_sort = true
-                    {% endif %}
+                    should_optimize = true
                 group by
                     partition_age,
                     target_file_size
@@ -227,7 +217,7 @@ class PartitionDiagnosis:
         ``_determine_diagnostic_depth_and_mode``.
 
         The summary view is expected to contain per-partition rows with
-        ``should_binpack`` / ``should_sort`` flags. This method selects
+        ``should_optimze`` flags. This method selects
         partitions where the relevant flag is ``true`` (binpack or sort,
         depending on ``mnt_props.optimization_spec``).
 
@@ -243,7 +233,7 @@ class PartitionDiagnosis:
 
         Args:
             summary: The partition summary containing data file metrics and
-                the ``should_binpack`` / ``should_sort`` flags per partition.
+                the ``should_optimize`` flags per partition.
 
         Returns:
             A list of diagnosis results for partitions marked for optimization,

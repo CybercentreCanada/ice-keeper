@@ -406,6 +406,14 @@ class DataFilesSummary:
         readiness of partitions in a table. The query includes metrics such as correlation
         factors, the number of files to optimize, and flags to determine optimization needs.
 
+        Iceberg's ``rewrite_data_files`` uses a min/max file size of ``0.75x`` and
+        ``1.8x`` the target file size. Files outside this range are candidates for
+        rewrite. However, when the procedure terminates, it's possible that some files
+        will still be outside this range. Iceberg tries its best to create files near
+        the desired target size, but there is no guarantee.
+
+        To be more lenient, ice-keeper uses a ``0.50x`` to ``2x`` range. Any file
+        outside this range is counted toward ``num_files_targetted_for_rewrite``.
         Returns:
             str: The generated SQL query for analyzing partition health and optimization readiness.
 
@@ -592,7 +600,7 @@ class DataFilesSummary:
 
                     count_if(
                         content = 0 and
-                        (file_size_in_bytes < target_file_size * 0.75 or file_size_in_bytes > target_file_size * 1.8)
+                        (file_size_in_bytes < target_file_size * 0.50 or file_size_in_bytes > target_file_size * 2.0)
                     ) as num_files_targetted_for_rewrite,
 
                     count_if(
@@ -632,10 +640,13 @@ class DataFilesSummary:
                     corr_threshold,
                     n_delete_files,
                     n_delete_records,
-                    -- Determine necessity for sorting based on correlation threshold or delete files
-                    (corr < corr_threshold or n_delete_files > 0 or num_files_to_widen > 0) as should_sort,
+                    {% if is_binpack %}
                     -- Determine necessity for binpacking based on number of rewritten files or delete files
-                    (num_files_targetted_for_rewrite > {{ binpack_min_input_files }} or n_delete_files > 0) as should_binpack,
+                    (num_files_targetted_for_rewrite > {{ binpack_min_input_files }} or n_delete_files > 0) as should_optimize,
+                    {% else %}
+                    -- Determine necessity for sorting based on correlation threshold or delete files
+                    (corr < corr_threshold or n_delete_files > 0 or num_files_to_widen > 0) as should_optimize,
+                    {% endif %}
                     {{ format_sum_file_size }} as partition_size_h,
                     {{ format_avg_file_size }} as avg_file_size_h,
                     {{ format_target_file_size }} as target_file_size_h,
@@ -682,4 +693,5 @@ class DataFilesSummary:
             format_sum_file_size=self._format_bytes_stmt("sum_file_size"),
             format_avg_file_size=self._format_bytes_stmt("avg_file_size"),
             format_target_file_size=self._format_bytes_stmt("target_file_size"),
+            is_binpack=self.mnt_props.optimization_spec.is_binpack(),
         )
