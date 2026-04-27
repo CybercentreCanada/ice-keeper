@@ -406,11 +406,14 @@ class DataFilesSummary:
         readiness of partitions in a table. The query includes metrics such as correlation
         factors, the number of files to optimize, and flags to determine optimization needs.
 
-        Iceberg's rewrite_data_files uses a min/max file size of 0.75 x target file size and 1.8 x target file size.
-        Any files outside this range are considered to be rewritten. However, when the procedure terminates it's possible files
-        will still be outside this range, there is no guarantee, Iceberg tries its best to make files of the desired target size.
-        To be more lenient, ice-keeper uses a 0.50 x and 2x range. Any file outside this range is considered a num_files_targetted_for_rewrite.
+        Iceberg's ``rewrite_data_files`` uses a min/max file size of ``0.75x`` and
+        ``1.8x`` the target file size. Files outside this range are candidates for
+        rewrite. However, when the procedure terminates, it's possible that some files
+        will still be outside this range. Iceberg tries its best to create files near
+        the desired target size, but there is no guarantee.
 
+        To be more lenient, ice-keeper uses a ``0.50x`` to ``2x`` range. Any file
+        outside this range is counted toward ``num_files_targetted_for_rewrite``.
         Returns:
             str: The generated SQL query for analyzing partition health and optimization readiness.
 
