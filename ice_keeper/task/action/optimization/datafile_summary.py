@@ -414,6 +414,7 @@ class DataFilesSummary:
 
         To be more lenient, ice-keeper uses a ``0.50x`` to ``2x`` range. Any file
         outside this range is counted toward ``num_files_targetted_for_rewrite``.
+
         Returns:
             str: The generated SQL query for analyzing partition health and optimization readiness.
 
