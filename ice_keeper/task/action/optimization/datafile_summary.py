@@ -396,7 +396,7 @@ class DataFilesSummary:
         when sum_file_size < 128L * 128 * 1048576 then 128L * 1048576
         when sum_file_size < 256L * 256 * 1048576 then 256L * 1048576
         when sum_file_size < 512L * 512 * 1048576 then 512L * 1048576
-        else 1024L  end
+        else 1024L * 1048576 end
         """
 
     def create_summary_stmt(self) -> str:
