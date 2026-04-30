@@ -643,7 +643,15 @@ class DataFilesSummary:
                     n_delete_records,
                     {% if is_binpack %}
                     -- Determine necessity for binpacking based on number of rewritten files or delete files
-                    (num_files_targetted_for_rewrite > {{ binpack_min_input_files }} or n_delete_files > 0) as should_optimize,
+                    -- When the number of files is high we want to avoid rewriting partitions with a low percentage of files to rewrite,
+                    -- as the overhead of rewriting may not be worth the benefits. On the other hand, if there are delete files present,
+                    -- it is often beneficial to rewrite the partition to clean up those delete files, even if the percentage of files to rewrite is low.
+                    -- binpack if more than 10% of files are targetted for rewrite and more than {{ binpack_min_input_files }} files are targetted for rewrite, or if there are any delete files.
+                    (
+                    (1.0 * num_files_targetted_for_rewrite) / n_files > 0.10
+                    and num_files_targetted_for_rewrite > {{ binpack_min_input_files }}
+                    )
+                    or n_delete_files > 0 as should_optimize,
                     {% else %}
                     -- Determine necessity for sorting based on correlation threshold or delete files
                     (corr < corr_threshold or n_delete_files > 0 or num_files_to_widen > 0) as should_optimize,
