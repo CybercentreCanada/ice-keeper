@@ -71,6 +71,9 @@ class PartitionDiagnosis:
                 with summary as (
                     select
                         partition_age,
+                        {% if is_time_partitioned %}
+                        partition_time,
+                        {% endif %}
                         {{ list_of_all_partition_alias_stmt }},
                         target_file_size,
                         sum_file_size as subpartition_size,
@@ -82,6 +85,9 @@ class PartitionDiagnosis:
                 running_partition_size as (
                     select
                         partition_age,
+                        {% if is_time_partitioned %}
+                        partition_time,
+                        {% endif %}
                         {{ list_of_all_partition_alias_stmt }},
                         target_file_size,
                         subpartition_size,
@@ -103,6 +109,9 @@ class PartitionDiagnosis:
                 labeled_partition_groupings as (
                     select
                         partition_age,
+                        {% if is_time_partitioned %}
+                        partition_time,
+                        {% endif %}
                         {{ list_of_all_partition_alias_stmt }},
                         target_file_size,
                         format_string('partition_age:%d target_file_size:%d optimization_group:%d',
@@ -116,6 +125,9 @@ class PartitionDiagnosis:
                 final as (
                     select
                         partition_age,
+                        {% if is_time_partitioned %}
+                        partition_time,
+                        {% endif %}
                         target_file_size,
                         dynamic_optimization_grouping_label
                         {% if is_partitioned %}
@@ -125,6 +137,9 @@ class PartitionDiagnosis:
                         labeled_partition_groupings
                     group by
                         partition_age,
+                        {% if is_time_partitioned %}
+                        partition_time,
+                        {% endif %}
                         target_file_size,
                         dynamic_optimization_grouping_label
                     order by
@@ -137,6 +152,7 @@ class PartitionDiagnosis:
 
         # Render the SQL query with all required variables
         sql = sql_template.render(
+            is_time_partitioned=self.spec.is_time_partitioned(),
             is_partitioned=self.spec.is_partitioned,
             list_of_all_partition_alias_stmt=self.spec.make_diagnosis_grouping_stmt(diagnostic_depth),
             summary_before_view_name=summary.summary_before_view_name,
@@ -178,6 +194,9 @@ class PartitionDiagnosis:
                 -- Identifying partitions to optimize for table {{ full_name }}
                 select
                     partition_age,
+                    {% if is_time_partitioned %}
+                    partition_time,
+                    {% endif %}
                     target_file_size
                     {% if is_partitioned %}
                     , array_sort(array_distinct(collect_list(struct({{ depth_grouping_stmt }})))) as partition_filters
@@ -188,6 +207,9 @@ class PartitionDiagnosis:
                     should_optimize = true
                 group by
                     partition_age,
+                    {% if is_time_partitioned %}
+                    partition_time,
+                    {% endif %}
                     target_file_size
                     {% if is_partitioned %}
                     , {{ depth_grouping_stmt }}
@@ -197,6 +219,7 @@ class PartitionDiagnosis:
                 """)
         # Render the SQL query with all required variables
         sql = sql_template.render(
+            is_time_partitioned=self.spec.is_time_partitioned(),
             is_partitioned=self.spec.is_partitioned,
             is_binpack=self.mnt_props.optimization_spec.is_binpack(),
             depth_grouping_stmt=self.spec.make_diagnosis_grouping_stmt(diagnostic_depth),

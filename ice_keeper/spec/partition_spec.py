@@ -187,13 +187,13 @@ class PartitionSpecification:
                  all partition identifiers.
         """
         grouping_stmts = ["spec_id"]
-        if self._is_time_partitioned():
+        if self.is_time_partitioned():
             grouping_stmts.append("partition_time")
         if self.is_partitioned:
             grouping_stmts.extend([partition.partition_field_alias for partition in self.partition_list])
         return ", ".join(grouping_stmts)
 
-    def _is_time_partitioned(self) -> bool:
+    def is_time_partitioned(self) -> bool:
         """Check if the partition specification includes any temporal partitions."""
         if not self.is_partitioned:
             return False
@@ -205,7 +205,7 @@ class PartitionSpecification:
         Use the time based partition alias for example ts_day and compute the corresponding timestamp
         of the partition given that hours, months and year are an integer since epoch.
         """
-        if not self._is_time_partitioned():
+        if not self.is_time_partitioned():
             return ""
 
         partition_time_stmt = ""
