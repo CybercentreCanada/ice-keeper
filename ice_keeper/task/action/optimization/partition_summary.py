@@ -47,8 +47,13 @@ class PartitionSummary:
         Args:
             max_rows (int): Maximum number of rows to display in logs. Defaults to 10,000.
         """
+        qualifier = "binpack"
+        if self.mnt_props.optimization_spec.is_zordered:
+            qualifier = "zorder"
+        elif self.mnt_props.optimization_spec.is_sorted():
+            qualifier = "sorted"
         rows = STL.sql(f"select * from {self.summary_before_view_name}", "Retrieve rows from partition summary").take(max_rows)
-        rows_log_debug(rows, f"Partition Summary of {self.mnt_props.full_name}")
+        rows_log_debug(rows, f"Partition Summary of {self.mnt_props.full_name} for {qualifier} optimized table")
 
     def uncache_views(self, *, did_some_optimizations: bool) -> None:
         """Uncache the summary views.

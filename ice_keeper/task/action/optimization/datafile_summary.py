@@ -654,7 +654,7 @@ class DataFilesSummary:
                     or n_delete_files > 0 as should_optimize,
                     {% else %}
                     -- Determine necessity for sorting based on correlation threshold or delete files
-                    (corr < corr_threshold or n_delete_files > 0 or num_files_to_widen > 0) as should_optimize,
+                    (n_files > 2 and corr < corr_threshold) or n_delete_files > 0 or num_files_to_widen > 0 as should_optimize,
                     {% endif %}
                     {{ format_sum_file_size }} as partition_size_h,
                     {{ format_avg_file_size }} as avg_file_size_h,
