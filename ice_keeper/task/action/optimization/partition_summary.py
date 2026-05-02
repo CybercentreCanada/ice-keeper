@@ -47,13 +47,11 @@ class PartitionSummary:
         Args:
             max_rows (int): Maximum number of rows to display in logs. Defaults to 10,000.
         """
-        spec = self.mnt_props.optimization_spec
-        if spec.is_zordered:
+        qualifier = "binpack"
+        if self.mnt_props.optimization_spec.is_zordered:
             qualifier = "zorder"
-        elif spec.is_sorted():
+        elif self.mnt_props.optimization_spec.is_sorted():
             qualifier = "sorted"
-        else:
-            qualifier = "binpack"
         rows = STL.sql(f"select * from {self.summary_before_view_name}", "Retrieve rows from partition summary").take(max_rows)
         rows_log_debug(rows, f"Partition Summary of {self.mnt_props.full_name} for {qualifier} optimized table")
 
