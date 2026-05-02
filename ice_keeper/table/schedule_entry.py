@@ -43,6 +43,7 @@ DEFAULTS = {
     "optimization_grouping_size_bytes": 17179869184,
     "binpack_min_input_files": 5,  # Min number of files required to trigger a binpack, can be set to zero while testing to force binpacks.
     "sort_corr_threshold": -1.0,  # Mostly used for testing. If not specified defaults to 1 (binpack), 0.97 (sort), scaled (zorder).
+    "optimization_quota_hours": 6,  # Maximum hours allowed for optimizing a single table across all partition specs.
     "widening_rule_select_criteria": "",
     "widening_rule_required_partition_columns": "",
     "widening_rule_src_partition": "",
@@ -90,6 +91,7 @@ class MaintenanceScheduleRecord(BaseModel):
     optimization_grouping_size_bytes: int | None = None
     binpack_min_input_files: int | None = None
     sort_corr_threshold: float | None = None
+    optimization_quota_hours: int | None = None
     widening_rule_select_criteria: str | None = None
     widening_rule_required_partition_columns: str | None = None
     widening_rule_src_partition: str | None = None
@@ -132,6 +134,7 @@ class MaintenanceScheduleRecord(BaseModel):
             optimization_grouping_size_bytes BIGINT,
             binpack_min_input_files INT,
             sort_corr_threshold DOUBLE,
+            optimization_quota_hours INT,
             widening_rule_select_criteria STRING,
             widening_rule_required_partition_columns STRING,
             widening_rule_src_partition STRING,
@@ -316,6 +319,7 @@ class MaintenanceScheduleRecord(BaseModel):
         )
         parsed["binpack_min_input_files"] = cls._get_int(tblproperties, IceKeeperTblProperty.BINPACK_MIN_INPUT_FILES)
         parsed["sort_corr_threshold"] = cls._get_float(tblproperties, IceKeeperTblProperty.SORT_CORR_THRESHOLD)
+        parsed["optimization_quota_hours"] = cls._get_int(tblproperties, IceKeeperTblProperty.OPTIMIZATION_QUOTA_HOURS)
 
         parsed["retention_num_snapshots"] = cls._get_int(tblproperties, IceKeeperTblProperty.HISTORY_EXPIRE_MIN_SNAPSHOTS_TO_KEEP)
         if tblproperties.get(IceKeeperTblProperty.RETENTION_NUM_SNAPSHOTS):
@@ -451,6 +455,14 @@ class MaintenanceScheduleEntry:
             msg = (
                 f"Invalid sort_corr_threshold={value} for table '{self.full_name}'. Must be greater than or equal to zero, or -1."
             )
+            raise ValueError(msg)
+        return value
+
+    @property
+    def optimization_quota_hours(self) -> int:
+        value = self._record.get("optimization_quota_hours")
+        if value <= 0:
+            msg = f"Invalid optimization_quota_hours={value} for table '{self.full_name}'. Must be greater than zero."
             raise ValueError(msg)
         return value
 
