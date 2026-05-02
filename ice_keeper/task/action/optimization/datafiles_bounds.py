@@ -137,15 +137,17 @@ class BoundsZorderSort(Bounds):
         """
         return """
             case
-                when n_files between 0 and 20 then 0.37857142857142856
-                when n_files between 20 and 40 then 0.6812252964426878
-                when n_files between 40 and 60 then 0.7815196998123827
-                when n_files between 60 and 80 then 0.8363264499089385
-                when n_files between 80 and 100 then 0.8572433753597433
-                when n_files between 100 and 120 then 0.8789533750633772
-                when n_files between 120 and 140 then 0.8863692819647544
-                when n_files between 140 and 160 then 0.8909153528241235
-                else 0.8909153528241235
+                when n_files between 0 and 5     then 0.080
+                when n_files between 5 and 10    then 0.185
+                when n_files between 10 and 20   then 0.378
+                when n_files between 20 and 40   then 0.681
+                when n_files between 40 and 60   then 0.781
+                when n_files between 60 and 80   then 0.836
+                when n_files between 80 and 100  then 0.857
+                when n_files between 100 and 120 then 0.878
+                when n_files between 120 and 140 then 0.886
+                when n_files between 140 and 160 then 0.890
+                else 0.891
             end
             """
 
