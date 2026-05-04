@@ -141,8 +141,15 @@ class OptimizationStrategy(ActionStrategy):
 
                 partitions_to_optimize = diagnosis.find_partitions_to_optimize(summary)
                 if len(partitions_to_optimize) > 0:
-                    did_some_optimizations = True
-                    self._execute_sub_tasks(sub_executor, partitions_to_optimize, spec_id, start_time, quota_seconds)
+                    try:
+                        optimized_count = self._execute_sub_tasks(
+                            sub_executor, partitions_to_optimize, spec_id, start_time, quota_seconds
+                        )
+                    except ActionWarning:
+                        # Some partitions may have been optimized before the quota was hit
+                        did_some_optimizations = True
+                        raise
+                    did_some_optimizations = optimized_count > 0
                 else:
                     logger.debug("All partitions in spec_id: %s are healthy", spec_id)
             finally:
@@ -208,7 +215,7 @@ class OptimizationStrategy(ActionStrategy):
         spec_id: int,
         start_time: float,
         quota_seconds: float,
-    ) -> None:
+    ) -> int:
         """Execute sub-tasks for optimizing partitions.
 
         Sub-tasks are created based on rows containing partitions that require optimization.
@@ -220,9 +227,13 @@ class OptimizationStrategy(ActionStrategy):
             start_time: Monotonic timestamp when optimization started (from find_and_optimize_specs).
             quota_seconds: Maximum allowed optimization time in seconds.
 
+        Returns:
+            int: Number of partitions actually optimized before stopping.
+
         Raises:
             ActionWarning: If the optimization time quota is exceeded.
         """
+        optimized = 0
         for partition_diagnosis in partitions_to_optimize:
             elapsed = time.monotonic() - start_time
             if elapsed >= quota_seconds:
@@ -234,6 +245,8 @@ class OptimizationStrategy(ActionStrategy):
             strategy = SubOptimizationStrategy(partition_diagnosis, spec_id, self.mnt_props, self.get_widening_rule(spec_id))
             task = SparkTask(ActionTask(strategy, self.mnt_props))
             sub_executor.submit_subtasks_and_wait([task])
+            optimized += 1
+        return optimized
 
     def _find_specs_to_optimize(self) -> list[int]:
         """Identify distinct spec IDs to optimize.
