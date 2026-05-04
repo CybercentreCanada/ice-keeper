@@ -117,31 +117,25 @@ class OptimizationStrategy(ActionStrategy):
         Raises:
             ActionWarning: If the optimization time quota was exceeded.
         """
-        quota_exceeded = self.find_and_optimize_specs(sub_executor)
-        if quota_exceeded:
-            msg = (
-                f"Optimization time quota ({self.mnt_props.optimization_quota_hours}h) exceeded for table {self.mnt_props.full_name}. "
-                f"Some partitions were not optimized."
-            )
-            raise ActionWarning(msg)
+        self.find_and_optimize_specs(sub_executor)
         # Disable parent journaling if all tasks were successfully executed
         self.disable_journaling()
         return {}
 
-    def find_and_optimize_specs(self, sub_executor: SubTaskExecutor) -> bool:
+    def find_and_optimize_specs(self, sub_executor: SubTaskExecutor) -> None:
         unique_spec_ids = self._find_specs_to_optimize()
         start_time = time.monotonic()
         quota_seconds = self.mnt_props.optimization_quota_hours * 3600
-        quota_exceeded = False
 
         for spec_id in unique_spec_ids:
-            if quota_exceeded:
-                logger.info(
-                    "Optimization time quota exceeded for table %s; skipping remaining spec_id: %s",
-                    self.mnt_props.full_name,
-                    spec_id,
+            # Check quota before starting work on a new spec
+            elapsed = time.monotonic() - start_time
+            if elapsed >= quota_seconds:
+                msg = (
+                    f"Optimization time quota ({quota_seconds / 3600:.1f}h) exceeded for table {self.mnt_props.full_name} "
+                    f"after {elapsed / 3600:.1f}h; skipping remaining spec_id: {spec_id}"
                 )
-                break
+                raise ActionWarning(msg)
 
             logger.debug("START Optimizing spec_id: %s -> %s", spec_id, self.mnt_props.partition_specs[spec_id])
             did_some_optimizations = False
@@ -156,21 +150,21 @@ class OptimizationStrategy(ActionStrategy):
 
                 partitions_to_optimize = diagnosis.find_partitions_to_optimize(summary)
                 if len(partitions_to_optimize) > 0:
+                    try:
+                        self._execute_sub_tasks(sub_executor, partitions_to_optimize, spec_id, start_time, quota_seconds)
+                    except ActionWarning:
+                        # At least one partition was optimized before the quota was hit
+                        did_some_optimizations = True
+                        raise
                     did_some_optimizations = True
-                    quota_exceeded = self._execute_sub_tasks(
-                        sub_executor, partitions_to_optimize, spec_id, start_time, quota_seconds
-                    )
                 else:
                     logger.debug("All partitions in spec_id: %s are healthy", spec_id)
-
-                # In the context of executing optimization, we want to save the results back to the partition health table
+            finally:
+                # Save results even if quota was exceeded (ActionWarning), to record partial progress
                 partition_health = PartitionHealth()
                 summary.save_diff(partition_health, did_some_optimizations=did_some_optimizations)
-            finally:
                 logger.debug("END Optimizing spec_id: %s", spec_id)
                 summary.uncache_views(did_some_optimizations=did_some_optimizations)
-
-        return quota_exceeded
 
     def diagnose_partition_specs(self) -> None:
         unique_spec_ids = self._find_specs_to_optimize()
@@ -228,11 +222,12 @@ class OptimizationStrategy(ActionStrategy):
         spec_id: int,
         start_time: float,
         quota_seconds: float,
-    ) -> bool:
+    ) -> None:
         """Execute sub-tasks for optimizing partitions.
 
         Sub-tasks are created based on rows containing partitions that require optimization.
-        Stops processing if the optimization time quota is exceeded.
+        The quota check happens after each task completes, ensuring at least one partition
+        is optimized before the warning is raised.
 
         Args:
             sub_executor: The task execution context.
@@ -241,25 +236,21 @@ class OptimizationStrategy(ActionStrategy):
             start_time: Monotonic timestamp when optimization started (from find_and_optimize_specs).
             quota_seconds: Maximum allowed optimization time in seconds.
 
-        Returns:
-            bool: True if the time quota was exceeded, False otherwise.
+        Raises:
+            ActionWarning: If the optimization time quota is exceeded after a task completes.
         """
         for partition_diagnosis in partitions_to_optimize:
-            elapsed = time.monotonic() - start_time
-            if elapsed >= quota_seconds:
-                logger.info(
-                    "Optimization time quota (%.1f hours) exceeded for table %s after %.1f hours; "
-                    "stopping partition processing in spec_id: %s",
-                    quota_seconds / 3600,
-                    self.mnt_props.full_name,
-                    elapsed / 3600,
-                    spec_id,
-                )
-                return True
             strategy = SubOptimizationStrategy(partition_diagnosis, spec_id, self.mnt_props, self.get_widening_rule(spec_id))
             task = SparkTask(ActionTask(strategy, self.mnt_props))
             sub_executor.submit_subtasks_and_wait([task])
-        return False
+            # Check quota after each completed task
+            elapsed = time.monotonic() - start_time
+            if elapsed >= quota_seconds:
+                msg = (
+                    f"Optimization time quota ({quota_seconds / 3600:.1f}h) exceeded for table {self.mnt_props.full_name} "
+                    f"after {elapsed / 3600:.1f}h; stopping partition processing in spec_id: {spec_id}"
+                )
+                raise ActionWarning(msg)
 
     def _find_specs_to_optimize(self) -> list[int]:
         """Identify distinct spec IDs to optimize.
