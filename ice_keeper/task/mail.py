@@ -125,6 +125,8 @@ class Emailer:
                     status
                 from
                     failed_journal_entries_with_email
+                where
+                    length(notification_email) > 0
                 order by
                     1,
                     2,
