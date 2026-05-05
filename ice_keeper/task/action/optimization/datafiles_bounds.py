@@ -132,14 +132,14 @@ class BoundsZorderSort(Bounds):
         applied to their interleaved result, leading to a lower correlation factor. The method uses
         a predefined step pattern curve derived from analyzed data to approximate the correlation factor.
 
-        If we have only 2 files then return a threshold of -2.00. This will prevent zordering only 2 files.
+        If we have only 3 files then return a threshold of -2.00. This will prevent zordering only 3 files.
 
         Returns:
             str: The SQL expression representing the correlation threshold.
         """
         return """
             case
-                when n_files < 3   then -2.00
+                when n_files < 4   then -2.00
                 when n_files < 5   then 0.080
                 when n_files < 10  then 0.185
                 when n_files < 20  then 0.378
