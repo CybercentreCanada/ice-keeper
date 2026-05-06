@@ -121,16 +121,15 @@ def test_should_expire_snapshots(table: Table) -> None:
 
 @pytest.mark.integration
 def test_target_file_size_bytes(table: Table) -> None:
+    # write.target-file-size-bytes is ignored by ice-keeper; only the ice-keeper property matters
     table.metadata.properties[IceKeeperTblProperty.WRITE_TARGET_FILE_SIZE_BYTES] = "10000"
     entry = MaintenanceScheduleRecord.from_iceberg_table(table).to_entry()
-    assert entry.target_file_size_bytes == 10000
-    table.metadata.properties[IceKeeperTblProperty.WRITE_TARGET_FILE_SIZE_BYTES] = "20000"
-    entry = MaintenanceScheduleRecord.from_iceberg_table(table).to_entry()
-    assert entry.target_file_size_bytes == 20000
+    assert entry.target_file_size_bytes == -1, "write.target-file-size-bytes should NOT be used, auto mode expected"
+
+    # Explicitly setting the ice-keeper property overrides auto mode
     table.metadata.properties[IceKeeperTblProperty.OPTIMIZATION_TARGET_FILE_SIZE_BYTES] = "30000"
     table.metadata.properties[IceKeeperTblProperty.WRITE_TARGET_FILE_SIZE_BYTES] = "10000"
     entry = MaintenanceScheduleRecord.from_iceberg_table(table).to_entry()
-    # icekeeper overrides iceberg's table config
     assert entry.target_file_size_bytes == 30000
 
 

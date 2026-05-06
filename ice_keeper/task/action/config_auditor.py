@@ -104,7 +104,6 @@ class ConfigAuditorStrategy(ActionStrategy):
         iceberg_native_properties_used_by_icekeeper = [
             IceKeeperTblProperty.HISTORY_EXPIRE_MAX_SNAPSHOT_AGE_MS,
             IceKeeperTblProperty.HISTORY_EXPIRE_MIN_SNAPSHOTS_TO_KEEP,
-            IceKeeperTblProperty.WRITE_TARGET_FILE_SIZE_BYTES,
         ]
 
         prefix_suggestion = difflib.get_close_matches(
