@@ -38,7 +38,7 @@ class Emailer:
                     ({journal_entries_sql})
                 where
                     start_time >= current_date() - interval '{last_num_days - 1}' days
-                    and status = '{Status.FAILED.value}'
+                    and status in ('{Status.FAILED.value}', '{Status.WARNING.value}')
             ),
             failed_by_day as (
                 /* Find max start_time per day, this deals with multiple ice-keeper runs in a day */
