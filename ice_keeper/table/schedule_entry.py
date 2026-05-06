@@ -306,12 +306,7 @@ class MaintenanceScheduleRecord(BaseModel):
         parsed["max_age_to_optimize"] = cls._get_int(tblproperties, IceKeeperTblProperty.MAX_AGE_TO_OPTIMIZE)
         parsed["min_partition_to_optimize"] = cls._get_string(tblproperties, IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE)
         parsed["max_partition_to_optimize"] = cls._get_string(tblproperties, IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE)
-        if tblproperties.get(IceKeeperTblProperty.OPTIMIZATION_TARGET_FILE_SIZE_BYTES):
-            parsed["target_file_size_bytes"] = cls._get_int(
-                tblproperties, IceKeeperTblProperty.OPTIMIZATION_TARGET_FILE_SIZE_BYTES
-            )
-        elif tblproperties.get(IceKeeperTblProperty.WRITE_TARGET_FILE_SIZE_BYTES):
-            parsed["target_file_size_bytes"] = cls._get_int(tblproperties, IceKeeperTblProperty.WRITE_TARGET_FILE_SIZE_BYTES)
+        parsed["target_file_size_bytes"] = cls._get_int(tblproperties, IceKeeperTblProperty.OPTIMIZATION_TARGET_FILE_SIZE_BYTES)
 
         parsed["optimize_partition_depth"] = cls._get_int(tblproperties, IceKeeperTblProperty.OPTIMIZE_PARTITION_DEPTH)
         parsed["optimization_grouping_size_bytes"] = cls._get_int(
