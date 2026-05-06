@@ -541,6 +541,7 @@ def test_widening_success(executor: TaskExecutor, optimize_partition_depth: str)
             IceKeeperTblProperty.OPTIMIZATION_STRATEGY: "id asc",
             IceKeeperTblProperty.OPTIMIZE_PARTITION_DEPTH: optimize_partition_depth,
             IceKeeperTblProperty.WRITE_TARGET_FILE_SIZE_BYTES: "500000",  # write small files
+            IceKeeperTblProperty.OPTIMIZATION_TARGET_FILE_SIZE_BYTES: "500000",  # optimize into small files to trigger more rewrites
             IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
             IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",
             IceKeeperTblProperty.WIDENING_RULE_MIN_PARTITION_TO_WIDEN: "0M",
