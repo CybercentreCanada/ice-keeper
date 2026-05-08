@@ -73,6 +73,15 @@ class DataFilesBinpack(DataFiles):
     def make_data_files_stmt(self) -> str:
         """Generate a SQL query to retrieve data files for binpacking optimization.
 
+        We query .entries instead of .files to access file_sequence_number, which is
+        not available in .files. We filter out deleted entries (status != 2) to get
+        only live files, matching the behavior of .files.
+
+        Iceberg manifest entry status values:
+          0 = EXISTING (file was already there, still live)
+          1 = ADDED (file was added in this snapshot)
+          2 = DELETED (file was removed)
+
         Returns:
             str: SQL query for fetching relevant data files.
         """
@@ -86,7 +95,16 @@ class DataFilesBinpack(DataFiles):
                 readable_metrics,
                 false as is_data_file_from_widening_src_partition
             from
-                (select file_sequence_number, readable_metrics, data_file.* from {self.mnt_props.full_name}.entries)
+                (
+                    select
+                        file_sequence_number,
+                        readable_metrics,
+                        data_file.*
+                    from
+                        {self.mnt_props.full_name}.entries
+                    where
+                        status != 2
+                )
         """
 
 
@@ -110,6 +128,15 @@ class DataFilesSort(DataFiles):
     def make_data_files_stmt(self) -> str:
         """Generate a SQL query to retrieve data files for sorting optimization.
 
+        We query .entries instead of .files to access file_sequence_number, which is
+        not available in .files. We filter out deleted entries (status != 2) to get
+        only live files, matching the behavior of .files.
+
+        Iceberg manifest entry status values:
+          0 = EXISTING (file was already there, still live)
+          1 = ADDED (file was added in this snapshot)
+          2 = DELETED (file was removed)
+
         Returns:
             str: SQL query for fetching relevant data files.
         """
@@ -123,7 +150,16 @@ class DataFilesSort(DataFiles):
                 readable_metrics,
                 false as is_data_file_from_widening_src_partition
             from
-                (select file_sequence_number, readable_metrics, data_file.* from {self.mnt_props.full_name}.entries)
+                (
+                    select
+                        file_sequence_number,
+                        readable_metrics,
+                        data_file.*
+                    from
+                        {self.mnt_props.full_name}.entries
+                    where
+                        status != 2
+                )
         """
 
 
@@ -203,6 +239,15 @@ class DataFilesWideningSort(DataFiles):
         This ensures that the widening rule includes files from both the destination and relevant
         source partitions for optimization.
 
+        We query .entries instead of .files to access file_sequence_number, which is
+        not available in .files. We filter out deleted entries (status != 2) to get
+        only live files, matching the behavior of .files.
+
+        Iceberg manifest entry status values:
+          0 = EXISTING (file was already there, still live)
+          1 = ADDED (file was added in this snapshot)
+          2 = DELETED (file was removed)
+
         Returns:
             str: SQL query for retrieving and processing data files according to the
                 widening rule criteria.
@@ -218,7 +263,16 @@ class DataFilesWideningSort(DataFiles):
                     readable_metrics,
                     false as is_data_file_from_widening_src_partition
                 from
-                    (select file_sequence_number, readable_metrics, data_file.* from {self.mnt_props.full_name}.entries)
+                    (
+                        select
+                            file_sequence_number,
+                            readable_metrics,
+                            data_file.*
+                        from
+                            {self.mnt_props.full_name}.entries
+                        where
+                            status != 2
+                    )
             )
             union all
             (
@@ -231,7 +285,16 @@ class DataFilesWideningSort(DataFiles):
                     readable_metrics,
                     true as is_data_file_from_widening_src_partition
                 from
-                    (select file_sequence_number, readable_metrics, data_file.* from {self.mnt_props.full_name}.entries)
+                    (
+                        select
+                            file_sequence_number,
+                            readable_metrics,
+                            data_file.*
+                        from
+                            {self.mnt_props.full_name}.entries
+                        where
+                            status != 2
+                    )
                 where
                     spec_id = {self.widening_rule.src_widening.partition_spec.spec_id}
                     and {self.widening_rule.filter_expr}
