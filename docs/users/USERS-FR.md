@@ -16,12 +16,25 @@ Voici les opérations les plus courantes nécessaires pour maintenir les tables 
 - L'expiration des instantanés supprime les anciens instantanés et les fichiers de données qui ne sont plus nécessaires.
 - Le nettoyage des fichiers orphelins identifie et supprime les fichiers de données qui ont été écrits mais jamais validés en raison d'échecs de tâches.
 
-ice-keeper est un service qui automatise la maintenance des tables Iceberg. ice-keeper est programmé pour s'exécuter chaque nuit dans Airflow/Spellbook.
+ice-keeper est un service qui automatise la maintenance des tables Iceberg. ice-keeper est généralement programmé pour s'exécuter chaque nuit dans Airflow, mais il peut être planifié dans votre ordonnanceur préféré (par exemple, Airflow, Dagster, cron ou tout autre outil d'orchestration).
 
 ice-keeper peut :
 - expirer les anciens instantanés
-- trouver et supprimer les fichiers orphelins (non suivis par Iceberg)
+- trouver et supprimer les fichiers orphelins (non suivis par Iceberg), en exploitant un rapport d'inventaire de stockage pour accélérer considérablement le processus
+- supprimer les dossiers vides laissés après le nettoyage des fichiers orphelins
 - exécuter une optimisation sur les partitions non saines pour améliorer les performances de recherche
+- appliquer des politiques de cycle de vie pour supprimer automatiquement les anciennes données selon une période de rétention configurable
+
+## Aperçu
+
+Les propriétaires de tables contrôlent ice-keeper entièrement via les propriétés des tables Iceberg. Voici un résumé des principales fonctionnalités :
+
+- **Expiration des instantanés** — Activée par défaut. ice-keeper expire les anciens instantanés pour garder les métadonnées compactes et récupérer de l'espace de stockage. Vous contrôlez la fenêtre de rétention (en jours) et le nombre minimum d'instantanés à conserver.
+- **Suppression des fichiers orphelins** — Activée par défaut. ice-keeper identifie et supprime les fichiers de données écrits mais jamais validés (par exemple, en raison d'échecs de tâches). Il exploite un rapport d'inventaire de stockage pour accélérer considérablement ce processus. Les dossiers vides laissés derrière sont également nettoyés.
+- **Optimisation** — Sur inscription. Vous choisissez d'optimiser votre table et la stratégie à utiliser : `binpack` (compacter les petits fichiers), `sort` (compacter et trier par colonnes spécifiées), ou `zorder` (compacter et appliquer un Z-order par colonnes spécifiées). Vous contrôlez la fenêtre de diagnostic en spécifiant le nombre de partitions récentes à ignorer (`min-partition-to-optimize`) et la profondeur de l'historique à vérifier (`max-partition-to-optimize`). À l'intérieur de cette fenêtre, ice-keeper évalue la santé de chaque partition et n'optimise que celles qui en ont réellement besoin — toutes les partitions de la fenêtre ne sont pas réécrites. La taille cible des fichiers peut être définie explicitement ou laissée en automatique (recommandé), ce qui dimensionne les fichiers par partition pour des performances optimales.
+- **Gestion du cycle de vie** — Sur inscription. ice-keeper peut supprimer automatiquement les lignes plus anciennes qu'une période de rétention configurable, basée sur une colonne d'horodatage d'ingestion, aidant à gérer les coûts de stockage pour les tables avec des données à durée limitée.
+- **Réécriture des manifestes** — Sur inscription. ice-keeper peut réécrire les fichiers manifeste pour améliorer les performances de planification des requêtes.
+- **Élargissement des partitions** — Sur inscription. ice-keeper peut élargir les partitions (par exemple, de quotidien à mensuel) pour les données plus anciennes afin de réduire le nombre de petites partitions.
 
 ## Configuration d'ice-keeper via les propriétés des tables
 
