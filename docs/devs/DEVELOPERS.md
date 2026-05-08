@@ -282,52 +282,37 @@ order by
 
 In addition to using the Python logging mechanism, ice-keeper also writes the result of each individual action performed on the managed tables. All actions are logged in the `journal` table. The actions use a common set of columns and some columns are specific to the action.
 
-| Common column name | Description                                                                                                          |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| full_name          | Fully qualified name of the table operated on.                                                                       |
-| catalog            | Catalog name.                                                                                                        |
-| schema             | Schema name.                                                                                                         |
-| table_name         | Table name.                                                                                                          |
-| start_time         | Time the action was started.                                                                                         |
-| end_time           | Time the action completed.                                                                                           |
-| exec_time_seconds  | Execution duration in seconds.                                                                                       |
-| sql_stm            | **The complete SQL procedure call that was executed**, including all arguments.                                        |
-| status             | Status of the execution: `SUCCESS`, `FAILED`, or `WARNING`.                                                          |
-| status_details     | Additional details such as the exception stack trace on failure.                                                      |
-| executed_by        | Identity that executed this action.                                                                                  |
-| action             | The action taken: `rewrite_data_files`, `expire_snapshots`, `rewrite_manifests`, `remove_orphan_files`, `lifecycle`. |
-
-| Used by rewrite_data_files | Description                                         |
-| -------------------------- | --------------------------------------------------- |
-| rewritten_data_files_count | Number of data files rewritten.                     |
-| added_data_files_count     | Number of new data files created.                   |
-| rewritten_bytes_count      | Total bytes rewritten.                              |
-| failed_data_files_count    | Number of data files that failed to rewrite.        |
-| removed_delete_files_count | Number of delete files removed during compaction.   |
-
-| Used by expire_snapshots            | Description                                    |
-| ----------------------------------- | ---------------------------------------------- |
-| deleted_data_files_count            | Number of data files deleted.                  |
-| deleted_position_delete_files_count | Number of position delete files deleted.       |
-| deleted_equality_delete_files_count | Number of equality delete files deleted.       |
-| deleted_manifest_files_count        | Number of manifest files deleted.              |
-| deleted_manifest_lists_count        | Number of manifest lists deleted.              |
-| deleted_statistics_files_count      | Number of statistics files deleted.            |
-
-| Used by rewrite_manifests | Description                          |
-| ------------------------- | ------------------------------------ |
-| rewritten_manifests_count | Number of manifests rewritten.       |
-| added_manifests_count     | Number of new manifests created.     |
-
-| Used by remove_orphan_files | Description                                    |
-| --------------------------- | ---------------------------------------------- |
-| num_orphan_files_deleted    | Number of files deleted by remove_orphan_files.|
-
-| Used by lifecycle           | Description                                         |
-| --------------------------- | --------------------------------------------------- |
-| lifecycle_deleted_data_files     | Number of data files deleted by lifecycle.      |
-| lifecycle_deleted_records        | Number of records deleted by lifecycle.         |
-| lifecycle_changed_partition_count| Number of partitions affected by lifecycle.     |
+| Column name                         | Description                                                                                                          |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| full_name                           | Fully qualified name of the table operated on.                                                                       |
+| catalog                             | Catalog name.                                                                                                        |
+| schema                              | Schema name.                                                                                                         |
+| table_name                          | Table name.                                                                                                          |
+| start_time                          | Time the action was started.                                                                                         |
+| end_time                            | Time the action completed.                                                                                           |
+| exec_time_seconds                   | Execution duration in seconds.                                                                                       |
+| sql_stm                             | **The complete SQL procedure call that was executed**, including all arguments.                                       |
+| status                              | Status of the execution: `SUCCESS`, `FAILED`, or `WARNING`.                                                          |
+| status_details                      | Additional details such as the exception stack trace on failure.                                                     |
+| executed_by                         | Identity that executed this action.                                                                                  |
+| action                              | The action taken: `rewrite_data_files`, `expire_snapshots`, `rewrite_manifests`, `remove_orphan_files`, `lifecycle`. |
+| rewritten_data_files_count          | Number of data files rewritten. Used by `rewrite_data_files`.                                                        |
+| added_data_files_count              | Number of new data files created. Used by `rewrite_data_files`.                                                      |
+| rewritten_bytes_count               | Total bytes rewritten. Used by `rewrite_data_files`.                                                                 |
+| failed_data_files_count             | Number of data files that failed to rewrite. Used by `rewrite_data_files`.                                           |
+| removed_delete_files_count          | Number of delete files removed during compaction. Used by `rewrite_data_files`.                                      |
+| deleted_data_files_count            | Number of data files deleted. Used by `expire_snapshots`.                                                            |
+| deleted_position_delete_files_count | Number of position delete files deleted. Used by `expire_snapshots`.                                                 |
+| deleted_equality_delete_files_count | Number of equality delete files deleted. Used by `expire_snapshots`.                                                 |
+| deleted_manifest_files_count        | Number of manifest files deleted. Used by `expire_snapshots`.                                                        |
+| deleted_manifest_lists_count        | Number of manifest lists deleted. Used by `expire_snapshots`.                                                        |
+| deleted_statistics_files_count      | Number of statistics files deleted. Used by `expire_snapshots`.                                                      |
+| rewritten_manifests_count           | Number of manifests rewritten. Used by `rewrite_manifests`.                                                          |
+| added_manifests_count               | Number of new manifests created. Used by `rewrite_manifests`.                                                        |
+| num_orphan_files_deleted            | Number of files deleted. Used by `remove_orphan_files`.                                                              |
+| lifecycle_deleted_data_files        | Number of data files deleted by lifecycle. Used by `lifecycle`.                                                       |
+| lifecycle_deleted_records           | Number of records deleted by lifecycle. Used by `lifecycle`.                                                          |
+| lifecycle_changed_partition_count   | Number of partitions affected by lifecycle. Used by `lifecycle`.                                                      |
 
 _Table 2: journal table_
 

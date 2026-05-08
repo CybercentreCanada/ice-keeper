@@ -238,52 +238,37 @@ order by
 
 En plus d'utiliser le mécanisme de journalisation Python, ice-keeper écrit également le résultat de chaque action individuelle effectuée sur les tables gérées. Toutes les actions sont enregistrées dans la table `journal`. Les actions utilisent un ensemble commun de colonnes, et certaines colonnes sont spécifiques à l'action.
 
-| Nom de colonne commune | Description                                                                                                                |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| full_name              | Nom complet de la table sur laquelle l'action a été effectuée.                                                             |
-| catalog                | Nom du catalogue.                                                                                                          |
-| schema                 | Nom du schéma.                                                                                                             |
-| table_name             | Nom de la table.                                                                                                           |
-| start_time             | Heure de début de l'action.                                                                                                |
-| end_time               | Heure de fin de l'action.                                                                                                  |
-| exec_time_seconds      | Durée d'exécution en secondes.                                                                                             |
-| sql_stm                | **L'appel complet de la procédure SQL qui a été exécutée**, incluant tous les arguments.                                    |
-| status                 | Statut de l'exécution : `SUCCESS`, `FAILED` ou `WARNING`.                                                                   |
-| status_details         | Détails supplémentaires tels que la trace de l'exception en cas d'échec.                                                    |
-| executed_by            | Identité ayant exécuté cette action.                                                                                       |
-| action                 | Action effectuée : `rewrite_data_files`, `expire_snapshots`, `rewrite_manifests`, `remove_orphan_files`, `lifecycle`.       |
-
-| Utilisé par rewrite_data_files | Description                                           |
-| ----------------------------- | ----------------------------------------------------- |
-| rewritten_data_files_count    | Nombre de fichiers de données réécrits.                 |
-| added_data_files_count        | Nombre de nouveaux fichiers de données créés.           |
-| rewritten_bytes_count         | Total d'octets réécrits.                                |
-| failed_data_files_count       | Nombre de fichiers de données dont la réécriture a échoué.|
-| removed_delete_files_count    | Nombre de fichiers de suppression retirés lors de la compaction. |
-
-| Utilisé par expire_snapshots            | Description                                          |
-| --------------------------------------- | ---------------------------------------------------- |
-| deleted_data_files_count                | Nombre de fichiers de données supprimés.               |
-| deleted_position_delete_files_count     | Nombre de fichiers de suppression positionnelle supprimés. |
-| deleted_equality_delete_files_count     | Nombre de fichiers de suppression par égalité supprimés.    |
-| deleted_manifest_files_count            | Nombre de fichiers manifest supprimés.                 |
-| deleted_manifest_lists_count            | Nombre de listes de manifestes supprimées.             |
-| deleted_statistics_files_count          | Nombre de fichiers de statistiques supprimés.          |
-
-| Utilisé par rewrite_manifests | Description                                |
-| ----------------------------- | ------------------------------------------ |
-| rewritten_manifests_count     | Nombre de manifestes réécrits.              |
-| added_manifests_count         | Nombre de nouveaux manifestes créés.        |
-
-| Utilisé par remove_orphan_files | Description                                              |
-| ------------------------------- | -------------------------------------------------------- |
-| num_orphan_files_deleted        | Nombre de fichiers supprimés par remove_orphan_files.     |
-
-| Utilisé par lifecycle                | Description                                              |
-| ----------------------------------- | -------------------------------------------------------- |
-| lifecycle_deleted_data_files        | Nombre de fichiers de données supprimés par le cycle de vie. |
-| lifecycle_deleted_records           | Nombre d'enregistrements supprimés par le cycle de vie.     |
-| lifecycle_changed_partition_count   | Nombre de partitions affectées par le cycle de vie.         |
+| Nom de colonne                      | Description                                                                                                                |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| full_name                           | Nom complet de la table sur laquelle l'action a été effectuée.                                                             |
+| catalog                             | Nom du catalogue.                                                                                                          |
+| schema                              | Nom du schéma.                                                                                                             |
+| table_name                          | Nom de la table.                                                                                                           |
+| start_time                          | Heure de début de l'action.                                                                                                |
+| end_time                            | Heure de fin de l'action.                                                                                                  |
+| exec_time_seconds                   | Durée d'exécution en secondes.                                                                                             |
+| sql_stm                             | **L'appel complet de la procédure SQL qui a été exécutée**, incluant tous les arguments.                                   |
+| status                              | Statut de l'exécution : `SUCCESS`, `FAILED` ou `WARNING`.                                                                  |
+| status_details                      | Détails supplémentaires tels que la trace de l'exception en cas d'échec.                                                   |
+| executed_by                         | Identité ayant exécuté cette action.                                                                                       |
+| action                              | Action effectuée : `rewrite_data_files`, `expire_snapshots`, `rewrite_manifests`, `remove_orphan_files`, `lifecycle`.      |
+| rewritten_data_files_count          | Nombre de fichiers de données réécrits. Utilisé par `rewrite_data_files`.                                                  |
+| added_data_files_count              | Nombre de nouveaux fichiers de données créés. Utilisé par `rewrite_data_files`.                                            |
+| rewritten_bytes_count               | Total d'octets réécrits. Utilisé par `rewrite_data_files`.                                                                 |
+| failed_data_files_count             | Nombre de fichiers de données dont la réécriture a échoué. Utilisé par `rewrite_data_files`.                               |
+| removed_delete_files_count          | Nombre de fichiers de suppression retirés lors de la compaction. Utilisé par `rewrite_data_files`.                         |
+| deleted_data_files_count            | Nombre de fichiers de données supprimés. Utilisé par `expire_snapshots`.                                                   |
+| deleted_position_delete_files_count | Nombre de fichiers de suppression positionnelle supprimés. Utilisé par `expire_snapshots`.                                 |
+| deleted_equality_delete_files_count | Nombre de fichiers de suppression par égalité supprimés. Utilisé par `expire_snapshots`.                                   |
+| deleted_manifest_files_count        | Nombre de fichiers manifest supprimés. Utilisé par `expire_snapshots`.                                                     |
+| deleted_manifest_lists_count        | Nombre de listes de manifestes supprimées. Utilisé par `expire_snapshots`.                                                 |
+| deleted_statistics_files_count      | Nombre de fichiers de statistiques supprimés. Utilisé par `expire_snapshots`.                                              |
+| rewritten_manifests_count           | Nombre de manifestes réécrits. Utilisé par `rewrite_manifests`.                                                            |
+| added_manifests_count               | Nombre de nouveaux manifestes créés. Utilisé par `rewrite_manifests`.                                                      |
+| num_orphan_files_deleted            | Nombre de fichiers supprimés. Utilisé par `remove_orphan_files`.                                                           |
+| lifecycle_deleted_data_files        | Nombre de fichiers de données supprimés par le cycle de vie. Utilisé par `lifecycle`.                                      |
+| lifecycle_deleted_records           | Nombre d'enregistrements supprimés par le cycle de vie. Utilisé par `lifecycle`.                                           |
+| lifecycle_changed_partition_count   | Nombre de partitions affectées par le cycle de vie. Utilisé par `lifecycle`.                                               |
 
 _Tableau 2 : table journal_
 
