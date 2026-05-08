@@ -80,6 +80,7 @@ class PartitionSummary:
                     and schema = '{self.mnt_props.schema}'
                     and table_name = '{self.mnt_props.table_name}'
                     and optimized = true
+                    and start_time > now() - interval '30' days
                 group by partition_desc
             ) ph
             on s.partition_desc = ph.partition_desc
