@@ -1,5 +1,6 @@
 import logging
 
+from ice_keeper.config import Config
 from ice_keeper.output import rows_log_debug
 from ice_keeper.spec.widening_rule import WideningRule
 from ice_keeper.stm import STL
@@ -54,6 +55,41 @@ class PartitionSummary:
             qualifier = "sorted"
         rows = STL.sql(f"select * from {self.summary_before_view_name}", "Retrieve rows from partition summary").take(max_rows)
         rows_log_debug(rows, f"Partition Summary of {self.mnt_props.full_name} for {qualifier} optimized table")
+
+    def filter_already_optimized_partitions(self) -> None:
+        """Remove partitions from the summary that were already optimized and haven't changed.
+
+        Checks partition_health for the most recent entry per partition where the partition
+        was marked as optimized. If the current max_file_sequence_number matches the
+        after.max_file_sequence_number from the last successful optimization, no new data
+        has arrived and the partition is excluded from the summary.
+        """
+        partition_health_table = Config.instance().partition_health_table_name
+        view_name = self.summary_before_view_name
+
+        filter_sql = f"""
+            select s.*
+            from {view_name} s
+            left anti join (
+                select
+                    partition_desc,
+                    max(after.max_file_sequence_number) as last_optimized_max_seq
+                from {partition_health_table}
+                where
+                    catalog = '{self.mnt_props.catalog}'
+                    and schema = '{self.mnt_props.schema}'
+                    and table_name = '{self.mnt_props.table_name}'
+                    and optimized = true
+                group by partition_desc
+            ) ph
+            on s.partition_desc = ph.partition_desc
+               and s.max_file_sequence_number = ph.last_optimized_max_seq
+        """
+
+        STL.sql(f"uncache table if exists {view_name}", f"Un-caching table: {view_name}")
+        df = STL.sql_and_log(filter_sql, "Filter out already-optimized partitions")
+        df.createOrReplaceTempView(view_name)
+        STL.sql(f"cache table {view_name}", f"Re-caching filtered table: {view_name}")
 
     def uncache_views(self, *, did_some_optimizations: bool) -> None:
         """Uncache the summary views.

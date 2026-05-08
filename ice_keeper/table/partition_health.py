@@ -48,6 +48,7 @@ class PartitionHealth:
                     '{mnt_props.table_name}' as table_name,
                     b.partition_desc as partition_desc,
                     b.partition_age as partition_age,
+                    (b.max_file_sequence_number <> coalesce(a.max_file_sequence_number, -1)) as optimized,
                     struct(
                         b.n_files,
                         b.num_files_targetted_for_rewrite,
@@ -56,7 +57,8 @@ class PartitionHealth:
                         b.min_file_size,
                         b.max_file_size,
                         b.sum_file_size,
-                        b.corr) as before,
+                        b.corr,
+                        b.max_file_sequence_number) as before,
                     struct(
                         a.n_files,
                         a.num_files_targetted_for_rewrite,
@@ -65,7 +67,8 @@ class PartitionHealth:
                         a.min_file_size,
                         a.max_file_size,
                         a.sum_file_size,
-                        a.corr) as after
+                        a.corr,
+                        a.max_file_sequence_number) as after
 
                 from
                     {before_view_name} as b
