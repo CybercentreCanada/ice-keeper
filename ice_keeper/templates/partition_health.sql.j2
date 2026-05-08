@@ -6,6 +6,7 @@ create table {{ full_name }} (
         table_name string not null,
         partition_desc string,
         partition_age int,
+        optimized boolean,
         before struct<
             n_files long,
             num_files_targetted_for_rewrite long,
@@ -14,7 +15,8 @@ create table {{ full_name }} (
             min_file_size double,
             max_file_size double,
             sum_file_size double,
-            corr double
+            corr double,
+            max_file_sequence_number long
             >,
         after struct<
             n_files long,
@@ -24,7 +26,8 @@ create table {{ full_name }} (
             min_file_size double,
             max_file_size double,
             sum_file_size double,
-            corr double
+            corr double,
+            max_file_sequence_number long
             >
     )
     using iceberg

@@ -73,6 +73,15 @@ class DataFilesBinpack(DataFiles):
     def make_data_files_stmt(self) -> str:
         """Generate a SQL query to retrieve data files for binpacking optimization.
 
+        We query .entries instead of .files to access file_sequence_number, which is
+        not available in .files. We filter out deleted entries (status != 2) to get
+        only live files, matching the behavior of .files.
+
+        Iceberg manifest entry status values:
+          0 = EXISTING (file was already there, still live)
+          1 = ADDED (file was added in this snapshot)
+          2 = DELETED (file was removed)
+
         Returns:
             str: SQL query for fetching relevant data files.
         """
@@ -82,10 +91,20 @@ class DataFilesBinpack(DataFiles):
                 content,
                 record_count,
                 file_size_in_bytes,
+                file_sequence_number,
                 readable_metrics,
                 false as is_data_file_from_widening_src_partition
             from
-                {self.mnt_props.full_name}.files
+                (
+                    select
+                        file_sequence_number,
+                        readable_metrics,
+                        data_file.*
+                    from
+                        {self.mnt_props.full_name}.entries
+                    where
+                        status != 2
+                )
         """
 
 
@@ -109,6 +128,15 @@ class DataFilesSort(DataFiles):
     def make_data_files_stmt(self) -> str:
         """Generate a SQL query to retrieve data files for sorting optimization.
 
+        We query .entries instead of .files to access file_sequence_number, which is
+        not available in .files. We filter out deleted entries (status != 2) to get
+        only live files, matching the behavior of .files.
+
+        Iceberg manifest entry status values:
+          0 = EXISTING (file was already there, still live)
+          1 = ADDED (file was added in this snapshot)
+          2 = DELETED (file was removed)
+
         Returns:
             str: SQL query for fetching relevant data files.
         """
@@ -118,10 +146,20 @@ class DataFilesSort(DataFiles):
                 content,
                 record_count,
                 file_size_in_bytes,
+                file_sequence_number,
                 readable_metrics,
                 false as is_data_file_from_widening_src_partition
             from
-                {self.mnt_props.full_name}.files
+                (
+                    select
+                        file_sequence_number,
+                        readable_metrics,
+                        data_file.*
+                    from
+                        {self.mnt_props.full_name}.entries
+                    where
+                        status != 2
+                )
         """
 
 
@@ -201,6 +239,15 @@ class DataFilesWideningSort(DataFiles):
         This ensures that the widening rule includes files from both the destination and relevant
         source partitions for optimization.
 
+        We query .entries instead of .files to access file_sequence_number, which is
+        not available in .files. We filter out deleted entries (status != 2) to get
+        only live files, matching the behavior of .files.
+
+        Iceberg manifest entry status values:
+          0 = EXISTING (file was already there, still live)
+          1 = ADDED (file was added in this snapshot)
+          2 = DELETED (file was removed)
+
         Returns:
             str: SQL query for retrieving and processing data files according to the
                 widening rule criteria.
@@ -212,10 +259,20 @@ class DataFilesWideningSort(DataFiles):
                     content,
                     record_count,
                     file_size_in_bytes,
+                    file_sequence_number,
                     readable_metrics,
                     false as is_data_file_from_widening_src_partition
                 from
-                    {self.mnt_props.full_name}.files
+                    (
+                        select
+                            file_sequence_number,
+                            readable_metrics,
+                            data_file.*
+                        from
+                            {self.mnt_props.full_name}.entries
+                        where
+                            status != 2
+                    )
             )
             union all
             (
@@ -224,10 +281,20 @@ class DataFilesWideningSort(DataFiles):
                     content,
                     record_count,
                     file_size_in_bytes,
+                    file_sequence_number,
                     readable_metrics,
                     true as is_data_file_from_widening_src_partition
                 from
-                    {self.mnt_props.full_name}.files
+                    (
+                        select
+                            file_sequence_number,
+                            readable_metrics,
+                            data_file.*
+                        from
+                            {self.mnt_props.full_name}.entries
+                        where
+                            status != 2
+                    )
                 where
                     spec_id = {self.widening_rule.src_widening.partition_spec.spec_id}
                     and {self.widening_rule.filter_expr}
@@ -521,6 +588,7 @@ class DataFilesSummary:
                     content,
                     record_count,
                     file_size_in_bytes,
+                    file_sequence_number,
                     readable_metrics,
                     {{ lower_bounds_expr }} as the_lower_bound,
                     {{ upper_bounds_expr }} as the_upper_bound,
@@ -535,6 +603,7 @@ class DataFilesSummary:
                     content,
                     record_count,
                     file_size_in_bytes,
+                    file_sequence_number,
                     row_number() over (partition by {{ grouping_stmt }} order by the_lower_bound) rn1,
                     row_number() over (partition by {{ grouping_stmt }} order by the_upper_bound) rn2,
                     is_data_file_from_widening_src_partition
@@ -549,6 +618,7 @@ class DataFilesSummary:
                     content,
                     record_count,
                     file_size_in_bytes,
+                    file_sequence_number,
                     rn1,
                     rn2,
                     is_data_file_from_widening_src_partition,
@@ -567,6 +637,7 @@ class DataFilesSummary:
                     content,
                     record_count,
                     file_size_in_bytes,
+                    file_sequence_number,
                     rn1,
                     rn2,
                     is_data_file_from_widening_src_partition,
@@ -616,7 +687,9 @@ class DataFilesSummary:
 
                     count_if(content > 0) as n_delete_files, -- Aggregations for content > 0 (delete files)
 
-                    sum(case when content > 0 then record_count else 0 end) as n_delete_records
+                    sum(case when content > 0 then record_count else 0 end) as n_delete_records,
+
+                    max(file_sequence_number) as max_file_sequence_number
                 from
                     target_file_size_per_partition
                 group by
@@ -632,6 +705,7 @@ class DataFilesSummary:
                     num_files_targetted_for_rewrite,
                     n_records,
                     target_file_size,
+                    max_file_sequence_number,
                     avg_file_size,
                     min_file_size,
                     max_file_size,
@@ -651,7 +725,8 @@ class DataFilesSummary:
                     (1.0 * num_files_targetted_for_rewrite) / n_files > 0.10
                     and num_files_targetted_for_rewrite > {{ binpack_min_input_files }}
                     )
-                    or n_delete_files > 0 as should_optimize,
+                    or n_delete_files > 0
+                    or num_files_to_widen > 0 as should_optimize,
                     {% else %}
                     -- Determine necessity for sorting based on correlation threshold or delete files
                     (corr < corr_threshold or n_delete_files > 0 or num_files_to_widen > 0) as should_optimize,
