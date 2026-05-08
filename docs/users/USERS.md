@@ -16,13 +16,26 @@ These are the most common operations that are needed to keep tables performant a
 - Snapshot expiration removes old snapshots and deletes data files that are no longer needed.
 - Orphan file cleanup identifies and deletes data files that were written but never committed because of job failures.
 
-ice-keeper is a service that automates Iceberg table maintenance. ice-keeper is scheduled to run every night in Airflow.
+ice-keeper is a service that automates Iceberg table maintenance. ice-keeper is typically scheduled to run every night in Airflow, but it can be scheduled in your favorite scheduler (e.g., Airflow, Dagster, cron, or any other orchestration tool).
 
 ice-keeper can:
 - expire old snapshots
-- find and remove orphan files (not tracked by Iceberg)
+- find and remove orphan files (not tracked by Iceberg), leveraging a storage inventory report to greatly speed up the process
+- remove empty folders left behind after orphan file cleanup
 - run an optimization on unhealthy partitions to improve search performance
+- apply lifecycle policies to automatically delete old data based on a configurable retention period
 
+
+## Overview
+
+Table owners control ice-keeper entirely through Iceberg table properties. Here is a summary of the key capabilities:
+
+- **Snapshot expiration** — Enabled by default. ice-keeper expires old snapshots to keep metadata small and reclaim storage. You control the retention window (in days) and the minimum number of snapshots to keep.
+- **Orphan file removal** — Enabled by default. ice-keeper identifies and deletes data files that were written but never committed (e.g., due to job failures). It leverages a storage inventory report to greatly speed up this process. Empty folders left behind are also cleaned up.
+- **Optimization** — Opt-in. You choose whether to optimize your table and which strategy to use: `binpack` (compact small files), `sort` (compact and sort by specified columns), or `zorder` (compact and Z-order by specified columns). You control the diagnostic window by specifying how many recent partitions to skip (`min-partition-to-optimize`) and how far back to look (`max-partition-to-optimize`). Within this window, ice-keeper evaluates the health of each partition and only optimizes those that actually need it — not every partition in the window is rewritten. The target file size can be set explicitly or left on automatic (recommended), which sizes files per partition for optimal performance.
+- **Lifecycle management** — Opt-in. ice-keeper can automatically delete rows older than a configurable retention period based on an ingestion time column, helping manage storage costs for tables with time-bound data.
+- **Manifest rewriting** — Opt-in. ice-keeper can rewrite manifest files to improve query planning performance.
+- **Partition widening** — Opt-in. ice-keeper can widen partitions (e.g., from daily to monthly) for older data to reduce the number of small partitions.
 
 ## Configuring ice-keeper via Table Properties
 

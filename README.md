@@ -1,6 +1,6 @@
 # ice-keeper
 
-ice-keeper is a service that automates Iceberg table maintenance. ice-keeper is scheduled to run every night in Airflow/Spellbook.
+ice-keeper is a service that automates Iceberg table maintenance. ice-keeper is scheduled to run every night in Airflow.
 
 ice-keeper can:
 - expire old snapshots
@@ -15,7 +15,7 @@ ice-keeper can:
 
 # ice-keeper (Français)
 
-ice-keeper est un service qui automatise la maintenance des tables Iceberg. ice-keeper est programmé pour s'exécuter chaque nuit dans Airflow/Spellbook.
+ice-keeper est un service qui automatise la maintenance des tables Iceberg. ice-keeper est programmé pour s'exécuter chaque nuit dans Airflow.
 
 ice-keeper peut :
 - expirer les anciens instantanés
