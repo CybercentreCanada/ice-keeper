@@ -18,6 +18,7 @@ def test_mail_generation() -> None:
         action="expire_snapshots",
         sql_stm=sql_stm,
         status=Status.FAILED.value,
+        status_details="java.lang.Exception: Something went wrong during snapshot expiration",
     )
     rows = [row]
     context = {
@@ -30,3 +31,4 @@ def test_mail_generation() -> None:
     assert "FAILED" in html_body
     assert "expire_snapshots" in html_body
     assert "cat1.schema1.table1" in html_body
+    assert "Something went wrong" in html_body
