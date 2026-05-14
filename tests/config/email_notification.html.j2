@@ -127,6 +127,10 @@
                                   style="text-align: left; font-size: 18px; color: #000000; font-weight: 500; margin: 10; padding: 14px 10;">
                                   Status
                                 </th>
+                                <th
+                                  style="text-align: left; font-size: 18px; color: #000000; font-weight: 500; margin: 10; padding: 14px 10;">
+                                  Details
+                                </th>
                               </tr>
 
                               {% for row in rows %}
@@ -139,22 +143,27 @@
                                 <!-- full name -->
                                 <td
                                   style="text-align: left; vertical-align: top; font-size: 15px; line-height: 1.4; color: #333333; font-weight: 300; margin: 10; padding: 14px 10; border-top-width: 1px; border-top-color: #bdb8b8; border-top-style: solid;">
-                                 <a href="https://hostname/superset/dashboard">{{row["full_name"]}}</a>
+                                 <a href="https://hostname/superset/dashboard">{{row["full_name"]|e}}</a>
                                 </td>
                                 <!-- action -->
                                 <td
                                   style="text-align: left; vertical-align: top; font-size: 15px; line-height: 1.4; color: #333333; font-weight: 300; margin: 10; padding: 14px 10; border-top-width: 1px; border-top-color: #bdb8b8; border-top-style: solid;">
-                                 {{ row["action"] }}
+                                 {{ row["action"]|e }}
                                 </td>
                                 <!-- statement -->
                                 <td
                                   style="white-space: pre-wrap; text-align: left; vertical-align: top; font-size: 15px; line-height: 1.4; color: #333333; font-weight: 300; margin: 10; padding: 14px 10; border-top-width: 1px; border-top-color: #bdb8b8; border-top-style: solid;">
-                                  <pre><code>{{ row["sql_stm"].strip() }}</code></pre>
+                                  <pre><code>{{ row["sql_stm"]|default('')|trim|e }}</code></pre>
                                 </td>
                                 <!-- status -->
                                 <td
                                   style="text-align: left; vertical-align: top; font-size: 15px; line-height: 1.4; color: #333333; font-weight: 300; margin: 10; padding: 14px 10; border-top-width: 1px; border-top-color: #bdb8b8; border-top-style: solid;">
-                                  {{ row["status"] }}
+                                  {{ row["status"]|e }}
+                                </td>
+                                <!-- details -->
+                                <td
+                                  style="white-space: pre-wrap; text-align: left; vertical-align: top; font-size: 13px; line-height: 1.4; color: #333333; font-weight: 300; margin: 10; padding: 14px 10; border-top-width: 1px; border-top-color: #bdb8b8; border-top-style: solid; max-width: 400px; overflow: hidden; word-break: break-word;">
+                                  <pre><code>{{ row["status_details"]|default('')|trim|e }}</code></pre>
                                 </td>
                               </tr>
                               {% endfor %}
