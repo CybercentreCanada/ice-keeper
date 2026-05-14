@@ -93,7 +93,7 @@ class Emailer:
                     j.exec_time_seconds,
                     j.sql_stm,
                     j.status,
-                    j.status_details
+                    substring(j.status_details, 1, 400) as status_details
                 from
                     journal_entries as j
                     join failed_every_day as f on(
@@ -112,7 +112,7 @@ class Emailer:
                     ) as start_time,
                     f.sql_stm,
                     f.status,
-                    substring(f.status_details, 1, 400) as status_details
+                    f.status_details
                 from
                     failed_journal_entries as f
                     join ({maintenance_sql}) as s on (f.full_name = s.full_name)
