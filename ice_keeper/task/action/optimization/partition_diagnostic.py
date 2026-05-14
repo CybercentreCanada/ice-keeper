@@ -78,7 +78,8 @@ class PartitionDiagnosis:
                         {{ list_of_all_partition_alias_stmt }},
                         target_file_size,
                         sum_file_size as subpartition_size,
-                        should_optimize
+                        should_optimize,
+                        has_new_data
                     from
                         {{ summary_before_view_name }}
                 ),
