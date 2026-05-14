@@ -142,10 +142,7 @@ class OptimizationStrategy(ActionStrategy):
             widening_rule = self.get_widening_rule(spec_id)
             # Collect partition summary for the spec_id
             summary = PartitionSummary(self.mnt_props, spec_id, widening_rule)
-            summary.show(100)
-            if widening_rule is None:
-                summary.filter_already_optimized_partitions()
-                summary.show(100)
+            summary.show(10000)
 
             try:
                 # Diagnose the partitions for optimization opportunities

@@ -7,6 +7,7 @@ from pyspark.sql.types import BinaryType
 from typing_extensions import override
 
 from ice_keeper import IceKeeperTblProperty
+from ice_keeper.config import Config
 from ice_keeper.spec import PartitionSpecification, WideningRule
 from ice_keeper.stm import STL
 from ice_keeper.table import MaintenanceScheduleEntry
@@ -333,6 +334,7 @@ class DataFilesSummary:
         assert mnt_props.optimization_spec.is_binpack() or mnt_props.optimization_spec.is_sorted()
         self.bounds: Bounds = BoundsBinpack(mnt_props)
         self.datafiles: DataFiles = DataFilesBinpack(mnt_props, self.spec)
+        self.has_widening_rule = widening_rule is not None
         if mnt_props.optimization_spec.is_sorted():
             self.bounds = BoundsZorderSort(mnt_props) if mnt_props.optimization_spec.is_zordered else BoundsSort(mnt_props)
             if widening_rule:
@@ -696,7 +698,7 @@ class DataFilesSummary:
                     {{ grouping_stmt }}
             ),
             -- Add should optimize flags to the aggregate.
-            final as (
+            aggregated_should_optimize as (
                 select
                     {{ grouping_stmt }},
                     partition_age,
@@ -750,6 +752,35 @@ class DataFilesSummary:
                 {% endif %}
             )
 
+            {% if not has_widening_rule %}
+            , final as (
+                select agg.*,
+                       ph.last_optimized_max_seq,
+                       case
+                           when ph.last_optimized_max_seq is null then true
+                           when agg.max_file_sequence_number != ph.last_optimized_max_seq then true
+                           else false
+                       end as has_new_data
+                from aggregated_should_optimize agg
+                left join (
+                    select
+                        partition_desc,
+                        max(after.max_file_sequence_number) as last_optimized_max_seq
+                    from {{ partition_health_table }}
+                    where
+                        catalog = '{{ ph_catalog }}'
+                        and schema = '{{ ph_schema }}'
+                        and table_name = '{{ ph_table_name }}'
+                        and optimized = true
+                        and start_time > now() - interval '30' days
+                    group by partition_desc
+                ) ph
+                on agg.partition_desc = ph.partition_desc
+            )
+            {% else %}
+            , final as (select * from aggregated_should_optimize)
+            {% endif %}
+
             select * from final
         """)
 
@@ -778,4 +809,9 @@ class DataFilesSummary:
             format_avg_file_size=self._format_bytes_stmt("avg_file_size"),
             format_target_file_size=self._format_bytes_stmt("target_file_size"),
             is_binpack=self.mnt_props.optimization_spec.is_binpack(),
+            has_widening_rule=self.has_widening_rule,
+            ph_catalog=self.mnt_props.catalog,
+            ph_schema=self.mnt_props.schema,
+            ph_table_name=self.mnt_props.table_name,
+            partition_health_table=Config.instance().partition_health_table_name,
         )

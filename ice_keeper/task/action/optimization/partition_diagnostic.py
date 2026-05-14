@@ -33,6 +33,7 @@ class PartitionDiagnosis:
         self.mnt_props = mnt_props
         self.spec = mnt_props.partition_specs[spec_id]
         self.widening_rule = widening_rule
+        self.has_widening_rule = widening_rule is not None
 
     def _find_partitions_to_optimize_dynamic_grouping(
         self, summary: PartitionSummary, diagnostic_depth: int
@@ -77,7 +78,8 @@ class PartitionDiagnosis:
                         {{ list_of_all_partition_alias_stmt }},
                         target_file_size,
                         sum_file_size as subpartition_size,
-                        should_optimize
+                        should_optimize,
+                        has_new_data
                     from
                         {{ summary_before_view_name }}
                 ),
@@ -100,6 +102,9 @@ class PartitionDiagnosis:
                         summary
                     where
                         should_optimize = true
+                        {% if not has_widening_rule %}
+                        and has_new_data = true
+                        {% endif %}
                 ),
                 /*
                 Computes a cumulative sum of subpartition_size ordered by partition_age (same-age rows stay together), with larger partitions first as tiebreaker
@@ -158,6 +163,7 @@ class PartitionDiagnosis:
             summary_before_view_name=summary.summary_before_view_name,
             full_name=self.mnt_props.full_name,
             optimization_grouping_size_threshold=self.mnt_props.optimization_grouping_size_bytes,
+            has_widening_rule=self.has_widening_rule,
         )
 
         rows = STL.sql_and_log(sql, "Find partitions to optimize using dynamic grouping").collect()
@@ -205,6 +211,9 @@ class PartitionDiagnosis:
                     {{ summary_before_view_name }}
                 where
                     should_optimize = true
+                    {% if not has_widening_rule %}
+                    and has_new_data = true
+                    {% endif %}
                 group by
                     partition_age,
                     {% if is_time_partitioned %}
@@ -225,6 +234,7 @@ class PartitionDiagnosis:
             depth_grouping_stmt=self.spec.make_diagnosis_grouping_stmt(diagnostic_depth),
             summary_before_view_name=summary.summary_before_view_name,
             full_name=self.mnt_props.full_name,
+            has_widening_rule=self.has_widening_rule,
         )
 
         # Log the SQL query for debugging

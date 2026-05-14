@@ -473,7 +473,7 @@ def test_widening_no_data_in_src_partition(executor: TaskExecutor) -> None:  # n
     widening_rule = ops.get_widening_rule(spec_id)
     assert widening_rule is None
     summary = PartitionSummary(mnt_props, spec_id, widening_rule)
-    diagnosis = PartitionDiagnosis(mnt_props, spec_id)
+    diagnosis = PartitionDiagnosis(mnt_props, spec_id, widening_rule)
     diagnosis_results = diagnosis.find_partitions_to_optimize(summary)
     assert len(diagnosis_results) == 0
 
@@ -481,7 +481,7 @@ def test_widening_no_data_in_src_partition(executor: TaskExecutor) -> None:  # n
     widening_rule = ops.get_widening_rule(spec_id)
     assert widening_rule is None
     summary = PartitionSummary(mnt_props, spec_id, widening_rule)
-    diagnosis = PartitionDiagnosis(mnt_props, spec_id)
+    diagnosis = PartitionDiagnosis(mnt_props, spec_id, widening_rule)
     diagnosis_results = diagnosis.find_partitions_to_optimize(summary)
     assert len(diagnosis_results) == 0
 
@@ -489,7 +489,7 @@ def test_widening_no_data_in_src_partition(executor: TaskExecutor) -> None:  # n
     widening_rule = ops.get_widening_rule(spec_id)
     assert widening_rule is None
     summary = PartitionSummary(mnt_props, spec_id, widening_rule)
-    diagnosis = PartitionDiagnosis(mnt_props, spec_id)
+    diagnosis = PartitionDiagnosis(mnt_props, spec_id, widening_rule)
     diagnosis_results = diagnosis.find_partitions_to_optimize(summary)
     assert len(diagnosis_results) == 0
 
@@ -497,7 +497,7 @@ def test_widening_no_data_in_src_partition(executor: TaskExecutor) -> None:  # n
     widening_rule = ops.get_widening_rule(spec_id)
     assert widening_rule is None
     summary = PartitionSummary(mnt_props, spec_id, widening_rule)
-    diagnosis = PartitionDiagnosis(mnt_props, spec_id)
+    diagnosis = PartitionDiagnosis(mnt_props, spec_id, widening_rule)
     diagnosis_results = diagnosis.find_partitions_to_optimize(summary)
     assert len(diagnosis_results) == 0
 
@@ -505,7 +505,7 @@ def test_widening_no_data_in_src_partition(executor: TaskExecutor) -> None:  # n
     widening_rule = ops.get_widening_rule(spec_id)
     assert widening_rule, "The partition has a widening rule."
     summary = PartitionSummary(mnt_props, spec_id, widening_rule)
-    diagnosis = PartitionDiagnosis(mnt_props, spec_id)
+    diagnosis = PartitionDiagnosis(mnt_props, spec_id, widening_rule)
     diagnosis_results = diagnosis.find_partitions_to_optimize(summary)
     assert len(diagnosis_results) == 3
 
