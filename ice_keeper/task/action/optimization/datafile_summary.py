@@ -6,7 +6,8 @@ from pyspark.sql.functions import pandas_udf
 from pyspark.sql.types import BinaryType
 from typing_extensions import override
 
-from ice_keeper import Config, IceKeeperTblProperty
+from ice_keeper import IceKeeperTblProperty
+from ice_keeper.config import Config
 from ice_keeper.spec import PartitionSpecification, WideningRule
 from ice_keeper.stm import STL
 from ice_keeper.table import MaintenanceScheduleEntry
