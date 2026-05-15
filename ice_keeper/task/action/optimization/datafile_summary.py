@@ -755,6 +755,7 @@ class DataFilesSummary:
             {% if not has_widening_rule %}
             , final as (
                 select agg.*,
+                       agg.max_file_sequence_number,
                        ph.last_optimized_max_seq,
                        case
                            when ph.last_optimized_max_seq is null then true
