@@ -6,6 +6,7 @@ from .task import (  # noqa: F401  # noqa: F401, F811
     Task,
     TaskResult,
     get_ordered_tasks_by_execution_time,
+    ClosedSparkSessionError,
 )
 from .task_sequential import SequentialTask  # noqa: F401
 from .action import ActionTaskFactory  # noqa: F401

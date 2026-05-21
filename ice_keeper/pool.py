@@ -5,7 +5,7 @@ from concurrent.futures import Future, ThreadPoolExecutor, wait
 from typing import Any, TypeVar
 
 from .table.journal import Journal
-from .task import SubTaskExecutor, Task, TaskResult
+from .task import ClosedSparkSessionError, SubTaskExecutor, Task, TaskResult
 
 logger = logging.getLogger("ice-keeper")
 
@@ -129,6 +129,9 @@ class TaskExecutor(SubTaskExecutor):
                 msg = f"Error executing task {task.task_description}: {result.exception}"
                 logger.error(msg)
                 success = False
+                if isinstance(result.exception, ClosedSparkSessionError):
+                    # If the session is closed, we should stop processing further tasks
+                    self.shutdown(wait=False)
             elif result.journal_entry:  # Check if journal entry indicates success
                 if not result.journal_entry.is_success():
                     success = False

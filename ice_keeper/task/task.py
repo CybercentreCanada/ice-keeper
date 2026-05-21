@@ -10,6 +10,10 @@ from ice_keeper.table import JournalEntry
 logger = logging.getLogger("ice-keeper")
 
 
+class ClosedSparkSessionError(Exception):
+    """Exception raised when attempting to execute a task with a closed Spark session."""
+
+
 class TaskResult:
     """Represents the result of a task execution.
 
@@ -145,7 +149,7 @@ class SparkTask(Task):
             TaskResult: The result of the task execution.
 
         Raises:
-            Exception: If the Spark session is stopped before execution starts.
+            ClosedSparkSessionError: If the Spark session is stopped before execution starts.
         """
         # Check if the parent Spark session is stopped
         if not self.parent_session.sparkContext._jsc:  # noqa: SLF001
@@ -153,6 +157,9 @@ class SparkTask(Task):
             raise Exception(msg)
 
         # Create a new session for the task and assign it to the thread-local context
+        if self.parent_session._sc._jsc.sc().isStopped():  # noqa: SLF001
+            msg = "Spark session is stopped"
+            raise ClosedSparkSessionError(msg)
         STL.set(self.parent_session.newSession(), self.task_name())
         STL.get().sparkContext.setJobGroup(self.task_description(), self.task_description())
 
