@@ -1,11 +1,13 @@
 import logging
 import os
 import re
+import subprocess
 import sys
 import time
 from datetime import datetime, timezone
 
 import click
+from py4j.java_gateway import JavaGateway
 from pyspark.sql import Row, SparkSession
 
 from ice_keeper import Action, Command, configure_logger
@@ -237,43 +239,17 @@ def cli(
                 gateway = getattr(sc, "_gateway", None)
                 if gateway is not None:
                     jvm_proc = getattr(gateway, "proc", None) or getattr(gateway, "_proc", None)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 logger.exception("Could not locate py4j gateway/JVM handle")
 
             # 1. Stop the SparkContext on the JVM side.
             try:
                 spark.stop()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 logger.exception("spark.stop() raised")
 
-            # 2. Explicitly shut down the py4j gateway (callback server + client).
-            #    SparkContext.stop() does NOT do this, and without it the JVM
-            #    keeps running, gets reparented to tini, and the pod never exits.
-            if gateway is not None:
-                try:
-                    cbs = getattr(gateway, "_callback_server", None)
-                    if cbs is not None:
-                        cbs.shutdown()
-                except Exception:  # noqa: BLE001
-                    logger.exception("py4j callback server shutdown failed")
-                try:
-                    gateway.shutdown()
-                except Exception:  # noqa: BLE001
-                    logger.exception("py4j gateway shutdown failed")
-
-            # 3. Belt-and-suspenders: if the JVM child is still alive,
-            #    terminate it. Otherwise it gets reparented to tini (PID 1)
-            #    and the pod runs forever.
-            if jvm_proc is not None:
-                try:
-                    if jvm_proc.poll() is None:
-                        jvm_proc.terminate()
-                        try:
-                            jvm_proc.wait(timeout=15)
-                        except Exception:  # noqa: BLE001
-                            jvm_proc.kill()
-                except Exception:  # noqa: BLE001
-                    logger.exception("Failed to terminate Spark JVM subprocess")
+            shutdown_py4j_gateway(gateway)
+            shutdown_jvm_proc(jvm_proc)
 
         end = time.time()
         logger.info("||||||||  %s TOOK A TOTAL OF : %s SECONDS TO RUN. |||||||||||", app_name, end - start)
@@ -478,6 +454,32 @@ def make_sequences(actions: set[Action], maintenance_schedule: MaintenanceSchedu
             sequential_tasks[child_task.task_name()].add_task(child_task)
     return list(sequential_tasks.values())
 
+def shutdown_py4j_gateway(gateway: JavaGateway | None) -> None:
+    # Explicitly shut down the py4j gateway (callback server + client)
+    if gateway is not None:
+        try:
+            cbs = getattr(gateway, "_callback_server", None)
+            if cbs is not None:
+                cbs.shutdown()
+        except Exception:
+            logger.exception("py4j callback server shutdown failed")
+        try:
+            gateway.shutdown()
+        except Exception:
+            logger.exception("py4j gateway shutdown failed")
+
+def shutdown_jvm_proc(jvm_proc: subprocess.Popen[bytes] | None) -> None:
+    # If the JVM child is still alive, terminate it
+    if jvm_proc is not None:
+        try:
+            if jvm_proc.poll() is None:
+                jvm_proc.terminate()
+                try:
+                    jvm_proc.wait(timeout=15)
+                except Exception:  # noqa: BLE001
+                    jvm_proc.kill()
+        except Exception:
+            logger.exception("Failed to terminate Spark JVM subprocess")
 
 @cli.command(short_help="Run multiple maintenance commands across multiple tables.")
 @click.option(
