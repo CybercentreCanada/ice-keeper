@@ -225,8 +225,56 @@ def cli(
     @ctx.call_on_close
     def stop_journal_and_spark() -> None:
         executor.shutdown()
-        if STL.get():
-            STL.get().stop()
+        spark = STL.get()
+        if spark:
+            # Grab a handle to the JVM subprocess BEFORE we tear anything down.
+            # In driver mode pyspark launches Java via Popen and stashes it
+            # on the gateway as _proc.
+            jvm_proc = None
+            gateway = None
+            try:
+                sc = spark.sparkContext
+                gateway = getattr(sc, "_gateway", None)
+                if gateway is not None:
+                    jvm_proc = getattr(gateway, "proc", None) or getattr(gateway, "_proc", None)
+            except Exception:  # noqa: BLE001
+                logger.exception("Could not locate py4j gateway/JVM handle")
+
+            # 1. Stop the SparkContext on the JVM side.
+            try:
+                spark.stop()
+            except Exception:  # noqa: BLE001
+                logger.exception("spark.stop() raised")
+
+            # 2. Explicitly shut down the py4j gateway (callback server + client).
+            #    SparkContext.stop() does NOT do this, and without it the JVM
+            #    keeps running, gets reparented to tini, and the pod never exits.
+            if gateway is not None:
+                try:
+                    cbs = getattr(gateway, "_callback_server", None)
+                    if cbs is not None:
+                        cbs.shutdown()
+                except Exception:  # noqa: BLE001
+                    logger.exception("py4j callback server shutdown failed")
+                try:
+                    gateway.shutdown()
+                except Exception:  # noqa: BLE001
+                    logger.exception("py4j gateway shutdown failed")
+
+            # 3. Belt-and-suspenders: if the JVM child is still alive,
+            #    terminate it. Otherwise it gets reparented to tini (PID 1)
+            #    and the pod runs forever.
+            if jvm_proc is not None:
+                try:
+                    if jvm_proc.poll() is None:
+                        jvm_proc.terminate()
+                        try:
+                            jvm_proc.wait(timeout=15)
+                        except Exception:  # noqa: BLE001
+                            jvm_proc.kill()
+                except Exception:  # noqa: BLE001
+                    logger.exception("Failed to terminate Spark JVM subprocess")
+
         end = time.time()
         logger.info("||||||||  %s TOOK A TOTAL OF : %s SECONDS TO RUN. |||||||||||", app_name, end - start)
 
