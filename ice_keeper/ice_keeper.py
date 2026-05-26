@@ -24,7 +24,7 @@ from .task import (
     Emailer,
     SequentialTask,
     Task,
-    get_ordered_tasks_by_execution_time,
+    get_ordered_tasks_by_full_name,
 )
 
 logger = logging.getLogger("ice-keeper")
@@ -481,6 +481,17 @@ def shutdown_jvm_proc(jvm_proc: subprocess.Popen[bytes] | None) -> None:
         except Exception:
             logger.exception("Failed to terminate Spark JVM subprocess")
 
+def log_initial_task_numbering(tasks: list[Task]) -> None:
+    """Log task number to full name mapping before scheduling."""
+    if not tasks:
+        logger.info("No tasks to schedule.")
+        return
+
+    logger.info("Initial task numbering:")
+    for idx, task in enumerate(tasks, start=1):
+        logger.info("Task %d -> %s", idx, task.task_name())
+
+
 @cli.command(short_help="Run multiple maintenance commands across multiple tables.")
 @click.option(
     "--command",
@@ -507,8 +518,8 @@ def multi(ctx: click.Context, commands: tuple[str]) -> None:
     tasks: list[SequentialTask] = make_sequences(action_set, maintenance_schedule)
 
     executor = ctx.obj["executor"]
-    rows = executor.get_journal().get_historical_total_execution_times(action_set, scope)
-    ordered_tasks = get_ordered_tasks_by_execution_time(tasks, rows)
+    ordered_tasks = get_ordered_tasks_by_full_name(tasks)
+    log_initial_task_numbering(ordered_tasks)
 
     executor.submit_tasks_and_wait(ordered_tasks)
     optimize_maintenance_schedule(executor)
@@ -594,8 +605,8 @@ def optimize(
     tasks = ActionTaskFactory.make_tasks(action, maintenance_schedule)
 
     executor = ctx.obj["executor"]
-    rows = executor.get_journal().get_historical_total_execution_times({action}, scope)
-    ordered_tasks = get_ordered_tasks_by_execution_time(tasks, rows)
+    ordered_tasks = get_ordered_tasks_by_full_name(tasks)
+    log_initial_task_numbering(ordered_tasks)
     executor.submit_tasks_and_wait(ordered_tasks)
     optimize_maintenance_schedule(executor)
 
@@ -618,8 +629,8 @@ def expire(ctx: click.Context) -> None:
     tasks = ActionTaskFactory.make_tasks(action, maintenance_schedule)
 
     executor = ctx.obj["executor"]
-    rows = executor.get_journal().get_historical_total_execution_times({action}, scope)
-    ordered_tasks = get_ordered_tasks_by_execution_time(tasks, rows)
+    ordered_tasks = get_ordered_tasks_by_full_name(tasks)
+    log_initial_task_numbering(ordered_tasks)
 
     executor.submit_tasks_and_wait(ordered_tasks)
     optimize_maintenance_schedule(executor)
@@ -643,8 +654,8 @@ def rewrite_manifests(ctx: click.Context) -> None:
     tasks = ActionTaskFactory.make_tasks(action, maintenance_schedule)
     executor = ctx.obj["executor"]
 
-    rows = executor.get_journal().get_historical_total_execution_times({action}, scope)
-    ordered_tasks = get_ordered_tasks_by_execution_time(tasks, rows)
+    ordered_tasks = get_ordered_tasks_by_full_name(tasks)
+    log_initial_task_numbering(ordered_tasks)
 
     executor.submit_tasks_and_wait(ordered_tasks)
     optimize_maintenance_schedule(executor)
@@ -689,8 +700,8 @@ def orphan(ctx: click.Context) -> None:
     tasks = ActionTaskFactory.make_tasks(action, maintenance_schedule)
     executor = ctx.obj["executor"]
 
-    rows = executor.get_journal().get_historical_total_execution_times({action}, scope)
-    ordered_tasks = get_ordered_tasks_by_execution_time(tasks, rows)
+    ordered_tasks = get_ordered_tasks_by_full_name(tasks)
+    log_initial_task_numbering(ordered_tasks)
 
     executor.submit_tasks_and_wait(ordered_tasks)
     optimize_maintenance_schedule(executor)

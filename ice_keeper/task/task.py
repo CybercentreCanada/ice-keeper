@@ -167,6 +167,21 @@ class SparkTask(Task):
         return self.delegate.execute(sub_executor)
 
 
+def get_ordered_tasks_by_full_name(tasks: Sequence[Task]) -> list[Task]:
+    """Sort and return tasks by task name in ascending order.
+
+    The task name corresponds to the full table name for maintenance tasks,
+    so this provides a deterministic alphabetical schedule.
+
+    Args:
+        tasks (Sequence[Task]): Tasks to order.
+
+    Returns:
+        list[Task]: Tasks sorted by task name.
+    """
+    return sorted(tasks, key=lambda task: task.task_name())
+
+
 def get_ordered_tasks_by_execution_time(tasks: Sequence[Task], rows: list[Row]) -> list[Task]:
     """Sort and return a list of tasks by their execution time in descending order.
 
