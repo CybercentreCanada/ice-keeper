@@ -7,7 +7,6 @@ import time
 from datetime import datetime, timezone
 
 import click
-from py4j.java_gateway import JavaGateway
 from pyspark.sql import Row, SparkSession
 
 from ice_keeper import Action, Command, configure_logger
@@ -511,21 +510,6 @@ def make_sequences(actions: set[Action], maintenance_schedule: MaintenanceSchedu
         for child_task in child_tasks:
             sequential_tasks[child_task.task_name()].add_task(child_task)
     return list(sequential_tasks.values())
-
-
-def shutdown_py4j_gateway(gateway: JavaGateway | None) -> None:
-    # Explicitly shut down the py4j gateway (callback server + client)
-    if gateway is not None:
-        try:
-            cbs = getattr(gateway, "_callback_server", None)
-            if cbs is not None:
-                cbs.shutdown()
-        except Exception:
-            logger.exception("py4j callback server shutdown failed")
-        try:
-            gateway.shutdown()
-        except Exception:
-            logger.exception("py4j gateway shutdown failed")
 
 
 def log_initial_task_numbering(tasks: list[Task]) -> None:
