@@ -2,7 +2,7 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 
-from pyspark.sql import Row
+from pyspark.sql import Row, SparkSession
 
 from ice_keeper.stm import STL
 from ice_keeper.table import JournalEntry
@@ -134,6 +134,29 @@ class SparkTask(Task):
         """Retrieve the description of the wrapped task."""
         return self.delegate.task_description()
 
+    @staticmethod
+    def _reset_child_session_state(child_session: "SparkSession") -> None:
+        """Reset reusable session state so tasks remain isolated from each other."""
+        try:
+            # Reset SQL runtime configs changed via SET.
+            child_session.sql("RESET")
+        except Exception:
+            logger.exception("Failed to reset SQL runtime configs for task session")
+
+        try:
+            # Remove local temporary views created by previous tasks.
+            for table in child_session.catalog.listTables():
+                if table.isTemporary:
+                    child_session.catalog.dropTempView(table.name)
+        except Exception:
+            logger.exception("Failed to drop temporary views for task session")
+
+        try:
+            # Ensure cached tables/dataframes do not bleed across tasks.
+            child_session.catalog.clearCache()
+        except Exception:
+            logger.exception("Failed to clear Spark cache for task session")
+
     def execute(self, sub_executor: SubTaskExecutor) -> TaskResult:
         """Execute the task, initializing a new Spark session in the current thread.
 
@@ -160,11 +183,35 @@ class SparkTask(Task):
         if self.parent_session._sc._jsc.sc().isStopped():  # noqa: SLF001
             msg = "Spark session is stopped"
             raise ClosedSparkSessionError(msg)
-        STL.set(self.parent_session.newSession(), self.task_name())
-        STL.get().sparkContext.setJobGroup(self.task_description(), self.task_description())
+        child_session = None
+        try:
+            existing_session = STL.get()
+            if (
+                existing_session.sparkContext._jsc  # noqa: SLF001
+                and not existing_session._sc._jsc.sc().isStopped()  # noqa: SLF001
+                and existing_session.sparkContext is self.parent_session.sparkContext
+            ):
+                child_session = existing_session
+        except Exception:  # noqa: BLE001
+            child_session = None
 
-        # Delegate the task execution to the wrapped task
-        return self.delegate.execute(sub_executor)
+        # Reuse one child session per worker thread; create only if this thread has none.
+        if child_session is None:
+            child_session = self.parent_session.newSession()
+
+        STL.set(child_session, self.task_name())
+        self._reset_child_session_state(child_session)
+        child_session.sparkContext.setJobGroup(self.task_description(), self.task_description())
+
+        try:
+            # Delegate the task execution to the wrapped task
+            return self.delegate.execute(sub_executor)
+        finally:
+            self._reset_child_session_state(child_session)
+            # Clear task metadata but keep the per-thread child session for reuse.
+            child_session.sparkContext.setJobDescription(None)  # type: ignore[arg-type]
+            child_session.sparkContext.setLocalProperty("callSite.short", None)  # type: ignore[arg-type]
+            child_session.sparkContext.setLocalProperty("callSite.long", None)  # type: ignore[arg-type]
 
 
 def get_ordered_tasks_by_full_name(tasks: Sequence[Task]) -> list[Task]:
