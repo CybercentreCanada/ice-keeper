@@ -27,6 +27,12 @@ class STL:
         cls._set_thread_name(thread_name)
 
     @classmethod
+    def clear(cls) -> None:
+        """Clear spark session from thread-local storage when a task is finished."""
+        if hasattr(cls._thread_local_data, "spark"):
+            del cls._thread_local_data.spark
+
+    @classmethod
     def set_job_description(cls, title: str, details: str = "") -> None:
         cls._thread_local_data.spark.sparkContext.setJobDescription(title)
         cls._thread_local_data.spark.sparkContext.setLocalProperty("callSite.short", title)
