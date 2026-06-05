@@ -1,7 +1,6 @@
 import logging
 import os
 import re
-import signal
 import sys
 import time
 from datetime import datetime, timezone
@@ -28,85 +27,10 @@ from .task import (
 
 logger = logging.getLogger("ice-keeper")
 
-SPARK_STOP_GRACE_SECONDS = 60
-
 
 def _get_catalog_schema_table_name(ctx: click.Context) -> tuple[str, str, str]:
     """Small helper to get catalog, schema and table_name from Click context."""
     return ctx.obj["catalog"], ctx.obj["schema"], ctx.obj["table_name"]
-
-
-def get_local_jvm_pid(spark: SparkSession) -> int | None:
-    """Return local JVM PID for this Spark session, if available."""
-    try:
-        gateway = getattr(spark.sparkContext, "_gateway", None)
-        if gateway is None:
-            logger.warning("Could not determine Spark JVM PID: spark gateway is unavailable")
-            return None
-
-        jvm = getattr(gateway, "jvm", None)
-        if jvm is None:
-            logger.warning("Could not determine Spark JVM PID: gateway.jvm is unavailable")
-            return None
-
-        pid_string = jvm.java.lang.management.ManagementFactory.getRuntimeMXBean().getName()
-        pid = int(pid_string.split("@", maxsplit=1)[0])
-    except Exception:
-        logger.exception("Could not determine Spark JVM PID from RuntimeMXBean")
-        return None
-
-    logger.info("Captured Spark JVM PID: %s", pid)
-    return pid
-
-
-def process_exists(pid: int) -> bool:
-    """Check whether a process currently exists."""
-    try:
-        os.kill(pid, 0)
-    except OSError:
-        return False
-    else:
-        return True
-
-
-def wait_for_process_exit(pid: int, timeout_seconds: float) -> bool:
-    """Wait up to timeout_seconds for pid to disappear."""
-    deadline = time.time() + timeout_seconds
-    while time.time() < deadline:
-        if not process_exists(pid):
-            return True
-        time.sleep(0.25)
-
-    return not process_exists(pid)
-
-
-def shutdown_jvm(jvm_pid: int | None) -> None:
-    if jvm_pid is None:
-        logger.warning("Spark JVM PID is unavailable; skipping forced JVM shutdown")
-        return
-
-    try:
-        # Give spark.stop() some time to fully tear down the JVM on its own.
-        if wait_for_process_exit(jvm_pid, SPARK_STOP_GRACE_SECONDS):
-            logger.info("Spark JVM pid=%s exited during post-stop grace period", jvm_pid)
-            return
-
-        logger.warning("Spark JVM still alive after stop; sending SIGTERM to pid=%s", jvm_pid)
-        os.kill(jvm_pid, signal.SIGTERM)
-        if wait_for_process_exit(jvm_pid, SPARK_STOP_GRACE_SECONDS):
-            logger.warning("Spark JVM pid=%s exited after SIGTERM", jvm_pid)
-            return
-
-        logger.warning("Spark JVM pid=%s did not exit in time; sending SIGKILL", jvm_pid)
-        os.kill(jvm_pid, signal.SIGKILL)
-        if wait_for_process_exit(jvm_pid, SPARK_STOP_GRACE_SECONDS):
-            logger.warning("Spark JVM pid=%s exited after SIGKILL", jvm_pid)
-        else:
-            logger.warning("Spark JVM pid=%s still alive after SIGKILL attempt", jvm_pid)
-    except ProcessLookupError:
-        logger.info("Spark JVM pid=%s exited before signaling", jvm_pid)
-    except Exception:
-        logger.exception("Failed to terminate Spark JVM subprocess via pid signaling")
 
 
 def create_spark_session(
@@ -286,9 +210,6 @@ def cli(
         spark_executor_memory,
     )
 
-    spark = STL.get()
-    ctx.obj["jvm_pid"] = get_local_jvm_pid(spark)
-
     journal = Journal()
     executor = TaskExecutor(journal, concurrency, max_subtask_workers=concurrency)
     executor.start()
@@ -306,7 +227,6 @@ def cli(
         executor.shutdown()
         spark = STL.get()
         spark.stop()
-        shutdown_jvm(ctx.obj.get("jvm_pid"))
 
         end = time.time()
         logger.info("||||||||  %s TOOK A TOTAL OF : %s SECONDS TO RUN. |||||||||||", app_name, end - start)
