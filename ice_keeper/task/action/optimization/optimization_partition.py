@@ -95,6 +95,11 @@ class SubOptimizationStrategy(ActionStrategy):
         Returns:
             dict[str, Any]: A dictionary containing the results of the procedure.
         """
+        # Disable broadcast join, some jobs fail with this error
+        # Could not execute broadcast in 600 secs. You can increase the timeout for broadcasts
+        # via "spark.sql.broadcastTimeout" or disable broadcast join by setting "spark.sql.autoBroadcastJoinThreshold" to -1.
+        STL.set_config("spark.sql.autoBroadcastJoinThreshold", "-1")
+
         description = f"Executing Iceberg procedure {self.get_action().value} for [{self.mnt_props.full_name}]"
         df = STL.sql_and_log(sql_stm, description=description)
 
