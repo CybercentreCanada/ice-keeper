@@ -112,6 +112,8 @@ def create_spark_session(
         .getOrCreate()
     )
 
+    logger.info("Spark application id: %s", spark.sparkContext.applicationId)
+
     # Sanity checks for timezone UTC
 
     # Get system local timezone name and offset
