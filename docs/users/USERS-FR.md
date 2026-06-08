@@ -72,8 +72,8 @@ Consultez la [documentation](https://iceberg.apache.org/docs/latest/spark-ddl/#a
 | ice-keeper.lifecycle-ingestion-time-column     | Aucun              | Spécifie la colonne à utiliser comme horodatage d'ingestion pour les opérations de cycle de vie. |
 | ice-keeper.widening.rule.src.partition         | Aucun              | Nom de la partition source à élargir. |
 | ice-keeper.widening.rule.dst.partition         | Aucun              | Nom de la partition de destination élargie. |
-| ice-keeper.widening.rule.min-partition-to-widen | 1M                 | Décalage temporel minimum de la partition (par rapport à la partition la plus récente) pour commencer l'élargissement. Le format accepte `h`, `d`, `m`, `y` (ex : `1d`, `2m`). |
-| ice-keeper.widening.rule.max-partition-to-widen | 2M                 | Décalage temporel maximum de la partition (par rapport à la partition la plus récente) à considérer pour l'élargissement. Le format accepte `h`, `d`, `m`, `y` (ex : `7d`, `12m`). |
+| ice-keeper.widening.rule.min-partition-to-widen | 1M                 | Décalage d'âge minimum de la partition pour commencer l'élargissement, utilisant le même format que `ice-keeper.min-partition-to-optimize` (ex : `1d`, `1M`). Les partitions plus récentes que ce décalage sont ignorées. La fenêtre est évaluée par rapport à `current_date()` / `current_timestamp()`, pas par rapport à la partition la plus récente.
+| ice-keeper.widening.rule.max-partition-to-widen | 2M                 | Décalage d'âge maximum de la partition à considérer pour l'élargissement, utilisant le même format que `ice-keeper.max-partition-to-optimize` (ex : `2M`, `1y`). La fenêtre est évaluée par rapport à `current_date()` / `current_timestamp()`, pas par rapport à la partition la plus récente.
 | ice-keeper.widening.rule.select.criteria       | Aucun              | Critères de sélection des lignes pour l'élargissement. |
 | ice-keeper.widening.rule.required_partition_columns | Aucun          | Liste des colonnes qui ne doivent pas contenir de valeurs NULL avant l'élargissement. |
 
