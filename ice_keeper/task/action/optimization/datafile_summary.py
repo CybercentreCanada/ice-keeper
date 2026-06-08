@@ -335,8 +335,12 @@ class DataFilesSummary:
                 return f"{partition_field_alias} >= ({current_hour} - {max_amount}) and {partition_field_alias} <= ({current_hour} - {min_amount})"
             if unit == "day":
                 current_date = f"cast({current_time} as date)"
-                hour_as_date = f"date_add(date '1970-01-01', cast({partition_field_alias} / 24 as int))"
-                return f"{hour_as_date} >= ({current_date} - interval {max_amount} day) and {hour_as_date} <= ({current_date} - interval {min_amount} day)"
+                # Keep the predicate on the raw hour partition column for better pushdown.
+                lower_hour_bound = f"cast(unix_timestamp({current_date} - interval {max_amount} day) / 3600 as bigint)"
+                upper_hour_bound = (
+                    f"cast(unix_timestamp({current_date} - interval {min_amount} day + interval 1 day) / 3600 as bigint) - 1"
+                )
+                return f"{partition_field_alias} >= {lower_hour_bound} and {partition_field_alias} <= {upper_hour_bound}"
 
         elif transformation_type == "DayTransformation":
             if unit == "hour":
@@ -350,14 +354,29 @@ class DataFilesSummary:
 
         elif transformation_type == "MonthTransformation":
             # Month partition values are integer months since epoch.
-            month_as_date = f"add_months(date '1970-01-01', {partition_field_alias})"
             if unit == "hour":
-                min_bound = f"({current_time} - interval {max_amount} hour)"
-                max_bound = f"({current_time} - interval {min_amount} hour)"
-                return f"cast({month_as_date} as timestamp) >= {min_bound} and cast({month_as_date} as timestamp) <= {max_bound}"
+                lower_ts = f"({current_time} - interval {max_amount} hour)"
+                upper_ts = f"({current_time} - interval {min_amount} hour)"
+                lower_month_bound = (
+                    f"cast(months_between(cast(date_trunc('month', {lower_ts}) as date), date '1970-01-01') as int)"
+                    f" + case when {lower_ts} > date_trunc('month', {lower_ts}) then 1 else 0 end"
+                )
+                upper_month_bound = (
+                    f"cast(months_between(cast(date_trunc('month', {upper_ts}) as date), date '1970-01-01') as int)"
+                )
+                return f"{partition_field_alias} >= {lower_month_bound} and {partition_field_alias} <= {upper_month_bound}"
             if unit == "day":
                 current_date = f"cast({current_time} as date)"
-                return f"{month_as_date} >= ({current_date} - interval {max_amount} day) and {month_as_date} <= ({current_date} - interval {min_amount} day)"
+                lower_date = f"({current_date} - interval {max_amount} day)"
+                upper_date = f"({current_date} - interval {min_amount} day)"
+                lower_month_bound = (
+                    f"cast(months_between(cast(date_trunc('month', {lower_date}) as date), date '1970-01-01') as int)"
+                    f" + case when {lower_date} > cast(date_trunc('month', {lower_date}) as date) then 1 else 0 end"
+                )
+                upper_month_bound = (
+                    f"cast(months_between(cast(date_trunc('month', {upper_date}) as date), date '1970-01-01') as int)"
+                )
+                return f"{partition_field_alias} >= {lower_month_bound} and {partition_field_alias} <= {upper_month_bound}"
 
         elif transformation_type == "YearTransformation":
             # Year base partitions are intentionally not filtered by optimize window.
