@@ -39,7 +39,8 @@ def get_partition_time_from_summary(mnt_props: MaintenanceScheduleEntry) -> Row 
 
 # Use relative dates so that SQL filters referencing current_timestamp() work correctly.
 # d_third / dt_third = today, d_second = yesterday, d_first = 2 days ago.
-_today = datetime.datetime.now(tz=timezone.utc).date()
+_now = datetime.datetime.now(tz=timezone.utc)
+_today = _now.date()
 d_first = _today - datetime.timedelta(days=2)
 d_second = _today - datetime.timedelta(days=1)
 d_third = _today
@@ -48,13 +49,9 @@ dt_first_utc = datetime.datetime(d_first.year, d_first.month, d_first.day, tzinf
 dt_second_utc = datetime.datetime(d_second.year, d_second.month, d_second.day, tzinfo=timezone.utc)
 dt_third_utc = datetime.datetime(d_third.year, d_third.month, d_third.day, tzinfo=timezone.utc)
 
-dt_two_hours_ago_utc = datetime.datetime.now(tz=timezone.utc).replace(minute=0, second=0, microsecond=0) - datetime.timedelta(
-    hours=2
-)
-dt_one_hour_ago_utc = datetime.datetime.now(tz=timezone.utc).replace(minute=0, second=0, microsecond=0) - datetime.timedelta(
-    hours=1
-)
-dt_current_hour_utc = datetime.datetime.now(tz=timezone.utc).replace(minute=0, second=0, microsecond=0)
+dt_two_hours_ago_utc = _now.replace(minute=0, second=0, microsecond=0) - datetime.timedelta(hours=2)
+dt_one_hour_ago_utc = _now.replace(minute=0, second=0, microsecond=0) - datetime.timedelta(hours=1)
+dt_current_hour_utc = _now.replace(minute=0, second=0, microsecond=0)
 
 dt_first = datetime.datetime(d_first.year, d_first.month, d_first.day)  # noqa: DTZ001
 dt_second = datetime.datetime(d_second.year, d_second.month, d_second.day)  # noqa: DTZ001

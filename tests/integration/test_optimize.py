@@ -401,10 +401,10 @@ def test_diagnose_cli(executor: TaskExecutor) -> None:
         [
             "--full_name",
             TEST_FULL_NAME,
-            "--min_age_to_diagnose",
-            "1",
-            "--max_age_to_diagnose",
-            "14",
+            "--min_partition_to_diagnose",
+            "1d",
+            "--max_partition_to_diagnose",
+            "14d",
             "--optimization_strategy",
             "id ASC",
             "--target_file_size_bytes",
@@ -469,7 +469,7 @@ def test_optimize_binpack_correct_day(executor: TaskExecutor) -> None:
     )
     # Use relative days: "recent" day is yesterday (1d ago, NOT in [2d,200d] range so NOT optimized)
     # and "older" day is 3 days ago (in [2d,200d] range, IS optimized).
-    today = datetime.date.today()
+    today = datetime.datetime.now(tz=timezone.utc).date()
     day_recent = today - datetime.timedelta(days=1)  # 1d ago, NOT in [2d, 200d] range
     day_older = today - datetime.timedelta(days=3)  # 3d ago, IN [2d, 200d] range
 
@@ -493,7 +493,7 @@ def test_optimize_binpack_correct_day(executor: TaskExecutor) -> None:
 
 @pytest.mark.integration
 def test_optimize_binpack_correct_month(executor: TaskExecutor) -> None:
-    today = datetime.date.today()
+    today = datetime.datetime.now(tz=timezone.utc).date()
     # Exclude current month by setting min offset beyond days since month start.
     min_days = today.day
     create_empty_test_table(
