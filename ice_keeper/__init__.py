@@ -30,8 +30,6 @@ class IceKeeperTblProperty:
     RETENTION_DAYS_ORPHAN_FILES = "ice-keeper.retention-days-orphan-files"
     SHOULD_OPTIMIZE = "ice-keeper.should-optimize"
     OPTIMIZATION_STRATEGY = "ice-keeper.optimization-strategy"
-    MIN_AGE_TO_OPTIMIZE = "ice-keeper.min-age-to-optimize"
-    MAX_AGE_TO_OPTIMIZE = "ice-keeper.max-age-to-optimize"
     MIN_PARTITION_TO_OPTIMIZE = "ice-keeper.min-partition-to-optimize"
     MAX_PARTITION_TO_OPTIMIZE = "ice-keeper.max-partition-to-optimize"
     OPTIMIZATION_TARGET_FILE_SIZE_BYTES = "ice-keeper.optimization-target-file-size-bytes"
@@ -53,7 +51,6 @@ class IceKeeperTblProperty:
     BINPACK_MIN_INPUT_FILES = "ice-keeper.binpack-min-input-files"
     SORT_CORR_THRESHOLD = "ice-keeper.sort-corr-threshold"
     OPTIMIZATION_QUOTA_HOURS = "ice-keeper.optimization-quota-hours"
-    WIDENING_RULE_MIN_AGE_TO_WIDEN = "ice-keeper.widening.rule.min.age.to.widen"
     WIDENING_RULE_MIN_PARTITION_TO_WIDEN = "ice-keeper.widening.rule.min-partition-to-widen"
     WIDENING_RULE_MAX_PARTITION_TO_WIDEN = "ice-keeper.widening.rule.max-partition-to-widen"
 

@@ -280,18 +280,6 @@ def reset(force: bool, schedule: bool, journal: bool, health: bool, all_tables: 
 )
 @click.option("--full_name", required=True, help="Fully qualified name of table to diagnose.")
 @click.option(
-    "--min_age_to_diagnose",
-    type=int,
-    default=None,
-    help="Minimum snapshot age (in partition rank) to diagnose. Must be used with --max_age_to_diagnose.",
-)
-@click.option(
-    "--max_age_to_diagnose",
-    type=int,
-    default=None,
-    help="Maximum snapshot age (in partition rank) to diagnose. Must be used with --min_age_to_diagnose.",
-)
-@click.option(
     "--min_partition_to_diagnose",
     default=None,
     help="Minimum partition offset to diagnose (e.g., '1d', '1M'). Must be used with --max_partition_to_diagnose.",
@@ -326,10 +314,8 @@ def reset(force: bool, schedule: bool, journal: bool, health: bool, all_tables: 
     default=None,
     help=("Optional corr factor threshold to use when considering a sort."),
 )
-def diagnose(  # noqa: C901, PLR0912
+def diagnose(  # noqa: C901
     full_name: str,
-    min_age_to_diagnose: int | None,
-    max_age_to_diagnose: int | None,
     min_partition_to_diagnose: str | None,
     max_partition_to_diagnose: str | None,
     optimization_strategy: str | None,
@@ -345,16 +331,7 @@ def diagnose(  # noqa: C901, PLR0912
     for optimization. It uses a specified optimization strategy to calculate and display
     a detailed summary of the partition state before any intervention.
     """
-    has_age = min_age_to_diagnose is not None or max_age_to_diagnose is not None
     has_partition = min_partition_to_diagnose is not None or max_partition_to_diagnose is not None
-
-    if has_age and has_partition:
-        msg = "Cannot specify both age-based (--min/max_age_to_diagnose) and partition-based (--min/max_partition_to_diagnose) options."
-        raise click.UsageError(msg)
-
-    if has_age and (min_age_to_diagnose is None or max_age_to_diagnose is None):
-        msg = "Both --min_age_to_diagnose and --max_age_to_diagnose must be specified together."
-        raise click.UsageError(msg)
 
     if has_partition and (min_partition_to_diagnose is None or max_partition_to_diagnose is None):
         msg = "Both --min_partition_to_diagnose and --max_partition_to_diagnose must be specified together."
@@ -379,15 +356,8 @@ def diagnose(  # noqa: C901, PLR0912
         if optimization_grouping_size_bytes is not None:
             record_copy.optimization_grouping_size_bytes = optimization_grouping_size_bytes
         if has_partition:
-            record_copy.min_age_to_optimize = None
-            record_copy.max_age_to_optimize = None
             record_copy.min_partition_to_optimize = min_partition_to_diagnose
             record_copy.max_partition_to_optimize = max_partition_to_diagnose
-        elif has_age:
-            record_copy.min_age_to_optimize = min_age_to_diagnose
-            record_copy.max_age_to_optimize = max_age_to_diagnose
-            record_copy.min_partition_to_optimize = None
-            record_copy.max_partition_to_optimize = None
 
         row = Row(**record_copy.model_dump(by_alias=True))
         entry = MaintenanceScheduleRecord.from_row(row).to_entry()

@@ -174,8 +174,8 @@ def test_partitioned_by_category_sorted_by_id_max_age_2(executor: TaskExecutor) 
         partitioned_by="category",
         optimization_strategy="id ASC",
         properties={
-            IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "200",
-            IceKeeperTblProperty.MAX_AGE_TO_OPTIMIZE: "200",
+            IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "1d",
+            IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "7d",
             IceKeeperTblProperty.SORT_CORR_THRESHOLD: "2",
         },
     )
@@ -285,7 +285,11 @@ def test_optimize_null_category(executor: TaskExecutor) -> None:
         executor=executor,
         partitioned_by="category",
         optimization_strategy="id ASC",
-        properties={IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "1", IceKeeperTblProperty.SORT_CORR_THRESHOLD: "2"},
+        properties={
+            IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "0d",
+            IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "3000d",
+            IceKeeperTblProperty.SORT_CORR_THRESHOLD: "2",
+        },
     )
     event_time = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
 
@@ -397,10 +401,10 @@ def test_diagnose_cli(executor: TaskExecutor) -> None:
         [
             "--full_name",
             TEST_FULL_NAME,
-            "--min_age_to_diagnose",
-            "1",
-            "--max_age_to_diagnose",
-            "14",
+            "--min_partition_to_diagnose",
+            "1d",
+            "--max_partition_to_diagnose",
+            "14d",
             "--optimization_strategy",
             "id ASC",
             "--target_file_size_bytes",
@@ -424,26 +428,33 @@ def test_optimize_binpack_correct_hour(executor: TaskExecutor) -> None:
         executor=executor,
         partitioned_by="hours(ts)",
         optimization_strategy="binpack",
-        properties={IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "2", IceKeeperTblProperty.MAX_AGE_TO_OPTIMIZE: "200"},
+        properties={IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "4h", IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "200h"},
     )
-    # 6 files in hour 2025-12-01 00:00:00
-    dt = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
-    insert_data(partitions_to_insert_into=[dt], num_inserts=3)
-    dt = datetime.datetime(2025, 12, 1, 0, 59, 59, tzinfo=timezone.utc)
+    # Use relative hours: "recent" hour is 1h ago (3h away from min=4h, so NOT optimized even with hour-boundary clock drift)
+    # and "older" hour is 6h ago (well within [4h, 200h], so IS optimized).
+    _epoch = datetime.datetime(1970, 1, 1, tzinfo=timezone.utc)
+    _now_h = datetime.datetime.now(tz=timezone.utc).replace(minute=0, second=0, microsecond=0)
+    dt_recent = _now_h - datetime.timedelta(hours=1)  # 1h ago, NOT in [4h, 200h] range
+    dt_older = _now_h - datetime.timedelta(hours=6)  # 6h ago, IN [4h, 200h] range
+    recent_hour_idx = int((_now_h - _epoch).total_seconds() // 3600) - 1
+    older_hour_idx = int((_now_h - _epoch).total_seconds() // 3600) - 6
+
+    # 6 files in the older hour
+    insert_data(partitions_to_insert_into=[dt_older], num_inserts=3)
+    dt = dt_older.replace(minute=59, second=59)
     insert_data(partitions_to_insert_into=[dt], num_inserts=3)
 
-    # 7 files in hour 2025-12-01 23:00:00
-    dt = datetime.datetime(2025, 12, 1, 23, 0, 0, tzinfo=timezone.utc)
-    insert_data(partitions_to_insert_into=[dt], num_inserts=3)
-    dt = datetime.datetime(2025, 12, 1, 23, 59, 59, tzinfo=timezone.utc)
+    # 7 files in the recent hour (should NOT be optimized)
+    insert_data(partitions_to_insert_into=[dt_recent], num_inserts=3)
+    dt = dt_recent.replace(minute=59, second=59)
     insert_data(partitions_to_insert_into=[dt], num_inserts=4)
 
     run_action_and_collect_journal(executor, Action.REWRITE_DATA_FILES)
 
-    sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_hour = 490175 """
+    sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_hour = {recent_hour_idx} """
     num_files_age_1 = STL.sql_and_log(sql).count()
     assert num_files_age_1 == SEVEN_EXPECTED, "Most recent hour should not be optimized, should have 7 files."
-    sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_hour = 490152 """
+    sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_hour = {older_hour_idx} """
     num_files_age_2 = STL.sql_and_log(sql).count()
     assert num_files_age_2 == ONE_EXPECTED, "Older hour should be optimized into one file."
 
@@ -454,48 +465,78 @@ def test_optimize_binpack_correct_day(executor: TaskExecutor) -> None:
         executor=executor,
         partitioned_by="days(ts)",
         optimization_strategy="binpack",
-        properties={IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "2", IceKeeperTblProperty.MAX_AGE_TO_OPTIMIZE: "200"},
+        properties={IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "2d", IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "200d"},
     )
-    dt = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
-    insert_data(partitions_to_insert_into=[dt], num_inserts=6)
-    dt = datetime.datetime(2025, 12, 2, 0, 0, 0, tzinfo=timezone.utc)
-    insert_data(partitions_to_insert_into=[dt], num_inserts=7)
+    # Use relative days: "recent" day is yesterday (1d ago, NOT in [2d,200d] range so NOT optimized)
+    # and "older" day is 3 days ago (in [2d,200d] range, IS optimized).
+    today = datetime.datetime.now(tz=timezone.utc).date()
+    day_recent = today - datetime.timedelta(days=1)  # 1d ago, NOT in [2d, 200d] range
+    day_older = today - datetime.timedelta(days=3)  # 3d ago, IN [2d, 200d] range
+
+    insert_data(
+        partitions_to_insert_into=[datetime.datetime(day_older.year, day_older.month, day_older.day, tzinfo=timezone.utc)],
+        num_inserts=6,
+    )
+    insert_data(
+        partitions_to_insert_into=[datetime.datetime(day_recent.year, day_recent.month, day_recent.day, tzinfo=timezone.utc)],
+        num_inserts=7,
+    )
 
     run_action_and_collect_journal(executor, Action.REWRITE_DATA_FILES)
-    sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_day = '2025-12-02' """
+    sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_day = '{day_recent}' """
     num_files_age_1 = STL.sql_and_log(sql).count()
     assert num_files_age_1 == SEVEN_EXPECTED, "Most recent day should not be optimized, should have 7 files."
-    sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_day = '2025-12-01' """
+    sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_day = '{day_older}' """
     num_files_age_2 = STL.sql_and_log(sql).count()
     assert num_files_age_2 == ONE_EXPECTED, "Older day should be optimized into one file."
 
 
 @pytest.mark.integration
 def test_optimize_binpack_correct_month(executor: TaskExecutor) -> None:
+    today = datetime.datetime.now(tz=timezone.utc).date()
+    # Exclude current month by setting min offset beyond days since month start.
+    min_days = today.day
     create_empty_test_table(
         executor=executor,
         partitioned_by="month(ts)",
         optimization_strategy="binpack",
-        properties={IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "2", IceKeeperTblProperty.MAX_AGE_TO_OPTIMIZE: "200"},
+        properties={
+            IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: f"{min_days}d",
+            IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "400d",
+        },
     )
-    # 6 files in month 2025-12-01
-    dt = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
-    insert_data(partitions_to_insert_into=[dt], num_inserts=3)
-    dt = datetime.datetime(2025, 12, 31, 0, 59, 59, tzinfo=timezone.utc)
-    insert_data(partitions_to_insert_into=[dt], num_inserts=3)
+    # Month base partitions are filtered by optimize window.
 
-    # 7 files in month 2026-01-01
-    dt = datetime.datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    insert_data(partitions_to_insert_into=[dt], num_inserts=3)
-    dt = datetime.datetime(2026, 1, 1, 23, 59, 59, tzinfo=timezone.utc)
-    insert_data(partitions_to_insert_into=[dt], num_inserts=4)
+    def month_minus(d: datetime.date, n: int) -> datetime.date:
+        m, y = d.month - n, d.year
+        while m <= 0:
+            m += 12
+            y -= 1
+        return d.replace(year=y, month=m, day=1)
+
+    month_recent = month_minus(today, 0)  # current month
+    month_older = month_minus(today, 2)  # 2 months ago
+    # Months-since-epoch index used by Iceberg: (year-1970)*12 + (month-1)
+    recent_month_idx = (month_recent.year - 1970) * 12 + (month_recent.month - 1)
+    older_month_idx = (month_older.year - 1970) * 12 + (month_older.month - 1)
+
+    dt_recent_start = datetime.datetime(month_recent.year, month_recent.month, 1, 0, 0, 0, tzinfo=timezone.utc)
+    dt_older_start = datetime.datetime(month_older.year, month_older.month, 1, 0, 0, 0, tzinfo=timezone.utc)
+
+    # 6 files in the older month
+    insert_data(partitions_to_insert_into=[dt_older_start], num_inserts=3)
+    insert_data(partitions_to_insert_into=[dt_older_start.replace(day=15)], num_inserts=3)
+
+    # 7 files in the recent month
+    insert_data(partitions_to_insert_into=[dt_recent_start], num_inserts=3)
+    insert_data(partitions_to_insert_into=[dt_recent_start.replace(day=15)], num_inserts=4)
 
     run_action_and_collect_journal(executor, Action.REWRITE_DATA_FILES)
 
-    sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_month = 672 """
+    sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_month = {recent_month_idx} """
     num_files_age_1 = STL.sql_and_log(sql).count()
     assert num_files_age_1 == SEVEN_EXPECTED, "Most recent month should not be optimized, should have 7 files."
-    sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_month = 671 """
+    sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_month = {older_month_idx} """
     num_files_age_2 = STL.sql_and_log(sql).count()
     assert num_files_age_2 == ONE_EXPECTED, "Older month should be optimized into one file."
 
@@ -506,25 +547,33 @@ def test_optimize_binpack_correct_year(executor: TaskExecutor) -> None:
         executor=executor,
         partitioned_by="year(ts)",
         optimization_strategy="binpack",
-        properties={IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "2", IceKeeperTblProperty.MAX_AGE_TO_OPTIMIZE: "200"},
+        properties={IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "1Y", IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "2Y"},
     )
-    # 6 files in year 2024
-    dt = datetime.datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+
+    this_year = datetime.datetime.now(tz=timezone.utc).year
+    year_recent = this_year
+    year_older = this_year - 2
+
+    # 6 files in older year (within [1Y,2Y], should be optimized)
+    dt = datetime.datetime(year_older, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
     insert_data(partitions_to_insert_into=[dt], num_inserts=3)
-    dt = datetime.datetime(2024, 12, 31, 0, 59, 59, tzinfo=timezone.utc)
+    dt = datetime.datetime(year_older, 12, 31, 0, 59, 59, tzinfo=timezone.utc)
     insert_data(partitions_to_insert_into=[dt], num_inserts=3)
 
-    # 7 files in year 2025
-    dt = datetime.datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+    # 7 files in current year (age 0Y, should NOT be optimized)
+    dt = datetime.datetime(year_recent, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
     insert_data(partitions_to_insert_into=[dt], num_inserts=3)
-    dt = datetime.datetime(2025, 1, 1, 23, 59, 59, tzinfo=timezone.utc)
+    dt = datetime.datetime(year_recent, 1, 1, 23, 59, 59, tzinfo=timezone.utc)
     insert_data(partitions_to_insert_into=[dt], num_inserts=4)
 
     run_action_and_collect_journal(executor, Action.REWRITE_DATA_FILES)
 
-    sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_year = 55 """
+    recent_year_idx = year_recent - 1970
+    older_year_idx = year_older - 1970
+
+    sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_year = {recent_year_idx} """
     num_files_age_1 = STL.sql_and_log(sql).count()
-    assert num_files_age_1 == SEVEN_EXPECTED, "Most recent year should not be optimized, should have 7 files."
-    sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_year = 54 """
+    assert num_files_age_1 == SEVEN_EXPECTED, "Current year should be excluded by the year window and remain unoptimized."
+    sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_year = {older_year_idx} """
     num_files_age_2 = STL.sql_and_log(sql).count()
     assert num_files_age_2 == ONE_EXPECTED, "Older year should be optimized into one file."

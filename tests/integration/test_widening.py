@@ -40,7 +40,8 @@ def create_widening_table(executor: TaskExecutor, properties: dict[str, str] = {
         IceKeeperTblProperty.SHOULD_OPTIMIZE: "true",
         IceKeeperTblProperty.OPTIMIZATION_STRATEGY: "id asc",
         IceKeeperTblProperty.OPTIMIZE_PARTITION_DEPTH: "1",
-        IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "1",  # Change default min age for testing
+        IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "1d",  # Change default min partition for testing
+        IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "30d",
         IceKeeperTblProperty.BINPACK_MIN_INPUT_FILES: "0",  # for testing
         IceKeeperTblProperty.SORT_CORR_THRESHOLD: "2",  # for testing
     }

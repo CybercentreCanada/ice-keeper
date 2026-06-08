@@ -193,10 +193,7 @@ def test_discovery_succeeds_with_bad_property_values(executor: TaskExecutor) -> 
             IceKeeperTblProperty.RETENTION_DAYS_ORPHAN_FILES: "five",
             IceKeeperTblProperty.RETENTION_NUM_SNAPSHOTS: "lots",
             IceKeeperTblProperty.OPTIMIZATION_TARGET_FILE_SIZE_BYTES: "big",
-            IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE: "old",
-            IceKeeperTblProperty.MAX_AGE_TO_OPTIMIZE: "very_old",
             IceKeeperTblProperty.LIFECYCLE_MAX_DAYS: "forever",
-            IceKeeperTblProperty.WIDENING_RULE_MIN_AGE_TO_WIDEN: "soon",
             # Iceberg native ints with unparsable values
             IceKeeperTblProperty.HISTORY_EXPIRE_MAX_SNAPSHOT_AGE_MS: "a_week",
             IceKeeperTblProperty.HISTORY_EXPIRE_MIN_SNAPSHOTS_TO_KEEP: "many",
@@ -243,10 +240,7 @@ def test_discovery_succeeds_with_bad_property_values(executor: TaskExecutor) -> 
     assert mnt_props.retention_days_orphan_files == 5
     assert mnt_props.retention_num_snapshots == 1
     assert mnt_props.target_file_size_bytes == -1
-    assert mnt_props.min_age_to_optimize == -1
-    assert mnt_props.max_age_to_optimize == -1
     assert mnt_props.lifecycle_max_days == 330
-    assert mnt_props.widening_rule_min_age_to_widen == -1
 
     # --- Unparsable float falls back to default ---
     assert mnt_props.sort_corr_threshold == -1.0
