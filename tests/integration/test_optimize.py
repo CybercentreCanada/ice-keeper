@@ -428,16 +428,16 @@ def test_optimize_binpack_correct_hour(executor: TaskExecutor) -> None:
         executor=executor,
         partitioned_by="hours(ts)",
         optimization_strategy="binpack",
-        properties={IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "2h", IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "200h"},
+        properties={IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "4h", IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "200h"},
     )
-    # Use relative hours: "recent" hour is 1h ago (within min=2h, so NOT optimized)
-    # and "older" hour is 3h ago (between 2h and 200h, so IS optimized).
+    # Use relative hours: "recent" hour is 1h ago (3h away from min=4h, so NOT optimized even with hour-boundary clock drift)
+    # and "older" hour is 6h ago (well within [4h, 200h], so IS optimized).
     _epoch = datetime.datetime(1970, 1, 1, tzinfo=timezone.utc)
     _now_h = datetime.datetime.now(tz=timezone.utc).replace(minute=0, second=0, microsecond=0)
-    dt_recent = _now_h - datetime.timedelta(hours=1)  # 1h ago, NOT in [2h, 200h] range
-    dt_older = _now_h - datetime.timedelta(hours=3)  # 3h ago, IN [2h, 200h] range
+    dt_recent = _now_h - datetime.timedelta(hours=1)  # 1h ago, NOT in [4h, 200h] range
+    dt_older = _now_h - datetime.timedelta(hours=6)  # 6h ago, IN [4h, 200h] range
     recent_hour_idx = int((_now_h - _epoch).total_seconds() // 3600) - 1
-    older_hour_idx = int((_now_h - _epoch).total_seconds() // 3600) - 3
+    older_hour_idx = int((_now_h - _epoch).total_seconds() // 3600) - 6
 
     # 6 files in the older hour
     insert_data(partitions_to_insert_into=[dt_older], num_inserts=3)

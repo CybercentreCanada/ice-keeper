@@ -1,4 +1,5 @@
 import datetime
+import types
 from datetime import timezone
 
 import pyspark.sql.functions as F  # noqa:N812
@@ -38,39 +39,48 @@ def get_partition_time_from_summary(mnt_props: MaintenanceScheduleEntry) -> Row 
 
 
 # Use relative dates so that SQL filters referencing current_timestamp() work correctly.
-# d_third / dt_third = today, d_second = yesterday, d_first = 2 days ago.
-_now = datetime.datetime.now(tz=timezone.utc)
-_today = _now.date()
-d_first = _today - datetime.timedelta(days=2)
-d_second = _today - datetime.timedelta(days=1)
-d_third = _today
+@pytest.fixture
+def ts() -> types.SimpleNamespace:
+    """Timestamps computed fresh at test execution time, not at import time.
 
-dt_first_utc = datetime.datetime(d_first.year, d_first.month, d_first.day, tzinfo=timezone.utc)
-dt_second_utc = datetime.datetime(d_second.year, d_second.month, d_second.day, tzinfo=timezone.utc)
-dt_third_utc = datetime.datetime(d_third.year, d_third.month, d_third.day, tzinfo=timezone.utc)
-
-dt_two_hours_ago_utc = _now.replace(minute=0, second=0, microsecond=0) - datetime.timedelta(hours=2)
-dt_one_hour_ago_utc = _now.replace(minute=0, second=0, microsecond=0) - datetime.timedelta(hours=1)
-dt_current_hour_utc = _now.replace(minute=0, second=0, microsecond=0)
-
-dt_first = datetime.datetime(d_first.year, d_first.month, d_first.day)  # noqa: DTZ001
-dt_second = datetime.datetime(d_second.year, d_second.month, d_second.day)  # noqa: DTZ001
-dt_third = datetime.datetime(d_third.year, d_third.month, d_third.day)  # noqa: DTZ001
-
-dt_two_hours_ago = dt_two_hours_ago_utc.replace(tzinfo=None)
-dt_one_hour_ago = dt_one_hour_ago_utc.replace(tzinfo=None)
-dt_current_hour = dt_current_hour_utc.replace(tzinfo=None)
+    This prevents flakiness when tests run near an hour or day boundary, where
+    wall-clock values captured at collection time can disagree with Spark's
+    current_timestamp() / current_date() evaluated during query execution.
+    """
+    _now = datetime.datetime.now(tz=timezone.utc)
+    _today = _now.date()
+    d_first = _today - datetime.timedelta(days=2)
+    d_second = _today - datetime.timedelta(days=1)
+    d_third = _today
+    _current_hour = _now.replace(minute=0, second=0, microsecond=0)
+    return types.SimpleNamespace(
+        d_first=d_first,
+        d_second=d_second,
+        d_third=d_third,
+        dt_first_utc=datetime.datetime(d_first.year, d_first.month, d_first.day, tzinfo=timezone.utc),
+        dt_second_utc=datetime.datetime(d_second.year, d_second.month, d_second.day, tzinfo=timezone.utc),
+        dt_third_utc=datetime.datetime(d_third.year, d_third.month, d_third.day, tzinfo=timezone.utc),
+        dt_two_hours_ago_utc=_current_hour - datetime.timedelta(hours=2),
+        dt_one_hour_ago_utc=_current_hour - datetime.timedelta(hours=1),
+        dt_current_hour_utc=_current_hour,
+        dt_first=datetime.datetime(d_first.year, d_first.month, d_first.day),  # noqa: DTZ001
+        dt_second=datetime.datetime(d_second.year, d_second.month, d_second.day),  # noqa: DTZ001
+        dt_third=datetime.datetime(d_third.year, d_third.month, d_third.day),  # noqa: DTZ001
+        dt_two_hours_ago=(_current_hour - datetime.timedelta(hours=2)).replace(tzinfo=None),
+        dt_one_hour_ago=(_current_hour - datetime.timedelta(hours=1)).replace(tzinfo=None),
+        dt_current_hour=_current_hour.replace(tzinfo=None),
+    )
 
 
 @pytest.mark.integration
-def test_summary_age_day(executor: TaskExecutor) -> None:
+def test_summary_age_day(executor: TaskExecutor, ts: types.SimpleNamespace) -> None:
     partitioned_by = "days(ts)"
     optimization_strategy = "binpack"
     properties: dict[str, str] = {}
 
     create_generic_test_table(
         executor=executor,
-        partitions_to_insert_into=[dt_first_utc, dt_second_utc, dt_third_utc],
+        partitions_to_insert_into=[ts.dt_first_utc, ts.dt_second_utc, ts.dt_third_utc],
         partitioned_by=partitioned_by,
         optimization_strategy=optimization_strategy,
         properties=properties,
@@ -82,33 +92,33 @@ def test_summary_age_day(executor: TaskExecutor) -> None:
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "0d", "2000d")
     row = get_partition_time_from_summary(mnt_props)
     assert row
-    assert row.oldest == d_first
-    assert row.most_recent == d_third
+    assert row.oldest == ts.d_first
+    assert row.most_recent == ts.d_third
 
     # Do not process most recent partition
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "1d", "2000d")
     row = get_partition_time_from_summary(mnt_props)
     assert row
-    assert row.oldest == d_first
-    assert row.most_recent == d_second
+    assert row.oldest == ts.d_first
+    assert row.most_recent == ts.d_second
 
     # Only partition age 2 to 5
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "1d", "1d")
     row = get_partition_time_from_summary(mnt_props)
     assert row
-    assert row.oldest == d_second
-    assert row.most_recent == d_second
+    assert row.oldest == ts.d_second
+    assert row.most_recent == ts.d_second
 
 
 @pytest.mark.integration
-def test_summary_identity_day(executor: TaskExecutor) -> None:
+def test_summary_identity_day(executor: TaskExecutor, ts: types.SimpleNamespace) -> None:
     partitioned_by = "ts"
     optimization_strategy = "binpack"
     properties: dict[str, str] = {}
 
     create_generic_test_table(
         executor=executor,
-        partitions_to_insert_into=[dt_first_utc, dt_second_utc, dt_third_utc],
+        partitions_to_insert_into=[ts.dt_first_utc, ts.dt_second_utc, ts.dt_third_utc],
         partitioned_by=partitioned_by,
         optimization_strategy=optimization_strategy,
         properties=properties,
@@ -120,51 +130,51 @@ def test_summary_identity_day(executor: TaskExecutor) -> None:
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "0d", "2000d")
     row = get_partition_time_from_summary(mnt_props)
     assert row
-    assert row.oldest == dt_first
-    assert row.most_recent == dt_third
+    assert row.oldest == ts.dt_first
+    assert row.most_recent == ts.dt_third
 
     # Do not process most recent partition
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "1d", "2000d")
     row = get_partition_time_from_summary(mnt_props)
     assert row
-    assert row.oldest == dt_first
-    assert row.most_recent == dt_second
+    assert row.oldest == ts.dt_first
+    assert row.most_recent == ts.dt_second
 
     # skip current partition and up to 2d
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "1d", "2d")
     row = get_partition_time_from_summary(mnt_props)
     assert row
-    assert row.oldest == dt_first
-    assert row.most_recent == dt_second
+    assert row.oldest == ts.dt_first
+    assert row.most_recent == ts.dt_second
 
     # skip current partition and up to 1d
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "1d", "1d")
     row = get_partition_time_from_summary(mnt_props)
     assert row
-    assert row.oldest == dt_second
-    assert row.most_recent == dt_second
+    assert row.oldest == ts.dt_second
+    assert row.most_recent == ts.dt_second
 
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "0d", "0d")
     row = get_partition_time_from_summary(mnt_props)
     assert row
-    assert row.oldest == dt_third
-    assert row.most_recent == dt_third
+    assert row.oldest == ts.dt_third
+    assert row.most_recent == ts.dt_third
 
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "0d", "2000d")
     row = get_partition_time_from_summary(mnt_props)
     assert row
-    assert row.oldest == dt_first
-    assert row.most_recent == dt_third
+    assert row.oldest == ts.dt_first
+    assert row.most_recent == ts.dt_third
 
 
 @pytest.mark.integration
-def test_summary_partition_day(executor: TaskExecutor) -> None:
+def test_summary_partition_day(executor: TaskExecutor, ts: types.SimpleNamespace) -> None:
     partitioned_by = "days(ts)"
     optimization_strategy = "binpack"
     properties: dict[str, str] = {}
     create_generic_test_table(
         executor=executor,
-        partitions_to_insert_into=[dt_first_utc, dt_second_utc, dt_third_utc],
+        partitions_to_insert_into=[ts.dt_first_utc, ts.dt_second_utc, ts.dt_third_utc],
         partitioned_by=partitioned_by,
         optimization_strategy=optimization_strategy,
         properties=properties,
@@ -176,59 +186,59 @@ def test_summary_partition_day(executor: TaskExecutor) -> None:
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "0d", "2000d")
     row = get_partition_time_from_summary(mnt_props)
     assert row
-    assert row.oldest == d_first
-    assert row.most_recent == d_third
+    assert row.oldest == ts.d_first
+    assert row.most_recent == ts.d_third
 
     # Do not process most recent partition
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "1d", "2000d")
     row = get_partition_time_from_summary(mnt_props)
     assert row
-    assert row.oldest == d_first
-    assert row.most_recent == d_second
+    assert row.oldest == ts.d_first
+    assert row.most_recent == ts.d_second
 
     # skip current partition and up to 2d
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "1d", "2d")
     row = get_partition_time_from_summary(mnt_props)
     assert row
-    assert row.oldest == d_first
-    assert row.most_recent == d_second
+    assert row.oldest == ts.d_first
+    assert row.most_recent == ts.d_second
 
     # skip current partition and up to 1d
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "1d", "1d")
     row = get_partition_time_from_summary(mnt_props)
     assert row
-    assert row.oldest == d_second
-    assert row.most_recent == d_second
+    assert row.oldest == ts.d_second
+    assert row.most_recent == ts.d_second
 
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "0d", "0d")
     row = get_partition_time_from_summary(mnt_props)
     assert row
-    assert row.oldest == d_third
-    assert row.most_recent == d_third
+    assert row.oldest == ts.d_third
+    assert row.most_recent == ts.d_third
 
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "0d", "2000d")
     row = get_partition_time_from_summary(mnt_props)
     assert row
-    assert row.oldest == d_first
-    assert row.most_recent == d_third
+    assert row.oldest == ts.d_first
+    assert row.most_recent == ts.d_third
 
     # Hour-based bounds on day partitions should be handled (not ignored).
     # 24h to 48h includes yesterday and 2 days ago, excludes today.
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "24h", "48h")
     row = get_partition_time_from_summary(mnt_props)
     assert row
-    assert row.oldest == d_first
-    assert row.most_recent == d_second
+    assert row.oldest == ts.d_first
+    assert row.most_recent == ts.d_second
 
 
 @pytest.mark.integration
-def test_summary_partition_hour(executor: TaskExecutor) -> None:
+def test_summary_partition_hour(executor: TaskExecutor, ts: types.SimpleNamespace) -> None:
     partitioned_by = "hours(ts)"
     optimization_strategy = "binpack"
     properties: dict[str, str] = {}
     create_generic_test_table(
         executor=executor,
-        partitions_to_insert_into=[dt_two_hours_ago_utc, dt_one_hour_ago_utc, dt_current_hour_utc],
+        partitions_to_insert_into=[ts.dt_two_hours_ago_utc, ts.dt_one_hour_ago_utc, ts.dt_current_hour_utc],
         partitioned_by=partitioned_by,
         optimization_strategy=optimization_strategy,
         properties=properties,
@@ -240,43 +250,43 @@ def test_summary_partition_hour(executor: TaskExecutor) -> None:
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "0h", "2000h")
     row = get_partition_time_from_summary(mnt_props)
     assert row
-    assert row.oldest == dt_two_hours_ago
-    assert row.most_recent == dt_current_hour
+    assert row.oldest == ts.dt_two_hours_ago
+    assert row.most_recent == ts.dt_current_hour
 
     # Do not process most recent partition
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "1h", "2000h")
     row = get_partition_time_from_summary(mnt_props)
     assert row
-    assert row.oldest == dt_two_hours_ago
-    assert row.most_recent == dt_one_hour_ago
+    assert row.oldest == ts.dt_two_hours_ago
+    assert row.most_recent == ts.dt_one_hour_ago
 
     # skip current partition and up to 2h
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "1h", "2h")
     row = get_partition_time_from_summary(mnt_props)
     assert row
-    assert row.oldest == dt_two_hours_ago
-    assert row.most_recent == dt_one_hour_ago
+    assert row.oldest == ts.dt_two_hours_ago
+    assert row.most_recent == ts.dt_one_hour_ago
 
     # skip current partition and up to 1h
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "1h", "1h")
     row = get_partition_time_from_summary(mnt_props)
     assert row
-    assert row.oldest == dt_one_hour_ago
-    assert row.most_recent == dt_one_hour_ago
+    assert row.oldest == ts.dt_one_hour_ago
+    assert row.most_recent == ts.dt_one_hour_ago
 
     # Assert grabbing all partitions
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "0d", "2d")
     row = get_partition_time_from_summary(mnt_props)
     assert row
-    assert row.oldest == dt_two_hours_ago
-    assert row.most_recent == dt_current_hour
+    assert row.oldest == ts.dt_two_hours_ago
+    assert row.most_recent == ts.dt_current_hour
 
     # Assert grabbing all partitions
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "0d", "0d")
     row = get_partition_time_from_summary(mnt_props)
     assert row
-    assert row.oldest == dt_two_hours_ago
-    assert row.most_recent == dt_current_hour
+    assert row.oldest == ts.dt_two_hours_ago
+    assert row.most_recent == ts.dt_current_hour
 
     # Assert no partitions to optimize 1 day ago
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "1d", "1d")
@@ -383,14 +393,14 @@ def test_summary_partition_year(executor: TaskExecutor) -> None:
 
 
 @pytest.mark.integration
-def test_summary_partition_negative_offset(executor: TaskExecutor) -> None:
+def test_summary_partition_negative_offset(executor: TaskExecutor, ts: types.SimpleNamespace) -> None:
     """Test that negative offsets extend the window beyond the most recent partition."""
     partitioned_by = "days(ts)"
     optimization_strategy = "binpack"
     properties: dict[str, str] = {}
     create_generic_test_table(
         executor=executor,
-        partitions_to_insert_into=[dt_first_utc, dt_second_utc, dt_third_utc],
+        partitions_to_insert_into=[ts.dt_first_utc, ts.dt_second_utc, ts.dt_third_utc],
         partitioned_by=partitioned_by,
         optimization_strategy=optimization_strategy,
         properties=properties,
@@ -403,19 +413,19 @@ def test_summary_partition_negative_offset(executor: TaskExecutor) -> None:
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "-1d", "2000d")
     row = get_partition_time_from_summary(mnt_props)
     assert row
-    assert row.oldest == d_first
-    assert row.most_recent == d_third
+    assert row.oldest == ts.d_first
+    assert row.most_recent == ts.d_third
 
 
 @pytest.mark.integration
-def test_summary_partition_mismatched_units_rejected(executor: TaskExecutor) -> None:
+def test_summary_partition_mismatched_units_rejected(executor: TaskExecutor, ts: types.SimpleNamespace) -> None:
     """Test that mismatched units between min and max partition raise a ValueError."""
     partitioned_by = "days(ts)"
     optimization_strategy = "binpack"
     properties: dict[str, str] = {}
     create_generic_test_table(
         executor=executor,
-        partitions_to_insert_into=[dt_first_utc],
+        partitions_to_insert_into=[ts.dt_first_utc],
         partitioned_by=partitioned_by,
         optimization_strategy=optimization_strategy,
         properties=properties,
@@ -435,14 +445,14 @@ def test_summary_partition_mismatched_units_rejected(executor: TaskExecutor) -> 
 
 
 @pytest.mark.integration
-def test_summary_partition_month_and_year_optimize_windows_supported(executor: TaskExecutor) -> None:
+def test_summary_partition_month_and_year_optimize_windows_supported(executor: TaskExecutor, ts: types.SimpleNamespace) -> None:
     """Optimization windows with month/year units are supported."""
     partitioned_by = "days(ts)"
     optimization_strategy = "binpack"
     properties: dict[str, str] = {}
     create_generic_test_table(
         executor=executor,
-        partitions_to_insert_into=[dt_first_utc],
+        partitions_to_insert_into=[ts.dt_first_utc],
         partitioned_by=partitioned_by,
         optimization_strategy=optimization_strategy,
         properties=properties,
@@ -474,11 +484,13 @@ def set_mnt_target_file_size_and_depth(
 
 
 @pytest.mark.integration
-def test_auto_target_file_size_rejected_when_depth_does_not_match_partition_levels(executor: TaskExecutor) -> None:
+def test_auto_target_file_size_rejected_when_depth_does_not_match_partition_levels(
+    executor: TaskExecutor, ts: types.SimpleNamespace
+) -> None:
     """Auto target file size (-1) requires depth == num partition levels or depth == -1."""
     create_generic_test_table(
         executor=executor,
-        partitions_to_insert_into=[dt_first_utc],
+        partitions_to_insert_into=[ts.dt_first_utc],
         partitioned_by="days(ts), bucket(3, id)",
         optimization_strategy="binpack",
     )
@@ -491,11 +503,13 @@ def test_auto_target_file_size_rejected_when_depth_does_not_match_partition_leve
 
 
 @pytest.mark.integration
-def test_auto_target_file_size_accepted_when_depth_equals_partition_levels(executor: TaskExecutor) -> None:
+def test_auto_target_file_size_accepted_when_depth_equals_partition_levels(
+    executor: TaskExecutor, ts: types.SimpleNamespace
+) -> None:
     """Auto target file size (-1) should work when depth matches the number of partition levels."""
     create_generic_test_table(
         executor=executor,
-        partitions_to_insert_into=[dt_first_utc],
+        partitions_to_insert_into=[ts.dt_first_utc],
         partitioned_by="days(ts), bucket(3, id)",
         optimization_strategy="binpack",
     )
@@ -508,11 +522,11 @@ def test_auto_target_file_size_accepted_when_depth_equals_partition_levels(execu
 
 
 @pytest.mark.integration
-def test_auto_target_file_size_accepted_with_dynamic_grouping(executor: TaskExecutor) -> None:
+def test_auto_target_file_size_accepted_with_dynamic_grouping(executor: TaskExecutor, ts: types.SimpleNamespace) -> None:
     """Auto target file size (-1) should work when depth=-1 (dynamic grouping)."""
     create_generic_test_table(
         executor=executor,
-        partitions_to_insert_into=[dt_first_utc],
+        partitions_to_insert_into=[ts.dt_first_utc],
         partitioned_by="days(ts), bucket(3, id)",
         optimization_strategy="binpack",
     )
@@ -525,11 +539,13 @@ def test_auto_target_file_size_accepted_with_dynamic_grouping(executor: TaskExec
 
 
 @pytest.mark.integration
-def test_auto_target_file_size_selects_smallest_tier_for_small_partitions(executor: TaskExecutor) -> None:
+def test_auto_target_file_size_selects_smallest_tier_for_small_partitions(
+    executor: TaskExecutor, ts: types.SimpleNamespace
+) -> None:
     """With auto target file size (-1) and small data, the lowest tier (16 MB) should be selected."""
     create_generic_test_table(
         executor=executor,
-        partitions_to_insert_into=[dt_first_utc],
+        partitions_to_insert_into=[ts.dt_first_utc],
         partitioned_by="days(ts)",
         optimization_strategy="binpack",
         properties={

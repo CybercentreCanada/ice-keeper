@@ -355,38 +355,32 @@ class DataFilesSummary:
     def _filter_for_month_partition(partition_field_alias: str, unit: str, min_amount: int, max_amount: int) -> str:
         """Filter for MonthTransformation: partition values are months-since-epoch integers."""
         if unit == "day":
-            # Date arithmetic on a date base; cast is required in the case-when comparison.
             lower_ts = f"(current_date() - interval {max_amount} day)"
             upper_ts = f"(current_date() - interval {min_amount} day)"
-            lower_month_bound = (
-                f"cast(months_between(cast(date_trunc('month', {lower_ts}) as date), date '1970-01-01') as int)"
-                f" + case when {lower_ts} > cast(date_trunc('month', {lower_ts}) as date) then 1 else 0 end"
-            )
         elif unit in {"hour", "month", "year"}:
-            # Timestamp arithmetic; date_trunc returns a timestamp, no extra cast needed in comparison.
             lower_ts = f"(current_timestamp() - interval {max_amount} {unit})"
             upper_ts = f"(current_timestamp() - interval {min_amount} {unit})"
-            lower_month_bound = (
-                f"cast(months_between(cast(date_trunc('month', {lower_ts}) as date), date '1970-01-01') as int)"
-                f" + case when {lower_ts} > date_trunc('month', {lower_ts}) then 1 else 0 end"
-            )
         else:
             return "1=1"
-        upper_month_bound = f"cast(months_between(cast(date_trunc('month', {upper_ts}) as date), date '1970-01-01') as int)"
+        month_index = "cast(months_between(cast(date_trunc('month', {ts}) as date), date '1970-01-01') as int)"
+        lower_month_bound = month_index.format(ts=lower_ts)
+        upper_month_bound = month_index.format(ts=upper_ts)
         return f"{partition_field_alias} >= {lower_month_bound} and {partition_field_alias} <= {upper_month_bound}"
 
     @staticmethod
     def _filter_for_year_partition(partition_field_alias: str, unit: str, min_amount: int, max_amount: int) -> str:
-        """Filter for YearTransformation: partition values are years-since-epoch integers (year - 1970)."""
+        """Filter for YearTransformation: partition values are years-since-epoch integers (year - 1970).
+
+        Iceberg's year transform assigns partition_value = year(ts) - 1970 (already the floor).
+        Both bounds use this same formula — no +1 adjustment for the lower bound.
+        """
         if unit == "year":
             current_year = "(year(current_timestamp()) - 1970)"
             return f"{partition_field_alias} >= ({current_year} - {max_amount}) and {partition_field_alias} <= ({current_year} - {min_amount})"
         if unit in {"hour", "day", "month"}:
             lower_ts = f"(current_timestamp() - interval {max_amount} {unit})"
             upper_ts = f"(current_timestamp() - interval {min_amount} {unit})"
-            lower_year_bound = (
-                f"(year({lower_ts}) - 1970 + case when {lower_ts} > date_trunc('year', {lower_ts}) then 1 else 0 end)"
-            )
+            lower_year_bound = f"(year({lower_ts}) - 1970)"
             upper_year_bound = f"(year({upper_ts}) - 1970)"
             return f"{partition_field_alias} >= {lower_year_bound} and {partition_field_alias} <= {upper_year_bound}"
         return "1=1"
