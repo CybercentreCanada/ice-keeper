@@ -483,16 +483,7 @@ class MaintenanceScheduleEntry:
     def _get_partition_to_optimize(self) -> tuple[tuple[str, int], tuple[str, int]]:
         min_partition_to_optimize = self._record.get("min_partition_to_optimize")
         max_partition_to_optimize = self._record.get("max_partition_to_optimize")
-        min_partition, max_partition = self._validate_partition_config(min_partition_to_optimize, max_partition_to_optimize)
-        if min_partition[0] not in {"hour", "day"}:
-            msg = (
-                "Unsupported unit for optimization window: "
-                f"'{min_partition_to_optimize}' to '{max_partition_to_optimize}'. "
-                "Only hour ('h') and day ('d') are supported for "
-                "ice-keeper.min-partition-to-optimize and ice-keeper.max-partition-to-optimize."
-            )
-            raise ValueError(msg)
-        return min_partition, max_partition
+        return self._validate_partition_config(min_partition_to_optimize, max_partition_to_optimize)
 
     def _validate_partition_config(self, min_partition: str, max_partition: str) -> tuple[tuple[str, int], tuple[str, int]]:
         """Validates that the min and max partition to optimize configurations are valid and consistent."""

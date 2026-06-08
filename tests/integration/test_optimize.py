@@ -547,26 +547,33 @@ def test_optimize_binpack_correct_year(executor: TaskExecutor) -> None:
         executor=executor,
         partitioned_by="year(ts)",
         optimization_strategy="binpack",
-        properties={IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "2d", IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "200d"},
+        properties={IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE: "1Y", IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE: "2Y"},
     )
-    # Year base partitions are not filtered by optimize window (1=1).
-    # 6 files in year 2024
-    dt = datetime.datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+
+    this_year = datetime.datetime.now(tz=timezone.utc).year
+    year_recent = this_year
+    year_older = this_year - 2
+
+    # 6 files in older year (within [1Y,2Y], should be optimized)
+    dt = datetime.datetime(year_older, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
     insert_data(partitions_to_insert_into=[dt], num_inserts=3)
-    dt = datetime.datetime(2024, 12, 31, 0, 59, 59, tzinfo=timezone.utc)
+    dt = datetime.datetime(year_older, 12, 31, 0, 59, 59, tzinfo=timezone.utc)
     insert_data(partitions_to_insert_into=[dt], num_inserts=3)
 
-    # 7 files in year 2025
-    dt = datetime.datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+    # 7 files in current year (age 0Y, should NOT be optimized)
+    dt = datetime.datetime(year_recent, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
     insert_data(partitions_to_insert_into=[dt], num_inserts=3)
-    dt = datetime.datetime(2025, 1, 1, 23, 59, 59, tzinfo=timezone.utc)
+    dt = datetime.datetime(year_recent, 1, 1, 23, 59, 59, tzinfo=timezone.utc)
     insert_data(partitions_to_insert_into=[dt], num_inserts=4)
 
     run_action_and_collect_journal(executor, Action.REWRITE_DATA_FILES)
 
-    sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_year = 55 """
+    recent_year_idx = year_recent - 1970
+    older_year_idx = year_older - 1970
+
+    sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_year = {recent_year_idx} """
     num_files_age_1 = STL.sql_and_log(sql).count()
-    assert num_files_age_1 == ONE_EXPECTED, "Year partitions are not window-filtered; recent year should be optimized."
-    sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_year = 54 """
+    assert num_files_age_1 == SEVEN_EXPECTED, "Current year should be excluded by the year window and remain unoptimized."
+    sql = f"""select * from {TEST_FULL_NAME}.data_files where partition.ts_year = {older_year_idx} """
     num_files_age_2 = STL.sql_and_log(sql).count()
     assert num_files_age_2 == ONE_EXPECTED, "Older year should be optimized into one file."

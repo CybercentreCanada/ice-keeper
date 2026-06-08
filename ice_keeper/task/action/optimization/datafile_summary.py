@@ -317,7 +317,106 @@ class DataFilesSummary:
             raise Exception(msg)
 
     @staticmethod
-    def _build_temporal_filter(  # noqa: C901, PLR0911, PLR0912
+    def _filter_for_hour_partition(partition_field_alias: str, unit: str, min_amount: int, max_amount: int) -> str:
+        """Filter for HourTransformation: partition values are hours-since-epoch integers."""
+        if unit == "hour":
+            current_hour = "cast(unix_timestamp(current_timestamp()) / 3600 as bigint)"
+            return f"{partition_field_alias} >= ({current_hour} - {max_amount}) and {partition_field_alias} <= ({current_hour} - {min_amount})"
+        if unit == "day":
+            # Keep the predicate on the raw hour partition column for better pushdown.
+            lower_hour_bound = f"cast(unix_timestamp(current_date() - interval {max_amount} day) / 3600 as bigint)"
+            upper_hour_bound = (
+                f"cast(unix_timestamp(current_date() - interval {min_amount} day + interval 1 day) / 3600 as bigint) - 1"
+            )
+            return f"{partition_field_alias} >= {lower_hour_bound} and {partition_field_alias} <= {upper_hour_bound}"
+        if unit in {"month", "year"}:
+            lower_hour_bound = f"cast(unix_timestamp(current_timestamp() - interval {max_amount} {unit}) / 3600 as bigint)"
+            upper_hour_bound = f"cast(unix_timestamp(current_timestamp() - interval {min_amount} {unit}) / 3600 as bigint)"
+            return f"{partition_field_alias} >= {lower_hour_bound} and {partition_field_alias} <= {upper_hour_bound}"
+        return "1=1"
+
+    @staticmethod
+    def _filter_for_day_partition(partition_field_alias: str, unit: str, min_amount: int, max_amount: int) -> str:
+        """Filter for DayTransformation: partition values are dates."""
+        if unit == "hour":
+            # Day partition values are dates. Convert hour offsets to date bounds.
+            min_bound = f"cast(current_timestamp() - interval {max_amount} hour as date)"
+            max_bound = f"cast(current_timestamp() - interval {min_amount} hour as date)"
+            return f"{partition_field_alias} >= {min_bound} and {partition_field_alias} <= {max_bound}"
+        if unit == "day":
+            return f"{partition_field_alias} >= (current_date() - interval {max_amount} day) and {partition_field_alias} <= (current_date() - interval {min_amount} day)"
+        if unit in {"month", "year"}:
+            min_bound = f"cast(current_timestamp() - interval {max_amount} {unit} as date)"
+            max_bound = f"cast(current_timestamp() - interval {min_amount} {unit} as date)"
+            return f"{partition_field_alias} >= {min_bound} and {partition_field_alias} <= {max_bound}"
+        return "1=1"
+
+    @staticmethod
+    def _filter_for_month_partition(partition_field_alias: str, unit: str, min_amount: int, max_amount: int) -> str:
+        """Filter for MonthTransformation: partition values are months-since-epoch integers."""
+        if unit == "day":
+            # Date arithmetic on a date base; cast is required in the case-when comparison.
+            lower_ts = f"(current_date() - interval {max_amount} day)"
+            upper_ts = f"(current_date() - interval {min_amount} day)"
+            lower_month_bound = (
+                f"cast(months_between(cast(date_trunc('month', {lower_ts}) as date), date '1970-01-01') as int)"
+                f" + case when {lower_ts} > cast(date_trunc('month', {lower_ts}) as date) then 1 else 0 end"
+            )
+        elif unit in {"hour", "month", "year"}:
+            # Timestamp arithmetic; date_trunc returns a timestamp, no extra cast needed in comparison.
+            lower_ts = f"(current_timestamp() - interval {max_amount} {unit})"
+            upper_ts = f"(current_timestamp() - interval {min_amount} {unit})"
+            lower_month_bound = (
+                f"cast(months_between(cast(date_trunc('month', {lower_ts}) as date), date '1970-01-01') as int)"
+                f" + case when {lower_ts} > date_trunc('month', {lower_ts}) then 1 else 0 end"
+            )
+        else:
+            return "1=1"
+        upper_month_bound = f"cast(months_between(cast(date_trunc('month', {upper_ts}) as date), date '1970-01-01') as int)"
+        return f"{partition_field_alias} >= {lower_month_bound} and {partition_field_alias} <= {upper_month_bound}"
+
+    @staticmethod
+    def _filter_for_year_partition(partition_field_alias: str, unit: str, min_amount: int, max_amount: int) -> str:
+        """Filter for YearTransformation: partition values are years-since-epoch integers (year - 1970)."""
+        if unit == "year":
+            current_year = "(year(current_timestamp()) - 1970)"
+            return f"{partition_field_alias} >= ({current_year} - {max_amount}) and {partition_field_alias} <= ({current_year} - {min_amount})"
+        if unit in {"hour", "day", "month"}:
+            lower_ts = f"(current_timestamp() - interval {max_amount} {unit})"
+            upper_ts = f"(current_timestamp() - interval {min_amount} {unit})"
+            lower_year_bound = (
+                f"(year({lower_ts}) - 1970 + case when {lower_ts} > date_trunc('year', {lower_ts}) then 1 else 0 end)"
+            )
+            upper_year_bound = f"(year({upper_ts}) - 1970)"
+            return f"{partition_field_alias} >= {lower_year_bound} and {partition_field_alias} <= {upper_year_bound}"
+        return "1=1"
+
+    @staticmethod
+    def _filter_for_identity_partition(partition_field_alias: str, unit: str, min_amount: int, max_amount: int) -> str:
+        """Filter for identity temporal columns: partition values are raw timestamps or dates."""
+        if unit == "hour":
+            min_bound = f"(current_timestamp() - interval {max_amount} hour)"
+            max_bound = f"(current_timestamp() - interval {min_amount} hour)"
+            return (
+                f"cast({partition_field_alias} as timestamp) >= {min_bound}"
+                f" and cast({partition_field_alias} as timestamp) <= {max_bound}"
+            )
+        if unit == "day":
+            return (
+                f"cast({partition_field_alias} as date) >= (current_date() - interval {max_amount} day)"
+                f" and cast({partition_field_alias} as date) <= (current_date() - interval {min_amount} day)"
+            )
+        if unit in {"month", "year"}:
+            min_bound = f"(current_timestamp() - interval {max_amount} {unit})"
+            max_bound = f"(current_timestamp() - interval {min_amount} {unit})"
+            return (
+                f"cast({partition_field_alias} as timestamp) >= {min_bound}"
+                f" and cast({partition_field_alias} as timestamp) <= {max_bound}"
+            )
+        return "1=1"
+
+    @staticmethod
+    def _build_temporal_filter(
         partition_field_alias: str, transformation_type: str, unit: str, min_amount: int, max_amount: int
     ) -> str:
         """Build the SQL WHERE clause for a temporal partition bound.
@@ -326,80 +425,18 @@ class DataFilesSummary:
           - Include partitions where age is in [min_amount, max_amount] (in the given unit).
           - min_amount = minimum age  (skip partitions newer than this)
           - max_amount = maximum age  (skip partitions older than this)
+
+        Dispatches to a per-transformation helper so each partition type's
+        bound logic stays isolated and independently readable.
         """
-        current_time = "current_timestamp()"
-
-        if transformation_type == "HourTransformation":
-            if unit == "hour":
-                current_hour = f"cast(unix_timestamp({current_time}) / 3600 as bigint)"
-                return f"{partition_field_alias} >= ({current_hour} - {max_amount}) and {partition_field_alias} <= ({current_hour} - {min_amount})"
-            if unit == "day":
-                current_date = f"cast({current_time} as date)"
-                # Keep the predicate on the raw hour partition column for better pushdown.
-                lower_hour_bound = f"cast(unix_timestamp({current_date} - interval {max_amount} day) / 3600 as bigint)"
-                upper_hour_bound = (
-                    f"cast(unix_timestamp({current_date} - interval {min_amount} day + interval 1 day) / 3600 as bigint) - 1"
-                )
-                return f"{partition_field_alias} >= {lower_hour_bound} and {partition_field_alias} <= {upper_hour_bound}"
-
-        elif transformation_type == "DayTransformation":
-            if unit == "hour":
-                # Day partition values are dates. Convert hour offsets to date bounds.
-                min_bound = f"cast({current_time} - interval {max_amount} hour as date)"
-                max_bound = f"cast({current_time} - interval {min_amount} hour as date)"
-                return f"{partition_field_alias} >= {min_bound} and {partition_field_alias} <= {max_bound}"
-            if unit == "day":
-                current_date = f"cast({current_time} as date)"
-                return f"{partition_field_alias} >= ({current_date} - interval {max_amount} day) and {partition_field_alias} <= ({current_date} - interval {min_amount} day)"
-
-        elif transformation_type == "MonthTransformation":
-            # Month partition values are integer months since epoch.
-            if unit == "hour":
-                lower_ts = f"({current_time} - interval {max_amount} hour)"
-                upper_ts = f"({current_time} - interval {min_amount} hour)"
-                lower_month_bound = (
-                    f"cast(months_between(cast(date_trunc('month', {lower_ts}) as date), date '1970-01-01') as int)"
-                    f" + case when {lower_ts} > date_trunc('month', {lower_ts}) then 1 else 0 end"
-                )
-                upper_month_bound = (
-                    f"cast(months_between(cast(date_trunc('month', {upper_ts}) as date), date '1970-01-01') as int)"
-                )
-                return f"{partition_field_alias} >= {lower_month_bound} and {partition_field_alias} <= {upper_month_bound}"
-            if unit == "day":
-                current_date = f"cast({current_time} as date)"
-                lower_date = f"({current_date} - interval {max_amount} day)"
-                upper_date = f"({current_date} - interval {min_amount} day)"
-                lower_month_bound = (
-                    f"cast(months_between(cast(date_trunc('month', {lower_date}) as date), date '1970-01-01') as int)"
-                    f" + case when {lower_date} > cast(date_trunc('month', {lower_date}) as date) then 1 else 0 end"
-                )
-                upper_month_bound = (
-                    f"cast(months_between(cast(date_trunc('month', {upper_date}) as date), date '1970-01-01') as int)"
-                )
-                return f"{partition_field_alias} >= {lower_month_bound} and {partition_field_alias} <= {upper_month_bound}"
-
-        elif transformation_type == "YearTransformation":
-            # Year base partitions are intentionally not filtered by optimize window.
-            # Keep all partitions in diagnosis.
-            return "1=1"
-
-        else:
-            # Identity temporal column
-            if unit == "hour":
-                min_bound = f"({current_time} - interval {max_amount} hour)"
-                max_bound = f"({current_time} - interval {min_amount} hour)"
-                return (
-                    f"cast({partition_field_alias} as timestamp) >= {min_bound}"
-                    f" and cast({partition_field_alias} as timestamp) <= {max_bound}"
-                )
-            if unit == "day":
-                current_date = f"cast({current_time} as date)"
-                return (
-                    f"cast({partition_field_alias} as date) >= ({current_date} - interval {max_amount} day)"
-                    f" and cast({partition_field_alias} as date) <= ({current_date} - interval {min_amount} day)"
-                )
-        # Unsupported unit/transformation combination: no filter applied
-        return "1=1"
+        _dispatch = {
+            "HourTransformation": DataFilesSummary._filter_for_hour_partition,
+            "DayTransformation": DataFilesSummary._filter_for_day_partition,
+            "MonthTransformation": DataFilesSummary._filter_for_month_partition,
+            "YearTransformation": DataFilesSummary._filter_for_year_partition,
+        }
+        handler = _dispatch.get(transformation_type, DataFilesSummary._filter_for_identity_partition)
+        return handler(partition_field_alias, unit, min_amount, max_amount)
 
     def make_partition_filter_stmt(self) -> str:
         """Create a filter to consider only partitions within the specified bounds.

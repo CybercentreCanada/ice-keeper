@@ -347,18 +347,19 @@ def test_summary_partition_month(executor: TaskExecutor) -> None:
 
 @pytest.mark.integration
 def test_summary_partition_year(executor: TaskExecutor) -> None:
-    """Year-partitioned tables are not filtered by optimize window (1=1)."""
+    """Year-partitioned tables are filtered by optimize windows."""
     partitioned_by = "year(ts)"
     optimization_strategy = "binpack"
     properties: dict[str, str] = {}
-    # Insert data into 3 years: 2023, 2024, 2025
-    y2023_utc = datetime.datetime(2023, 6, 15, 0, 0, 0, tzinfo=timezone.utc)
-    y2024_utc = datetime.datetime(2024, 6, 15, 0, 0, 0, tzinfo=timezone.utc)
-    y2025_utc = datetime.datetime(2025, 6, 15, 0, 0, 0, tzinfo=timezone.utc)
+
+    this_year = datetime.datetime.now(tz=timezone.utc).year
+    y_cur_utc = datetime.datetime(this_year, 6, 15, 0, 0, 0, tzinfo=timezone.utc)
+    y_prev_utc = datetime.datetime(this_year - 1, 6, 15, 0, 0, 0, tzinfo=timezone.utc)
+    y_prev2_utc = datetime.datetime(this_year - 2, 6, 15, 0, 0, 0, tzinfo=timezone.utc)
 
     create_generic_test_table(
         executor=executor,
-        partitions_to_insert_into=[y2023_utc, y2024_utc, y2025_utc],
+        partitions_to_insert_into=[y_prev2_utc, y_prev_utc, y_cur_utc],
         partitioned_by=partitioned_by,
         optimization_strategy=optimization_strategy,
         properties=properties,
@@ -366,28 +367,19 @@ def test_summary_partition_year(executor: TaskExecutor) -> None:
 
     mnt_props = get_updated_mnt_props()
 
-    # Year base partitions are not filtered by optimize window.
-    mnt_props = set_mnt_partition_to_optimize(mnt_props, "0d", "100d")
+    # Broad year window includes all three years.
+    mnt_props = set_mnt_partition_to_optimize(mnt_props, "0Y", "10Y")
     row = get_partition_time_from_summary(mnt_props)
     assert row
-    assert row.oldest is not None
-    assert row.most_recent is not None
-    all_oldest = row.oldest
-    all_most_recent = row.most_recent
+    assert row.oldest == datetime.datetime(this_year - 2, 1, 1)  # noqa: DTZ001
+    assert row.most_recent == datetime.datetime(this_year, 1, 1)  # noqa: DTZ001
 
-    # Narrow day window still keeps all year partitions.
-    mnt_props = set_mnt_partition_to_optimize(mnt_props, "1d", "1d")
+    # Keep only years aged 1..2 years (exclude current year).
+    mnt_props = set_mnt_partition_to_optimize(mnt_props, "1Y", "2Y")
     row = get_partition_time_from_summary(mnt_props)
     assert row
-    assert row.oldest == all_oldest
-    assert row.most_recent == all_most_recent
-
-    # Same for hour-based windows.
-    mnt_props = set_mnt_partition_to_optimize(mnt_props, "24h", "48h")
-    row = get_partition_time_from_summary(mnt_props)
-    assert row
-    assert row.oldest == all_oldest
-    assert row.most_recent == all_most_recent
+    assert row.oldest == datetime.datetime(this_year - 2, 1, 1)  # noqa: DTZ001
+    assert row.most_recent == datetime.datetime(this_year - 1, 1, 1)  # noqa: DTZ001
 
 
 @pytest.mark.integration
@@ -443,8 +435,8 @@ def test_summary_partition_mismatched_units_rejected(executor: TaskExecutor) -> 
 
 
 @pytest.mark.integration
-def test_summary_partition_unsupported_optimize_window_units_rejected(executor: TaskExecutor) -> None:
-    """Optimization window only supports hour/day units."""
+def test_summary_partition_month_and_year_optimize_windows_supported(executor: TaskExecutor) -> None:
+    """Optimization windows with month/year units are supported."""
     partitioned_by = "days(ts)"
     optimization_strategy = "binpack"
     properties: dict[str, str] = {}
@@ -459,12 +451,16 @@ def test_summary_partition_unsupported_optimize_window_units_rejected(executor: 
     mnt_props = get_updated_mnt_props()
 
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "1M", "3M")
-    with pytest.raises(ValueError, match=r"Only hour \('h'\) and day \('d'\) are supported"):
-        get_partition_time_from_summary(mnt_props)
+    row = get_partition_time_from_summary(mnt_props)
+    assert row
+    assert row.oldest is None
+    assert row.most_recent is None
 
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "1Y", "2Y")
-    with pytest.raises(ValueError, match=r"Only hour \('h'\) and day \('d'\) are supported"):
-        get_partition_time_from_summary(mnt_props)
+    row = get_partition_time_from_summary(mnt_props)
+    assert row
+    assert row.oldest is None
+    assert row.most_recent is None
 
 
 def set_mnt_target_file_size_and_depth(
