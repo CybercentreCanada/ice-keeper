@@ -37,14 +37,6 @@ class DataFiles(ABC):
         """
 
     @abstractmethod
-    def get_min_age_to_optimize(self) -> int:
-        """Abstract method to fetch the minimum age for optimization."""
-
-    @abstractmethod
-    def get_max_age_to_optimize(self) -> int:
-        """Abstract method to fetch the maximum age for optimization."""
-
-    @abstractmethod
     def get_min_partition_to_optimize(self) -> tuple[str, int]:
         """Abstract method to fetch the minimum partition for optimization."""
 
@@ -54,14 +46,6 @@ class DataFiles(ABC):
 
 
 class DataFilesBinpack(DataFiles):
-    @override
-    def get_min_age_to_optimize(self) -> int:
-        return self.mnt_props.min_age_to_optimize
-
-    @override
-    def get_max_age_to_optimize(self) -> int:
-        return self.mnt_props.max_age_to_optimize
-
     @override
     def get_min_partition_to_optimize(self) -> tuple[str, int]:
         return self.mnt_props.min_partition_to_optimize
@@ -110,13 +94,6 @@ class DataFilesBinpack(DataFiles):
 
 
 class DataFilesSort(DataFiles):
-    @override
-    def get_min_age_to_optimize(self) -> int:
-        return self.mnt_props.min_age_to_optimize
-
-    def get_max_age_to_optimize(self) -> int:
-        return self.mnt_props.max_age_to_optimize
-
     @override
     def get_min_partition_to_optimize(self) -> tuple[str, int]:
         return self.mnt_props.min_partition_to_optimize
@@ -202,12 +179,6 @@ class DataFilesWideningSort(DataFiles):
         if not self.widening_rule.src_widening:
             msg = f"Widening rule for table {self.mnt_props.full_name} does not match any source partition spec."
             raise Exception(msg)
-
-    def get_min_age_to_optimize(self) -> int:
-        return self.mnt_props.widening_rule_min_age_to_widen
-
-    def get_max_age_to_optimize(self) -> int:
-        return self.mnt_props.max_age_to_optimize
 
     @override
     def get_min_partition_to_optimize(self) -> tuple[str, int]:
@@ -345,11 +316,84 @@ class DataFilesSummary:
             msg = f"Widening partition in table {mnt_props.full_name}, however table is configured to be binpacked which is not supported yet."
             raise Exception(msg)
 
-    def make_partition_filter_stmt(self) -> str:
-        """Create a filter to consider only partitions within the specified age range.
+    @staticmethod
+    def _build_temporal_filter(  # noqa: C901, PLR0911, PLR0912
+        partition_field_alias: str, transformation_type: str, unit: str, min_amount: int, max_amount: int
+    ) -> str:
+        """Build the SQL WHERE clause for a temporal partition bound.
 
-        This method generates a filter based on the age of temporal partitions in the table, ensuring
-        that only partitions fitting within the age bounds are considered for optimization.
+        Semantics (INCLUSIVE on both ends):
+          - Include partitions where age is in [min_amount, max_amount] (in the given unit).
+          - min_amount = minimum age  (skip partitions newer than this)
+          - max_amount = maximum age  (skip partitions older than this)
+        """
+        current_time = "current_timestamp()"
+
+        if transformation_type == "HourTransformation":
+            if unit == "hour":
+                current_hour = f"cast(unix_timestamp({current_time}) / 3600 as bigint)"
+                return f"{partition_field_alias} >= ({current_hour} - {max_amount}) and {partition_field_alias} <= ({current_hour} - {min_amount})"
+            if unit == "day":
+                current_date = f"cast({current_time} as date)"
+                hour_as_date = f"date_add(date '1970-01-01', cast({partition_field_alias} / 24 as int))"
+                return f"{hour_as_date} >= ({current_date} - interval {max_amount} day) and {hour_as_date} <= ({current_date} - interval {min_amount} day)"
+
+        elif transformation_type == "DayTransformation":
+            if unit == "hour":
+                # Day partition values are dates. Convert hour offsets to date bounds.
+                min_bound = f"cast({current_time} - interval {max_amount} hour as date)"
+                max_bound = f"cast({current_time} - interval {min_amount} hour as date)"
+                return f"{partition_field_alias} >= {min_bound} and {partition_field_alias} <= {max_bound}"
+            if unit == "day":
+                current_date = f"cast({current_time} as date)"
+                return f"{partition_field_alias} >= ({current_date} - interval {max_amount} day) and {partition_field_alias} <= ({current_date} - interval {min_amount} day)"
+
+        elif transformation_type == "MonthTransformation":
+            # Month partition values are integer months since epoch.
+            month_as_date = f"add_months(date '1970-01-01', {partition_field_alias})"
+            if unit == "hour":
+                min_bound = f"({current_time} - interval {max_amount} hour)"
+                max_bound = f"({current_time} - interval {min_amount} hour)"
+                return f"cast({month_as_date} as timestamp) >= {min_bound} and cast({month_as_date} as timestamp) <= {max_bound}"
+            if unit == "day":
+                current_date = f"cast({current_time} as date)"
+                return f"{month_as_date} >= ({current_date} - interval {max_amount} day) and {month_as_date} <= ({current_date} - interval {min_amount} day)"
+
+        elif transformation_type == "YearTransformation":
+            # Year base partitions are intentionally not filtered by optimize window.
+            # Keep all partitions in diagnosis.
+            return "1=1"
+
+        else:
+            # Identity temporal column
+            if unit == "hour":
+                min_bound = f"({current_time} - interval {max_amount} hour)"
+                max_bound = f"({current_time} - interval {min_amount} hour)"
+                return (
+                    f"cast({partition_field_alias} as timestamp) >= {min_bound}"
+                    f" and cast({partition_field_alias} as timestamp) <= {max_bound}"
+                )
+            if unit == "day":
+                current_date = f"cast({current_time} as date)"
+                return (
+                    f"cast({partition_field_alias} as date) >= ({current_date} - interval {max_amount} day)"
+                    f" and cast({partition_field_alias} as date) <= ({current_date} - interval {min_amount} day)"
+                )
+        # Unsupported unit/transformation combination: no filter applied
+        return "1=1"
+
+    def make_partition_filter_stmt(self) -> str:
+        """Create a filter to consider only partitions within the specified bounds.
+
+        This method generates a filter based on partition bounds in the table, ensuring
+        that only partitions fitting within the configured range are considered for optimization.
+
+        The filter is applied directly to the partition column in its native format:
+        - For hour partitions: bounds are calculated as hours since epoch
+        - For day partitions: bounds are calculated as dates
+        - For other temporal partitions: bounds are calculated in the appropriate unit
+
+        All calculations are done in SQL for visibility in logs.
 
         If no temporal partition exists in the partitioning scheme
         (e.g., bucket(category), truncate(category), or identity(category)), the filter will include all partitions.
@@ -361,28 +405,19 @@ class DataFilesSummary:
         filter_stmt = "1=1"
         if self.spec.is_partitioned:
             # If the base partition (first-level partition) is temporal (e.g., days or hours),
-            # create a filter based on the age range.
+            # create a filter based on the partition bounds.
             if self.spec.get_base_partition().is_temporal_transformation() or self.spec.get_base_partition().is_temporal_column():
-                min_age_to_optimize = self.datafiles.get_min_age_to_optimize()
-                max_age_to_optimize = self.datafiles.get_max_age_to_optimize()
-                if min_age_to_optimize >= 0 and max_age_to_optimize >= 0:
-                    filter_stmt = f"partition_age >= {min_age_to_optimize} and partition_age <= ({max_age_to_optimize})"
-                else:
-                    # min/max partition to optimize are strings representing the number of days, hours, months, years
-                    # relative to the current time for example 1d to 7d, 24h to 72h, 1M to 3M, 1Y to 2Y.
-                    min_unit, min_amount = self.datafiles.get_min_partition_to_optimize()
-                    max_unit, max_amount = self.datafiles.get_max_partition_to_optimize()
-                    # Round down the reference point to the next unit boundary (date_trunc).
-                    # e.g. if max partition_time is 2025-10-15 and unit is 'month',
-                    # the reference becomes 2025-10-01 (start of this month).
-                    # an additional interval is added to the min amount
-                    # an additional interval is substracted from the max amount
-                    max_pt = "(select max(partition_time) from agg_data_files)"
-                    ref_point = f"date_trunc('{min_unit}', {max_pt})"
-                    filter_stmt = (
-                        f"partition_time < timestamp({ref_point} - interval {min_amount} {min_unit} + interval 1 {min_unit} )"
-                        f" and partition_time > timestamp({ref_point} - interval {max_amount} {max_unit} - interval 1 {max_unit} )"
-                    )
+                min_unit, min_amount = self.datafiles.get_min_partition_to_optimize()
+                _, max_amount = self.datafiles.get_max_partition_to_optimize()
+                unit = min_unit  # min_unit == max_unit (validated by schedule_entry)
+
+                base_partition = self.spec.get_base_partition()
+                partition_field_alias = base_partition.partition_field_alias
+                transformation_type = type(base_partition.transformation).__name__
+
+                filter_stmt = self._build_temporal_filter(
+                    partition_field_alias, transformation_type, unit, min_amount, max_amount
+                )
             else:
                 # The first partition is not temporal. Check if any sub-partitions are temporal.
                 # Unsupported case: a temporal partition as a secondary partition.
@@ -390,11 +425,11 @@ class DataFilesSummary:
                     if p.is_temporal_transformation():
                         msg = (
                             f"Unable to optimize table because the temporal partition is not the first one:"
-                            f"[{self.spec}] is not supported.Temporal partitions must be the first in order."
+                            f"[{self.spec}] is not supported. Temporal partitions must be the first in order."
                         )
                         raise Exception(msg)
                 # If no partitions are temporal, all partitions are assumed to be categorical
-                # (e.g., bucket, truncate, or identity). In this case, age filtering does not apply.
+                # (e.g., bucket, truncate, or identity). In this case, partition filtering does not apply.
 
         return filter_stmt
 

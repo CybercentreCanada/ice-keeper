@@ -379,15 +379,8 @@ def diagnose(  # noqa: C901, PLR0912
         if optimization_grouping_size_bytes is not None:
             record_copy.optimization_grouping_size_bytes = optimization_grouping_size_bytes
         if has_partition:
-            record_copy.min_age_to_optimize = None
-            record_copy.max_age_to_optimize = None
             record_copy.min_partition_to_optimize = min_partition_to_diagnose
             record_copy.max_partition_to_optimize = max_partition_to_diagnose
-        elif has_age:
-            record_copy.min_age_to_optimize = min_age_to_diagnose
-            record_copy.max_age_to_optimize = max_age_to_diagnose
-            record_copy.min_partition_to_optimize = None
-            record_copy.max_partition_to_optimize = None
 
         row = Row(**record_copy.model_dump(by_alias=True))
         entry = MaintenanceScheduleRecord.from_row(row).to_entry()

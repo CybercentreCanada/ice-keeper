@@ -24,8 +24,6 @@ DEFAULTS = {
     "optimize_partition_depth": -1,
     "optimization_strategy": "",
     "should_optimize": False,
-    "min_age_to_optimize": -1,  # Deprecated configuration, default to -1 indicating it is not set and we should be using min_partition_to_optimize instead.
-    "max_age_to_optimize": -1,
     "min_partition_to_optimize": "1d",
     "max_partition_to_optimize": "7d",
     "target_file_size_bytes": -1,
@@ -48,7 +46,6 @@ DEFAULTS = {
     "widening_rule_required_partition_columns": "",
     "widening_rule_src_partition": "",
     "widening_rule_dst_partition": "",
-    "widening_rule_min_age_to_widen": -1,
     "widening_rule_min_partition_to_widen": "1M",
     "widening_rule_max_partition_to_widen": "2M",
     "table_location": "",
@@ -72,8 +69,6 @@ class MaintenanceScheduleRecord(BaseModel):
     optimize_partition_depth: int | None = None
     optimization_strategy: str | None = None
     should_optimize: bool | None = None
-    min_age_to_optimize: int | None = None
-    max_age_to_optimize: int | None = None
     min_partition_to_optimize: str | None = None
     max_partition_to_optimize: str | None = None
     target_file_size_bytes: int | None = None
@@ -96,7 +91,6 @@ class MaintenanceScheduleRecord(BaseModel):
     widening_rule_required_partition_columns: str | None = None
     widening_rule_src_partition: str | None = None
     widening_rule_dst_partition: str | None = None
-    widening_rule_min_age_to_widen: int | None = None
     widening_rule_min_partition_to_widen: str | None = None
     widening_rule_max_partition_to_widen: str | None = None
     table_location: str | None = None
@@ -115,8 +109,6 @@ class MaintenanceScheduleRecord(BaseModel):
             optimize_partition_depth INT,
             optimization_strategy STRING,
             should_optimize BOOLEAN,
-            min_age_to_optimize INT,
-            max_age_to_optimize INT,
             min_partition_to_optimize STRING,
             max_partition_to_optimize STRING,
             target_file_size_bytes BIGINT,
@@ -139,7 +131,6 @@ class MaintenanceScheduleRecord(BaseModel):
             widening_rule_required_partition_columns STRING,
             widening_rule_src_partition STRING,
             widening_rule_dst_partition STRING,
-            widening_rule_min_age_to_widen INT,
             widening_rule_min_partition_to_widen STRING,
             widening_rule_max_partition_to_widen STRING,
             table_location STRING
@@ -302,8 +293,6 @@ class MaintenanceScheduleRecord(BaseModel):
 
         parsed["should_optimize"] = cls._get_boolean(tblproperties, IceKeeperTblProperty.SHOULD_OPTIMIZE)
         parsed["optimization_strategy"] = cls._get_string(tblproperties, IceKeeperTblProperty.OPTIMIZATION_STRATEGY)
-        parsed["min_age_to_optimize"] = cls._get_int(tblproperties, IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE)
-        parsed["max_age_to_optimize"] = cls._get_int(tblproperties, IceKeeperTblProperty.MAX_AGE_TO_OPTIMIZE)
         parsed["min_partition_to_optimize"] = cls._get_string(tblproperties, IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE)
         parsed["max_partition_to_optimize"] = cls._get_string(tblproperties, IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE)
         parsed["target_file_size_bytes"] = cls._get_int(tblproperties, IceKeeperTblProperty.OPTIMIZATION_TARGET_FILE_SIZE_BYTES)
@@ -354,11 +343,6 @@ class MaintenanceScheduleRecord(BaseModel):
         parsed["widening_rule_dst_partition"] = cls._get_string(
             tblproperties,
             IceKeeperTblProperty.WIDENING_RULE_DST_PARTITION,
-        )
-
-        parsed["widening_rule_min_age_to_widen"] = cls._get_int(
-            tblproperties,
-            IceKeeperTblProperty.WIDENING_RULE_MIN_AGE_TO_WIDEN,
         )
 
         parsed["widening_rule_min_partition_to_widen"] = cls._get_string(
@@ -470,22 +454,6 @@ class MaintenanceScheduleEntry:
         return self._record.get("should_optimize")
 
     @property
-    def min_age_to_optimize(self) -> int:
-        value = self._record.get("min_age_to_optimize")
-        if value != -1 and value <= 0:
-            msg = f"Invalid min_age_to_optimize={value} for table '{self.full_name}'. Must be greater than zero or -1 if not set (deprecated)."
-            raise ValueError(msg)
-        return value
-
-    @property
-    def max_age_to_optimize(self) -> int:
-        value = self._record.get("max_age_to_optimize")
-        if value != -1 and value <= 0:
-            msg = f"Invalid max_age_to_optimize={value} for table '{self.full_name}'. Must be greater than zero or -1 if not set (deprecated)."
-            raise ValueError(msg)
-        return value
-
-    @property
     def min_partition_to_optimize(self) -> tuple[str, int]:
         """Returns the min_partition_to_optimize as a tuple of (unit, amount), where unit is one of 'hour', 'day', 'month', 'year' and amount is an integer. The value is parsed from a string like '1d', '24h', '3M', or '1Y'."""
         min_partition, _ = self._get_partition_to_optimize()
@@ -516,6 +484,14 @@ class MaintenanceScheduleEntry:
         min_partition_to_optimize = self._record.get("min_partition_to_optimize")
         max_partition_to_optimize = self._record.get("max_partition_to_optimize")
         min_partition, max_partition = self._validate_partition_config(min_partition_to_optimize, max_partition_to_optimize)
+        if min_partition[0] not in {"hour", "day"}:
+            msg = (
+                "Unsupported unit for optimization window: "
+                f"'{min_partition_to_optimize}' to '{max_partition_to_optimize}'. "
+                "Only hour ('h') and day ('d') are supported for "
+                "ice-keeper.min-partition-to-optimize and ice-keeper.max-partition-to-optimize."
+            )
+            raise ValueError(msg)
         return min_partition, max_partition
 
     def _validate_partition_config(self, min_partition: str, max_partition: str) -> tuple[tuple[str, int], tuple[str, int]]:
@@ -646,14 +622,6 @@ class MaintenanceScheduleEntry:
     @property
     def widening_rule_dst_partition(self) -> str:
         return self._record.get("widening_rule_dst_partition")
-
-    @property
-    def widening_rule_min_age_to_widen(self) -> int:
-        value = self._record.get("widening_rule_min_age_to_widen")
-        if value != -1 and value <= 0:
-            msg = f"Invalid widening_rule_min_age_to_widen={value} for table '{self.full_name}'. Must be greater than zero or -1 if not set (deprecated)."
-            raise ValueError(msg)
-        return value
 
     def get_widening_rule_required_partition_columns(self) -> list[str]:
         """Parses the `widening_rule_required_partition_columns` attribute into a list of column names.

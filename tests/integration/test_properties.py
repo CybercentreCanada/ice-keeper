@@ -32,7 +32,6 @@ def test_sort_quoted(table: Table) -> None:
 @pytest.mark.integration
 def test_default_tblproperties(table: Table) -> None:
     entry = MaintenanceScheduleRecord.from_iceberg_table(table).to_entry()
-    assert entry.max_age_to_optimize == DEFAULTS["max_age_to_optimize"]
     assert entry.last_updated_by == get_user_name()
     assert entry.optimization_strategy == DEFAULTS["optimization_strategy"]
     assert entry.retention_days_orphan_files == DEFAULTS["retention_days_orphan_files"]
@@ -84,16 +83,10 @@ def test_same_config_maintenance_schedule_entry(table: Table) -> None:
     entry3 = MaintenanceScheduleRecord.from_iceberg_table(table).to_entry()
     assert entry1.record.same_config_as(entry3.record)
     # This field is a configuration, changing it causes the same_config_as to return False
-    table.metadata.properties[IceKeeperTblProperty.MIN_AGE_TO_OPTIMIZE] = "10"
+    table.metadata.properties[IceKeeperTblProperty.MIN_PARTITION_TO_OPTIMIZE] = "1d"
+    table.metadata.properties[IceKeeperTblProperty.MAX_PARTITION_TO_OPTIMIZE] = "7d"
     entry4 = MaintenanceScheduleRecord.from_iceberg_table(table).to_entry()
     assert not entry1.record.same_config_as(entry4.record)
-
-
-@pytest.mark.integration
-def test_max_age_to_optimize(table: Table) -> None:
-    table.metadata.properties[IceKeeperTblProperty.MAX_AGE_TO_OPTIMIZE] = "1"
-    entry = MaintenanceScheduleRecord.from_iceberg_table(table).to_entry()
-    assert entry.max_age_to_optimize == 1
 
 
 @pytest.mark.integration

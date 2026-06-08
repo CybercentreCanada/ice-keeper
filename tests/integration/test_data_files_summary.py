@@ -14,16 +14,6 @@ from ice_keeper.task.action.optimization.datafile_summary import DataFilesSummar
 from tests.utils import create_generic_test_table, get_updated_mnt_props
 
 
-def set_mnt_props_age(mnt_props: MaintenanceScheduleEntry, min_age: int, max_age: int) -> MaintenanceScheduleEntry:
-    record = mnt_props.record
-    # Make a copy of the record before mutating
-    record_copy = record.model_copy()
-    record_copy.min_age_to_optimize = min_age
-    record_copy.max_age_to_optimize = max_age
-    row = Row(**record_copy.model_dump(by_alias=True))
-    return MaintenanceScheduleRecord.from_row(row).to_entry()
-
-
 def set_mnt_partition_to_optimize(mnt_props: MaintenanceScheduleEntry, min_p: str, max_p: str) -> MaintenanceScheduleEntry:
     record = mnt_props.record
     # Make a copy of the record before mutating
@@ -47,26 +37,32 @@ def get_partition_time_from_summary(mnt_props: MaintenanceScheduleEntry) -> Row 
     return rows[0]
 
 
-dt_first_utc = datetime.datetime(2025, 12, 1, 0, 0, 0, tzinfo=timezone.utc)
-dt_second_utc = datetime.datetime(2025, 12, 2, 0, 0, 0, tzinfo=timezone.utc)
-dt_third_utc = datetime.datetime(2025, 12, 3, 0, 0, 0, tzinfo=timezone.utc)
+# Use relative dates so that SQL filters referencing current_timestamp() work correctly.
+# d_third / dt_third = today, d_second = yesterday, d_first = 2 days ago.
+_today = datetime.datetime.now(tz=timezone.utc).date()
+d_first = _today - datetime.timedelta(days=2)
+d_second = _today - datetime.timedelta(days=1)
+d_third = _today
 
-dt_first_18h_utc = datetime.datetime(2025, 12, 1, 18, 0, 0, tzinfo=timezone.utc)
-dt_first_19h_utc = datetime.datetime(2025, 12, 1, 19, 0, 0, tzinfo=timezone.utc)
-dt_first_20h_utc = datetime.datetime(2025, 12, 1, 20, 0, 0, tzinfo=timezone.utc)
+dt_first_utc = datetime.datetime(d_first.year, d_first.month, d_first.day, tzinfo=timezone.utc)
+dt_second_utc = datetime.datetime(d_second.year, d_second.month, d_second.day, tzinfo=timezone.utc)
+dt_third_utc = datetime.datetime(d_third.year, d_third.month, d_third.day, tzinfo=timezone.utc)
 
+dt_two_hours_ago_utc = datetime.datetime.now(tz=timezone.utc).replace(minute=0, second=0, microsecond=0) - datetime.timedelta(
+    hours=2
+)
+dt_one_hour_ago_utc = datetime.datetime.now(tz=timezone.utc).replace(minute=0, second=0, microsecond=0) - datetime.timedelta(
+    hours=1
+)
+dt_current_hour_utc = datetime.datetime.now(tz=timezone.utc).replace(minute=0, second=0, microsecond=0)
 
-d_first = datetime.date(2025, 12, 1)
-d_second = datetime.date(2025, 12, 2)
-d_third = datetime.date(2025, 12, 3)
+dt_first = datetime.datetime(d_first.year, d_first.month, d_first.day)  # noqa: DTZ001
+dt_second = datetime.datetime(d_second.year, d_second.month, d_second.day)  # noqa: DTZ001
+dt_third = datetime.datetime(d_third.year, d_third.month, d_third.day)  # noqa: DTZ001
 
-dt_first = datetime.datetime(2025, 12, 1, 0, 0, 0)  # noqa: DTZ001
-dt_second = datetime.datetime(2025, 12, 2, 0, 0, 0)  # noqa: DTZ001
-dt_third = datetime.datetime(2025, 12, 3, 0, 0, 0)  # noqa: DTZ001
-
-dt_first_18h = datetime.datetime(2025, 12, 1, 18, 0, 0)  # noqa: DTZ001
-dt_first_19h = datetime.datetime(2025, 12, 1, 19, 0, 0)  # noqa: DTZ001
-dt_first_20h = datetime.datetime(2025, 12, 1, 20, 0, 0)  # noqa: DTZ001
+dt_two_hours_ago = dt_two_hours_ago_utc.replace(tzinfo=None)
+dt_one_hour_ago = dt_one_hour_ago_utc.replace(tzinfo=None)
+dt_current_hour = dt_current_hour_utc.replace(tzinfo=None)
 
 
 @pytest.mark.integration
@@ -86,21 +82,21 @@ def test_summary_age_day(executor: TaskExecutor) -> None:
     mnt_props = get_updated_mnt_props()
 
     # Consider all partitions (age 1 is current partition)
-    mnt_props = set_mnt_props_age(mnt_props, 1, 2000)
+    mnt_props = set_mnt_partition_to_optimize(mnt_props, "0d", "2000d")
     row = get_partition_time_from_summary(mnt_props)
     assert row
     assert row.oldest == d_first
     assert row.most_recent == d_third
 
     # Do not process most recent partition
-    mnt_props = set_mnt_props_age(mnt_props, 2, 2000)
+    mnt_props = set_mnt_partition_to_optimize(mnt_props, "1d", "2000d")
     row = get_partition_time_from_summary(mnt_props)
     assert row
     assert row.oldest == d_first
     assert row.most_recent == d_second
 
     # Only partition age 2 to 5
-    mnt_props = set_mnt_props_age(mnt_props, 2, 2)
+    mnt_props = set_mnt_partition_to_optimize(mnt_props, "1d", "1d")
     row = get_partition_time_from_summary(mnt_props)
     assert row
     assert row.oldest == d_second
@@ -157,7 +153,7 @@ def test_summary_identity_day(executor: TaskExecutor) -> None:
     assert row.oldest == dt_third
     assert row.most_recent == dt_third
 
-    mnt_props = set_mnt_partition_to_optimize(mnt_props, "0M", "0M")
+    mnt_props = set_mnt_partition_to_optimize(mnt_props, "0d", "2000d")
     row = get_partition_time_from_summary(mnt_props)
     assert row
     assert row.oldest == dt_first
@@ -213,11 +209,19 @@ def test_summary_partition_day(executor: TaskExecutor) -> None:
     assert row.oldest == d_third
     assert row.most_recent == d_third
 
-    mnt_props = set_mnt_partition_to_optimize(mnt_props, "0M", "0M")
+    mnt_props = set_mnt_partition_to_optimize(mnt_props, "0d", "2000d")
     row = get_partition_time_from_summary(mnt_props)
     assert row
     assert row.oldest == d_first
     assert row.most_recent == d_third
+
+    # Hour-based bounds on day partitions should be handled (not ignored).
+    # 24h to 48h includes yesterday and 2 days ago, excludes today.
+    mnt_props = set_mnt_partition_to_optimize(mnt_props, "24h", "48h")
+    row = get_partition_time_from_summary(mnt_props)
+    assert row
+    assert row.oldest == d_first
+    assert row.most_recent == d_second
 
 
 @pytest.mark.integration
@@ -227,7 +231,7 @@ def test_summary_partition_hour(executor: TaskExecutor) -> None:
     properties: dict[str, str] = {}
     create_generic_test_table(
         executor=executor,
-        partitions_to_insert_into=[dt_first_18h_utc, dt_first_19h_utc, dt_first_20h_utc],
+        partitions_to_insert_into=[dt_two_hours_ago_utc, dt_one_hour_ago_utc, dt_current_hour_utc],
         partitioned_by=partitioned_by,
         optimization_strategy=optimization_strategy,
         properties=properties,
@@ -239,43 +243,43 @@ def test_summary_partition_hour(executor: TaskExecutor) -> None:
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "0h", "2000h")
     row = get_partition_time_from_summary(mnt_props)
     assert row
-    assert row.oldest == dt_first_18h
-    assert row.most_recent == dt_first_20h
+    assert row.oldest == dt_two_hours_ago
+    assert row.most_recent == dt_current_hour
 
     # Do not process most recent partition
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "1h", "2000h")
     row = get_partition_time_from_summary(mnt_props)
     assert row
-    assert row.oldest == dt_first_18h
-    assert row.most_recent == dt_first_19h
+    assert row.oldest == dt_two_hours_ago
+    assert row.most_recent == dt_one_hour_ago
 
     # skip current partition and up to 2h
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "1h", "2h")
     row = get_partition_time_from_summary(mnt_props)
     assert row
-    assert row.oldest == dt_first_18h
-    assert row.most_recent == dt_first_19h
+    assert row.oldest == dt_two_hours_ago
+    assert row.most_recent == dt_one_hour_ago
 
     # skip current partition and up to 1h
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "1h", "1h")
     row = get_partition_time_from_summary(mnt_props)
     assert row
-    assert row.oldest == dt_first_19h
-    assert row.most_recent == dt_first_19h
+    assert row.oldest == dt_one_hour_ago
+    assert row.most_recent == dt_one_hour_ago
 
     # Assert grabbing all partitions
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "0d", "2d")
     row = get_partition_time_from_summary(mnt_props)
     assert row
-    assert row.oldest == dt_first_18h
-    assert row.most_recent == dt_first_20h
+    assert row.oldest == dt_two_hours_ago
+    assert row.most_recent == dt_current_hour
 
     # Assert grabbing all partitions
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "0d", "0d")
     row = get_partition_time_from_summary(mnt_props)
     assert row
-    assert row.oldest == dt_first_18h
-    assert row.most_recent == dt_first_20h
+    assert row.oldest == dt_two_hours_ago
+    assert row.most_recent == dt_current_hour
 
     # Assert no partitions to optimize 1 day ago
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "1d", "1d")
@@ -294,17 +298,33 @@ def test_summary_partition_hour(executor: TaskExecutor) -> None:
 
 @pytest.mark.integration
 def test_summary_partition_month(executor: TaskExecutor) -> None:
-    """Test partition filtering with month (M) intervals on a month-partitioned table."""
+    """Month-partitioned tables are filtered by optimize window."""
     partitioned_by = "month(ts)"
     optimization_strategy = "binpack"
     properties: dict[str, str] = {}
-    # Insert data into 3 months: Oct, Nov, Dec 2025
-    oct_utc = datetime.datetime(2025, 10, 15, 0, 0, 0, tzinfo=timezone.utc)
-    nov_utc = datetime.datetime(2025, 11, 15, 0, 0, 0, tzinfo=timezone.utc)
-    dec_utc = datetime.datetime(2025, 12, 15, 0, 0, 0, tzinfo=timezone.utc)
+
+    # Use relative months: current month, 1 month ago, 2 months ago
+    today = datetime.datetime.now(tz=timezone.utc).date()
+
+    def subtract_months(d: datetime.date, n: int) -> datetime.date:
+        month = d.month - n
+        year = d.year
+        while month <= 0:
+            month += 12
+            year -= 1
+        return d.replace(year=year, month=month, day=15)
+
+    cur_month_dt = datetime.datetime(today.year, today.month, 15, 0, 0, 0, tzinfo=timezone.utc)
+    one_month_ago_dt = datetime.datetime.combine(subtract_months(today, 1), datetime.time.min, tzinfo=timezone.utc)
+    two_months_ago_dt = datetime.datetime.combine(subtract_months(today, 2), datetime.time.min, tzinfo=timezone.utc)
+    # Expected partition_time values (first of each month, as naive datetime)
+    cur_month_start = datetime.datetime(today.year, today.month, 1)  # noqa: DTZ001
+    one_month_ago_start = datetime.datetime(one_month_ago_dt.year, one_month_ago_dt.month, 1)  # noqa: DTZ001
+    two_months_ago_start = datetime.datetime(two_months_ago_dt.year, two_months_ago_dt.month, 1)  # noqa: DTZ001
+
     create_generic_test_table(
         executor=executor,
-        partitions_to_insert_into=[oct_utc, nov_utc, dec_utc],
+        partitions_to_insert_into=[two_months_ago_dt, one_month_ago_dt, cur_month_dt],
         partitioned_by=partitioned_by,
         optimization_strategy=optimization_strategy,
         properties=properties,
@@ -312,31 +332,25 @@ def test_summary_partition_month(executor: TaskExecutor) -> None:
 
     mnt_props = get_updated_mnt_props()
 
-    # All months: 0M to 100M
-    mnt_props = set_mnt_partition_to_optimize(mnt_props, "0M", "100M")
+    # All months within a broad day window
+    mnt_props = set_mnt_partition_to_optimize(mnt_props, "0d", "400d")
     row = get_partition_time_from_summary(mnt_props)
     assert row
-    assert row.most_recent is not None
-    assert row.oldest is not None
+    assert row.most_recent == cur_month_start
+    assert row.oldest == two_months_ago_start
 
-    # Skip most recent month
-    mnt_props = set_mnt_partition_to_optimize(mnt_props, "1M", "100M")
+    # Exclude current month by using a minimum day offset greater than days since month start.
+    skip_current_days = today.day
+    mnt_props = set_mnt_partition_to_optimize(mnt_props, f"{skip_current_days}d", "400d")
     row = get_partition_time_from_summary(mnt_props)
     assert row
-    # most_recent should be Nov (skipped Dec)
-    assert row.most_recent == datetime.datetime(2025, 11, 1, 0, 0, 0)  # noqa: DTZ001
-    assert row.oldest == datetime.datetime(2025, 10, 1, 0, 0, 0)  # noqa: DTZ001
-
-    # Only current month
-    mnt_props = set_mnt_partition_to_optimize(mnt_props, "0M", "0M")
-    row = get_partition_time_from_summary(mnt_props)
-    assert row
-    assert row.oldest == row.most_recent
+    assert row.most_recent == one_month_ago_start
+    assert row.oldest == two_months_ago_start
 
 
 @pytest.mark.integration
 def test_summary_partition_year(executor: TaskExecutor) -> None:
-    """Test partition filtering with year (Y) intervals on a year-partitioned table."""
+    """Year-partitioned tables are not filtered by optimize window (1=1)."""
     partitioned_by = "year(ts)"
     optimization_strategy = "binpack"
     properties: dict[str, str] = {}
@@ -355,25 +369,28 @@ def test_summary_partition_year(executor: TaskExecutor) -> None:
 
     mnt_props = get_updated_mnt_props()
 
-    # All years
-    mnt_props = set_mnt_partition_to_optimize(mnt_props, "0Y", "100Y")
+    # Year base partitions are not filtered by optimize window.
+    mnt_props = set_mnt_partition_to_optimize(mnt_props, "0d", "100d")
     row = get_partition_time_from_summary(mnt_props)
     assert row
     assert row.oldest is not None
     assert row.most_recent is not None
+    all_oldest = row.oldest
+    all_most_recent = row.most_recent
 
-    # Skip most recent year
-    mnt_props = set_mnt_partition_to_optimize(mnt_props, "1Y", "100Y")
+    # Narrow day window still keeps all year partitions.
+    mnt_props = set_mnt_partition_to_optimize(mnt_props, "1d", "1d")
     row = get_partition_time_from_summary(mnt_props)
     assert row
-    assert row.most_recent is not None
-    assert row.oldest is not None
+    assert row.oldest == all_oldest
+    assert row.most_recent == all_most_recent
 
-    # Only current year
-    mnt_props = set_mnt_partition_to_optimize(mnt_props, "0Y", "0Y")
+    # Same for hour-based windows.
+    mnt_props = set_mnt_partition_to_optimize(mnt_props, "24h", "48h")
     row = get_partition_time_from_summary(mnt_props)
     assert row
-    assert row.oldest == row.most_recent
+    assert row.oldest == all_oldest
+    assert row.most_recent == all_most_recent
 
 
 @pytest.mark.integration
@@ -425,6 +442,31 @@ def test_summary_partition_mismatched_units_rejected(executor: TaskExecutor) -> 
     # Mismatched units: min in hours, max in years
     mnt_props = set_mnt_partition_to_optimize(mnt_props, "1h", "2Y")
     with pytest.raises(ValueError, match="must use the same unit"):
+        get_partition_time_from_summary(mnt_props)
+
+
+@pytest.mark.integration
+def test_summary_partition_unsupported_optimize_window_units_rejected(executor: TaskExecutor) -> None:
+    """Optimization window only supports hour/day units."""
+    partitioned_by = "days(ts)"
+    optimization_strategy = "binpack"
+    properties: dict[str, str] = {}
+    create_generic_test_table(
+        executor=executor,
+        partitions_to_insert_into=[dt_first_utc],
+        partitioned_by=partitioned_by,
+        optimization_strategy=optimization_strategy,
+        properties=properties,
+    )
+
+    mnt_props = get_updated_mnt_props()
+
+    mnt_props = set_mnt_partition_to_optimize(mnt_props, "1M", "3M")
+    with pytest.raises(ValueError, match=r"Only hour \('h'\) and day \('d'\) are supported"):
+        get_partition_time_from_summary(mnt_props)
+
+    mnt_props = set_mnt_partition_to_optimize(mnt_props, "1Y", "2Y")
+    with pytest.raises(ValueError, match=r"Only hour \('h'\) and day \('d'\) are supported"):
         get_partition_time_from_summary(mnt_props)
 
 
