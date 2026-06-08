@@ -316,8 +316,6 @@ def reset(force: bool, schedule: bool, journal: bool, health: bool, all_tables: 
 )
 def diagnose(  # noqa: C901
     full_name: str,
-    min_age_to_diagnose: int | None,
-    max_age_to_diagnose: int | None,
     min_partition_to_diagnose: str | None,
     max_partition_to_diagnose: str | None,
     optimization_strategy: str | None,
