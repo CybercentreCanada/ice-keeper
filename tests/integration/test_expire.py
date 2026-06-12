@@ -24,7 +24,8 @@ def test_expire_snapshots_default(executor: TaskExecutor) -> None:
                 table => 'test.test',
                 older_than => timestamp '2023-02-24 15:00:00+00:00',
                 retain_last => 1,
-                stream_results => true)
+                stream_results => true,
+                clean_expired_metadata => true)
     """
     diff, details = compare_multiline_strings(expected_output, actual_output)
     if diff:
