@@ -38,7 +38,7 @@ DEFAULTS = {
     "should_apply_lifecycle": False,
     "lifecycle_max_days": 330,
     "lifecycle_ingestion_time_column": "",
-    "optimization_grouping_size_bytes": 2147483648,
+    "optimization_grouping_size_bytes": 17179869184,
     "binpack_min_input_files": 5,  # Min number of files required to trigger a binpack, can be set to zero while testing to force binpacks.
     "sort_corr_threshold": -1.0,  # Mostly used for testing. If not specified defaults to 1 (binpack), 0.97 (sort), scaled (zorder).
     "optimization_quota_hours": 6,  # Maximum hours allowed for optimizing a single table across all partition specs.
