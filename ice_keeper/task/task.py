@@ -1,4 +1,5 @@
 import logging
+import random
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 
@@ -212,6 +213,12 @@ class SparkTask(Task):
             child_session.sparkContext.setJobDescription(None)  # type: ignore[arg-type]
             child_session.sparkContext.setLocalProperty("callSite.short", None)  # type: ignore[arg-type]
             child_session.sparkContext.setLocalProperty("callSite.long", None)  # type: ignore[arg-type]
+
+
+def get_random_tasks(tasks: Sequence[Task]) -> list[Task]:
+    shuffled_tasks = list(tasks)
+    random.shuffle(shuffled_tasks)
+    return shuffled_tasks
 
 
 def get_ordered_tasks_by_full_name(tasks: Sequence[Task]) -> list[Task]:
