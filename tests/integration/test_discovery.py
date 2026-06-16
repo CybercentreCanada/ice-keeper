@@ -234,7 +234,7 @@ def test_discovery_succeeds_with_bad_property_values(executor: TaskExecutor) -> 
     assert mnt_props.should_apply_lifecycle is False
 
     # --- Unparsable ints fall back to defaults ---
-    assert mnt_props.optimization_grouping_size_bytes == 2147483648
+    assert mnt_props.optimization_grouping_size_bytes == 17179869184
     assert mnt_props.binpack_min_input_files == 5
     assert mnt_props.retention_days_snapshots == 7
     assert mnt_props.retention_days_orphan_files == 5
