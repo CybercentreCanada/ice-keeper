@@ -16,14 +16,7 @@ from .config import ICEKEEPER_CONFIG, Config
 from .pool import TaskExecutor
 from .stm import STL, Scope
 from .table import Journal, MaintenanceSchedule, PartitionHealth
-from .task import (
-    ActionTaskFactory,
-    DiscoveryTask,
-    Emailer,
-    SequentialTask,
-    Task,
-    get_ordered_tasks_by_full_name,
-)
+from .task import ActionTaskFactory, DiscoveryTask, Emailer, SequentialTask, Task, get_random_tasks
 
 logger = logging.getLogger("ice-keeper")
 
@@ -441,7 +434,7 @@ def multi(ctx: click.Context, commands: tuple[str]) -> None:
     tasks: list[SequentialTask] = make_sequences(action_set, maintenance_schedule)
 
     executor = ctx.obj["executor"]
-    ordered_tasks = get_ordered_tasks_by_full_name(tasks)
+    ordered_tasks = get_random_tasks(tasks)
     log_initial_task_numbering(ordered_tasks)
 
     executor.submit_tasks_and_wait(ordered_tasks)
@@ -528,7 +521,7 @@ def optimize(
     tasks = ActionTaskFactory.make_tasks(action, maintenance_schedule)
 
     executor = ctx.obj["executor"]
-    ordered_tasks = get_ordered_tasks_by_full_name(tasks)
+    ordered_tasks = get_random_tasks(tasks)
     log_initial_task_numbering(ordered_tasks)
     executor.submit_tasks_and_wait(ordered_tasks)
     optimize_maintenance_schedule(executor)
@@ -552,7 +545,7 @@ def expire(ctx: click.Context) -> None:
     tasks = ActionTaskFactory.make_tasks(action, maintenance_schedule)
 
     executor = ctx.obj["executor"]
-    ordered_tasks = get_ordered_tasks_by_full_name(tasks)
+    ordered_tasks = get_random_tasks(tasks)
     log_initial_task_numbering(ordered_tasks)
 
     executor.submit_tasks_and_wait(ordered_tasks)
@@ -577,7 +570,7 @@ def rewrite_manifests(ctx: click.Context) -> None:
     tasks = ActionTaskFactory.make_tasks(action, maintenance_schedule)
     executor = ctx.obj["executor"]
 
-    ordered_tasks = get_ordered_tasks_by_full_name(tasks)
+    ordered_tasks = get_random_tasks(tasks)
     log_initial_task_numbering(ordered_tasks)
 
     executor.submit_tasks_and_wait(ordered_tasks)
@@ -623,7 +616,7 @@ def orphan(ctx: click.Context) -> None:
     tasks = ActionTaskFactory.make_tasks(action, maintenance_schedule)
     executor = ctx.obj["executor"]
 
-    ordered_tasks = get_ordered_tasks_by_full_name(tasks)
+    ordered_tasks = get_random_tasks(tasks)
     log_initial_task_numbering(ordered_tasks)
 
     executor.submit_tasks_and_wait(ordered_tasks)
