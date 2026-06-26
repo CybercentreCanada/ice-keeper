@@ -289,9 +289,11 @@ class OptimizationStrategy(ActionStrategy):
 
         # Validate that all spec IDs exist in the metadata
         for spec_id in unique_spec_ids:
-            if spec_id < 0 or spec_id >= len(self.mnt_props.partition_specs.get_specifications()):
+            try:
+                self.mnt_props.partition_specs[spec_id]
+            except KeyError as key_error:
                 msg = f"Partition spec id found: {spec_id} does not exist in the list of partition specs in metadata."
-                raise Exception(msg)
+                raise Exception(msg) from key_error
         return unique_spec_ids
 
     def _sorted_column_exists(self, column: str) -> bool:
