@@ -5,7 +5,7 @@ from typing import Any
 
 from typing_extensions import override
 
-from ice_keeper import Action, ActionWarning, Status, dedent
+from ice_keeper import Action, ActionWarning, Status, dedent, escape_identifier
 from ice_keeper.stm import STL
 from ice_keeper.table import JournalEntry, MaintenanceSchedule, MaintenanceScheduleEntry
 from ice_keeper.task import Task, TaskResult
@@ -121,12 +121,11 @@ class ActionStrategy:
         Returns:
             bool: True if the table was modified within the last 5 days, False otherwise.
         """
-        full_name = self.mnt_props.full_name
         sql = f"""
             select
                 max(timestamp) as latest_metadata_log
             from
-                {full_name}.metadata_log_entries
+                {escape_identifier(self.mnt_props.catalog)}.{escape_identifier(self.mnt_props.schema)}.{escape_identifier(self.mnt_props.table_name)}.metadata_log_entries
             """
         row = STL.sql(sql, "Checking if table was recently modified").take(1)[0]
         latest_metadata_log = row.latest_metadata_log
