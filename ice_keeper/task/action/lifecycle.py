@@ -130,6 +130,9 @@ class LifecycleStrategy(ActionStrategy):
         Returns:
             bool: True if the column exists in the schema, False otherwise.
         """
+        if not column:
+            return False
+
         field_hierarchy = [field.strip("`") for field in column.split(".")]  # Remove any surrounding backticks
         schema: StructType = STL.sql(f"select * from {self.mnt_props.full_name}", "Getting schema").schema
 

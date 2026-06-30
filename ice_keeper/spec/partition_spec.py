@@ -362,9 +362,6 @@ class PartitionSpecifications:
     def get_specifications(self) -> list[PartitionSpecification]:
         return list(self.partition_specs.values())
 
-    def get_num_specs(self) -> int:
-        return len(self.partition_specs.values())
-
     @classmethod
     def serialize_partition_by(cls, table: Table) -> str:
         serialized_partition_specs = [spec.model_dump_json() for spec in table.metadata.partition_specs]
