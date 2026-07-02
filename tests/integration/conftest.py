@@ -11,8 +11,9 @@ import pytest
 from pyiceberg.catalog import Catalog
 from pyiceberg.catalog.noop import NoopCatalog
 from pyiceberg.io import load_file_io
-from pyiceberg.serializers import FromInputFile
-from pyiceberg.table import Table
+from pyiceberg.serializers import FromInputFile, ToOutputFile
+from pyiceberg.table import CommitTableResponse, Table
+from pyiceberg.table.update import TableRequirement, TableUpdate, update_table_metadata
 from pyiceberg.typedef import Identifier
 from pyspark.sql import SparkSession
 
@@ -59,6 +60,45 @@ class PyIcebergHadoopCatalog(NoopCatalog):
             metadata_location=metadata_location,
             io=self._load_file_io(metadata.properties, metadata_location),
             catalog=self,
+        )
+
+    def commit_table(
+        self,
+        table: Table,
+        requirements: tuple[TableRequirement, ...],
+        updates: tuple[TableUpdate, ...],
+    ) -> CommitTableResponse:
+        """Persist table metadata updates for integration tests.
+
+        The test catalog loads metadata directly from `v*.metadata.json` files.
+        This commit implementation mirrors that convention so PyIceberg update
+        actions (such as expire_fast) can be verified in tests.
+        """
+        current_table = self.load_table(table.name())
+
+        for requirement in requirements:
+            requirement.validate(current_table.metadata)
+
+        updated_metadata = update_table_metadata(
+            base_metadata=current_table.metadata,
+            updates=updates,
+            enforce_validation=False,
+            metadata_location=current_table.metadata_location,
+        )
+
+        current_metadata_path = Path(current_table.metadata_location)
+        match = self.version_pattern.search(current_metadata_path.name)
+        current_version = int(match.group(1)) if match else 0
+        next_metadata_path = current_metadata_path.parent / f"v{current_version + 1}.metadata.json"
+
+        io = load_file_io(properties=self.properties, location=str(next_metadata_path))
+        ToOutputFile.table_metadata(updated_metadata, io.new_output(str(next_metadata_path)))
+
+        return CommitTableResponse.model_validate(
+            {
+                "metadata": updated_metadata,
+                "metadata-location": str(next_metadata_path),
+            }
         )
 
 
