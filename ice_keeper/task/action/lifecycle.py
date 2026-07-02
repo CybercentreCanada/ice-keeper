@@ -178,5 +178,5 @@ class LifecycleStrategy(ActionStrategy):
             row = rows[0]
             return row.asDict()
 
-        msg = f"Unable to retriev results of lifecylce operation. Presuming we were unable to commit the delete statement. [{self.mnt_props.full_name}]."
+        msg = f"Unable to retrieve results of lifecylce operation. Presuming we were unable to commit the delete statement. [{self.mnt_props.full_name}]."
         raise ActionFailed(msg)
