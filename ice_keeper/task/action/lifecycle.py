@@ -4,7 +4,7 @@ from typing import Any
 from pyspark.sql.types import StructType
 from typing_extensions import override
 
-from ice_keeper import Action, escape_identifier
+from ice_keeper import Action, ActionFailed, escape_identifier
 from ice_keeper.config import Config, TemplateName
 from ice_keeper.stm import STL
 from ice_keeper.task.task import SubTaskExecutor
@@ -168,7 +168,7 @@ class LifecycleStrategy(ActionStrategy):
                 bigint(nvl(summary.`deleted-records`, 0)) as lifecycle_deleted_records,
                 bigint(nvl(summary.`changed-partition-count`, 0)) as lifecycle_changed_partition_count
             from
-                {self.mnt_props.full_name}.snapshots
+                {escape_identifier(self.mnt_props.catalog)}.{escape_identifier(self.mnt_props.schema)}.{escape_identifier(self.mnt_props.table_name)}.snapshots
             where
                 operation = 'delete'
                 and summary.`app-id` = '{app_id}'
@@ -178,9 +178,5 @@ class LifecycleStrategy(ActionStrategy):
             row = rows[0]
             return row.asDict()
 
-        # Default values if no rows were found
-        return {
-            "lifecycle_deleted_data_files": -1,
-            "lifecycle_deleted_records": -1,
-            "lifecycle_changed_partition_count": -1,
-        }
+        msg = f"Unable to retriev results of lifecylce operation. Presuming we were unable to commit the delete statement. [{self.mnt_props.full_name}]."
+        raise ActionFailed(msg)
