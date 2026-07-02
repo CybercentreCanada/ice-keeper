@@ -128,6 +128,7 @@ class FileScheme(Enum):
 class Command(Enum):
     OPTIMIZE = "optimize"
     EXPIRE = "expire"
+    EXPIRE_FAST = "expire_fast"
     REWRITE_MANIFESTS = "rewrite_manifests"
     ORPHAN = "orphan"
     LIFECYCLE_DATA = "lifecycle"
@@ -150,6 +151,7 @@ class Command(Enum):
 class Action(Enum):
     REWRITE_DATA_FILES = "rewrite_data_files"
     EXPIRE_SNAPSHOTS = "expire_snapshots"
+    EXPIRE_FAST_SNAPSHOTS = "expire_fast_snapshots"
     REWRITE_MANIFESTS = "rewrite_manifests"
     REMOVE_ORPHAN_FILES = "remove_orphan_files"
     LIFECYCLE_DATA = "lifecycle_data"
@@ -162,6 +164,7 @@ class Action(Enum):
         command_to_action = {
             Command.OPTIMIZE: cls.REWRITE_DATA_FILES,
             Command.EXPIRE: cls.EXPIRE_SNAPSHOTS,
+            Command.EXPIRE_FAST: cls.EXPIRE_FAST_SNAPSHOTS,
             Command.REWRITE_MANIFESTS: cls.REWRITE_MANIFESTS,
             Command.ORPHAN: cls.REMOVE_ORPHAN_FILES,
             Command.LIFECYCLE_DATA: cls.LIFECYCLE_DATA,
