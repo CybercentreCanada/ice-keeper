@@ -61,6 +61,7 @@ ice-keeper is executed from the command line and requires an action argument. Th
 | **discover**          | Identify new Apache Iceberg tables for management and update configurations of tables already tracked by ice-keeper. |
 | **optimize**          | Enhance table performance using binpack, sort, or zorder strategies.                                                 |
 | **expire**            | Remove outdated snapshots to preserve performance and manage storage.                                                |
+| **expire_fast**       | Trim old snapshots quickly using PyIceberg metadata-only expiration (no data-file deletes).                         |
 | **orphan**            | Clean up orphaned data or metadata files that are no longer referenced.                                              |
 | **rewrite_manifests** | Reorganize and streamline manifest files for better efficiency.                                                      |
 | **lifecycle**         | Delete table data exceeding the configured retention period.                                                         |
@@ -295,7 +296,7 @@ In addition to using the Python logging mechanism, ice-keeper also writes the re
 | status                              | Status of the execution: `SUCCESS`, `FAILED`, or `WARNING`.                                                          |
 | status_details                      | Additional details such as the exception stack trace on failure.                                                     |
 | executed_by                         | Identity that executed this action.                                                                                  |
-| action                              | The action taken: `rewrite_data_files`, `expire_snapshots`, `rewrite_manifests`, `remove_orphan_files`, `lifecycle`. |
+| action                              | The action taken: `rewrite_data_files`, `expire_snapshots`, `expire_fast_snapshots`, `rewrite_manifests`, `remove_orphan_files`, `lifecycle`. |
 | rewritten_data_files_count          | Number of data files rewritten. Used by `rewrite_data_files`.                                                        |
 | added_data_files_count              | Number of new data files created. Used by `rewrite_data_files`.                                                      |
 | rewritten_bytes_count               | Total bytes rewritten. Used by `rewrite_data_files`.                                                                 |

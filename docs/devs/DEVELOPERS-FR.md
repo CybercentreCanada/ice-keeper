@@ -61,6 +61,7 @@ ice-keeper s'exécute depuis la ligne de commande et nécessite un argument d'ac
 | **discover**             | Identifier de nouvelles tables Apache Iceberg à gérer et mettre à jour les configurations des tables déjà suivies par ice-keeper. |
 | **optimize**             | Améliorer les performances des tables à l'aide de stratégies binpack, sort ou zorder.                                |
 | **expire**               | Supprimer les instantanés obsolètes pour préserver les performances et gérer le stockage.                            |
+| **expire_fast**          | Supprimer rapidement les anciens instantanés via PyIceberg (métadonnées seulement, sans suppression de fichiers).   |
 | **orphan**               | Nettoyer les fichiers de données ou de métadonnées orphelins qui ne sont plus référencés.                            |
 | **rewrite_manifests**    | Réorganiser et optimiser les fichiers manifest pour une meilleure efficacité.                                        |
 | **lifecycle**            | Supprimer les données des tables dépassant la période de rétention configurée.                                      |
@@ -251,7 +252,7 @@ En plus d'utiliser le mécanisme de journalisation Python, ice-keeper écrit ég
 | status                              | Statut de l'exécution : `SUCCESS`, `FAILED` ou `WARNING`.                                                                  |
 | status_details                      | Détails supplémentaires tels que la trace de l'exception en cas d'échec.                                                   |
 | executed_by                         | Identité ayant exécuté cette action.                                                                                       |
-| action                              | Action effectuée : `rewrite_data_files`, `expire_snapshots`, `rewrite_manifests`, `remove_orphan_files`, `lifecycle`.      |
+| action                              | Action effectuée : `rewrite_data_files`, `expire_snapshots`, `expire_fast_snapshots`, `rewrite_manifests`, `remove_orphan_files`, `lifecycle`.      |
 | rewritten_data_files_count          | Nombre de fichiers de données réécrits. Utilisé par `rewrite_data_files`.                                                  |
 | added_data_files_count              | Nombre de nouveaux fichiers de données créés. Utilisé par `rewrite_data_files`.                                            |
 | rewritten_bytes_count               | Total d'octets réécrits. Utilisé par `rewrite_data_files`.                                                                 |

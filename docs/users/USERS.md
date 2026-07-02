@@ -31,6 +31,10 @@ ice-keeper can:
 Table owners control ice-keeper entirely through Iceberg table properties. Here is a summary of the key capabilities:
 
 - **Snapshot expiration** — Enabled by default. ice-keeper expires old snapshots to keep metadata small and reclaim storage. You control the retention window (in days) and the minimum number of snapshots to keep.
+    You can run this as:
+    - `expire`: Iceberg procedure-based expiration (can also delete untracked files)
+    - `expire_fast`: PyIceberg metadata-only snapshot trimming (does not delete untracked files)
+    A common pattern is to run `expire_fast` daily, then run `orphan` weekly.
 - **Orphan file removal** — Enabled by default. ice-keeper identifies and deletes data files that were written but never committed (e.g., due to job failures). It leverages a storage inventory report to greatly speed up this process. Empty folders left behind are also cleaned up.
 - **Optimization** — Opt-in. You choose whether to optimize your table and which strategy to use: `binpack` (compact small files), `sort` (compact and sort by specified columns), or `zorder` (compact and Z-order by specified columns). You control the diagnostic window by specifying how many recent partitions to skip (`min-partition-to-optimize`) and how far back to look (`max-partition-to-optimize`). Within this window, ice-keeper evaluates the health of each partition and only optimizes those that actually need it — not every partition in the window is rewritten. The target file size can be set explicitly or left on automatic (recommended), which sizes files per partition for optimal performance.
 - **Lifecycle management** — Opt-in. ice-keeper can automatically delete rows older than a configurable retention period based on an ingestion time column, helping manage storage costs for tables with time-bound data.

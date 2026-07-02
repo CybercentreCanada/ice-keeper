@@ -552,6 +552,31 @@ def expire(ctx: click.Context) -> None:
     optimize_maintenance_schedule(executor)
 
 
+@cli.command(name=Command.EXPIRE_FAST.value, short_help="Fast metadata-only snapshot trimming using PyIceberg.")
+@click.pass_context
+def expire_fast(ctx: click.Context) -> None:
+    """Trim old snapshots quickly without deleting untracked data files.
+
+    This command uses PyIceberg to remove old snapshot references from table
+    metadata. It intentionally does not remove untracked data files; run the
+    `orphan` command periodically to clean those files.
+    """
+    catalog, schema, table_name = _get_catalog_schema_table_name(ctx)
+    where = ctx.obj["where"]
+    scope = Scope(catalog, schema, table_name, where=where)
+
+    maintenance_schedule = MaintenanceSchedule(scope)
+    action = Action.from_command(Command.EXPIRE_FAST)
+    tasks = ActionTaskFactory.make_tasks(action, maintenance_schedule)
+
+    executor = ctx.obj["executor"]
+    ordered_tasks = get_random_tasks(tasks)
+    log_initial_task_numbering(ordered_tasks)
+
+    executor.submit_tasks_and_wait(ordered_tasks)
+    optimize_maintenance_schedule(executor)
+
+
 @cli.command(name=Command.REWRITE_MANIFESTS.value, short_help="Optimize metadata by rewriting manifest files.")
 @click.pass_context
 def rewrite_manifests(ctx: click.Context) -> None:
