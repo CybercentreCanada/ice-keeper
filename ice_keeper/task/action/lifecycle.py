@@ -4,7 +4,7 @@ from typing import Any
 from pyspark.sql.types import StructType
 from typing_extensions import override
 
-from ice_keeper import Action, ActionFailed, escape_identifier
+from ice_keeper import Action, escape_identifier
 from ice_keeper.config import Config, TemplateName
 from ice_keeper.stm import STL
 from ice_keeper.task.task import SubTaskExecutor
@@ -159,7 +159,13 @@ class LifecycleStrategy(ActionStrategy):
                 - `lifecycle_deleted_records`: Number of records that were deleted.
                 - `lifecycle_changed_partition_count`: Number of partitions that were modified.
 
-            If no rows are available, default values of -1 are returned.
+            If no matching row is available, default values of -1 are returned.
+
+        Notes:
+            Lifecycle deletes can commit as `operation='overwrite'` when Iceberg
+            writes delete files instead of cutting partition boundaries. In that
+            case, filtering only for `operation='delete'` may not find a row for
+            this app-id.
         """
         app_id = STL.get().sparkContext.applicationId
         sql = f"""
@@ -178,5 +184,15 @@ class LifecycleStrategy(ActionStrategy):
             row = rows[0]
             return row.asDict()
 
-        msg = f"Unable to retrieve results of lifecylce operation. Presuming we were unable to commit the delete statement. [{self.mnt_props.full_name}]."
-        raise ActionFailed(msg)
+        logger.warning(
+            "No lifecycle snapshot row with operation='delete' found for app-id=%s on %s. "
+            "Lifecycle may have committed as operation='overwrite' (delete files). "
+            "Returning sentinel values (-1).",
+            app_id,
+            self.mnt_props.full_name,
+        )
+        return {
+            "lifecycle_deleted_data_files": -1,
+            "lifecycle_deleted_records": -1,
+            "lifecycle_changed_partition_count": -1,
+        }
