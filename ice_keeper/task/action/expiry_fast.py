@@ -16,11 +16,15 @@ logger = logging.getLogger("ice-keeper")
 
 
 class ExpireFastSnapshotsStrategy(ActionStrategy):
-    """Fast snapshot trimming using PyIceberg metadata-only expiration.
+    """Fast snapshot trimming using Iceberg Java API by default.
 
-    This strategy removes old snapshot references from table metadata without
-    deleting underlying data files. Untracked files can later be cleaned up by
-    running orphan-file maintenance.
+    The default runtime path calls Iceberg's Java API via Spark JVM to expire
+    snapshots with explicit retention controls. The original PyIceberg-based
+    implementation is retained as a fallback path.
+
+    With the default configuration, this strategy removes old snapshot
+    references from table metadata without deleting underlying data files.
+    Untracked files can later be cleaned up by running orphan-file maintenance.
     """
 
     # Default runtime mode for expire_fast.
@@ -100,7 +104,8 @@ class ExpireFastSnapshotsStrategy(ActionStrategy):
             "pyiceberg.expire_snapshots("
             f"table='{self.mnt_props.full_name}', "
             f"older_than='{older_than.isoformat()}', "
-            f"retain_last={retain_last}"
+            f"retain_last={retain_last}, "
+            "delete_files=false"
             ")"
         )
 
