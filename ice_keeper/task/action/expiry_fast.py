@@ -5,8 +5,9 @@ from typing import Any
 from pyiceberg.table.refs import SnapshotRefType
 from typing_extensions import override
 
-from ice_keeper import Action, TimeProvider
+from ice_keeper import Action, TimeProvider, escape_identifier
 from ice_keeper.catalog import load_table
+from ice_keeper.stm import STL
 from ice_keeper.task.task import SubTaskExecutor
 
 from .action import ActionStrategy
@@ -15,12 +16,21 @@ logger = logging.getLogger("ice-keeper")
 
 
 class ExpireFastSnapshotsStrategy(ActionStrategy):
-    """Fast snapshot trimming using PyIceberg metadata-only expiration.
+    """Fast snapshot trimming using Iceberg Java API by default.
 
-    This strategy removes old snapshot references from table metadata without
-    deleting underlying data files. Untracked files can later be cleaned up by
-    running orphan-file maintenance.
+    The default runtime path calls Iceberg's Java API via Spark JVM to expire
+    snapshots with explicit retention controls. The original PyIceberg-based
+    implementation is retained as a fallback path.
+
+    With the default configuration, this strategy removes old snapshot
+    references from table metadata without deleting underlying data files.
+    Untracked files can later be cleaned up by running orphan-file maintenance.
     """
+
+    # Default runtime mode for expire_fast.
+    USE_JAVA_API = True
+    # Java API allows explicitly controlling whether expired data files are deleted.
+    JAVA_DELETE_EXPIRED_FILES = False
 
     @override
     @classmethod
@@ -80,6 +90,16 @@ class ExpireFastSnapshotsStrategy(ActionStrategy):
         n_days = self.mnt_props.retention_days_snapshots
         older_than = TimeProvider.current_datetime() - timedelta(days=n_days)
         retain_last = max(1, self.mnt_props.retention_num_snapshots)
+        if self.USE_JAVA_API:
+            return (
+                "java.expire_snapshots("
+                f"table='{self.mnt_props.full_name}', "
+                f"older_than='{older_than.isoformat()}', "
+                f"retain_last={retain_last}, "
+                f"delete_files={str(self.JAVA_DELETE_EXPIRED_FILES).lower()}"
+                ")"
+            )
+
         return (
             "pyiceberg.expire_snapshots("
             f"table='{self.mnt_props.full_name}', "
@@ -91,7 +111,56 @@ class ExpireFastSnapshotsStrategy(ActionStrategy):
 
     @override
     def execute_statement(self, sub_executor: SubTaskExecutor, sql_stm: str) -> dict[str, Any]:
-        """Execute fast metadata-only snapshot expiration with PyIceberg.
+        """Execute fast snapshot expiration.
+
+        By default, this strategy uses the Java Iceberg API via Py4J because it
+        supports explicit control over deleting expired data files and keeps
+        retention handling in the native API path.
+
+        The original PyIceberg implementation is kept as a fallback helper to
+        simplify rollback if needed.
+        """
+        if self.USE_JAVA_API:
+            return self._execute_statement_with_java_api(sub_executor, sql_stm)
+        return self._execute_statement_with_pyiceberg(sub_executor, sql_stm)
+
+    def _execute_statement_with_java_api(self, sub_executor: SubTaskExecutor, sql_stm: str) -> dict[str, Any]:
+        """Expire snapshots using Iceberg's Java API through Spark JVM."""
+        _ = sub_executor
+        _ = sql_stm
+
+        n_days = self.mnt_props.retention_days_snapshots
+        older_than = TimeProvider.current_datetime() - timedelta(days=n_days)
+        retain_last = max(1, self.mnt_props.retention_num_snapshots)
+
+        identifier = (
+            f"{escape_identifier(self.mnt_props.catalog)}."
+            f"{escape_identifier(self.mnt_props.schema)}."
+            f"{escape_identifier(self.mnt_props.table_name)}"
+        )
+
+        spark = STL.get()
+        jvm = spark._jvm  # noqa: SLF001
+        jspark_session = spark._jsparkSession  # noqa: SLF001
+        if jvm is None or jspark_session is None:
+            msg = "Spark JVM bridge is unavailable; cannot run Java expireSnapshots API"
+            raise RuntimeError(msg)
+        jtable = jvm.org.apache.iceberg.spark.Spark3Util.loadIcebergTable(jspark_session, identifier)
+
+        # Java API keeps branch/tag protections and retention logic within the engine.
+        jtable.expireSnapshots().expireOlderThan(int(older_than.timestamp() * 1000)).retainLast(
+            int(retain_last)
+        ).cleanExpiredFiles(self.JAVA_DELETE_EXPIRED_FILES).commit()
+
+        logger.info(
+            "Fast-expired snapshots from %s using Java API (delete_files=%s)",
+            self.mnt_props.full_name,
+            self.JAVA_DELETE_EXPIRED_FILES,
+        )
+        return {}
+
+    def _execute_statement_with_pyiceberg(self, sub_executor: SubTaskExecutor, sql_stm: str) -> dict[str, Any]:
+        """Original PyIceberg implementation kept as fallback.
 
         The action is intentionally split into clear phases:
 

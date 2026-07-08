@@ -70,7 +70,7 @@ def test_expire_fast_snapshots_trims_metadata_only(executor: TaskExecutor) -> No
 
     rows = run_action_and_collect_journal(executor, Action.EXPIRE_FAST_SNAPSHOTS)
     assert len(rows) == 1, "Should have one journal entry for expire_fast"
-    assert "pyiceberg.expire_snapshots(" in rows[0].sql_stm
+    assert "java.expire_snapshots(" in rows[0].sql_stm
 
     table_after = load_test_table()
     snapshots_after = len(table_after.metadata.snapshots)
