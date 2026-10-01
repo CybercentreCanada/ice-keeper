@@ -126,8 +126,7 @@ class TaskExecutor(SubTaskExecutor):
             # Execute the task
             result = task.execute(self)
             if result.exception:  # Handle execution errors
-                msg = f"Error executing task {task.task_description}: {result.exception}"
-                logger.error(msg)
+                logger.exception("Error executing task %s: %s", task.task_description, result.exception)
                 success = False
                 if isinstance(result.exception, ClosedSparkSessionError):
                     # If the session is closed, we should stop processing further tasks
@@ -137,9 +136,9 @@ class TaskExecutor(SubTaskExecutor):
                     success = False
             # Queue the result for journaling
             self.queue_result(result)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             msg = f"Unexpected error executing task {task.task_description}: {e}"
-            logger.error(msg)
+            logger.exception(msg)
             success = False
         if update_counters:
             with self.lock:  # Update task counters safely

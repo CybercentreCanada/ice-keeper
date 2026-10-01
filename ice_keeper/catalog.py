@@ -1,7 +1,12 @@
+import threading
+
 from pyiceberg.catalog import Catalog, load_catalog
 from pyiceberg.table import Table
 
 CATALOGS: dict[str, Catalog] = {}
+# Tasks run concurrently: building two catalogs for the same name yields two credentials
+# sharing one rotating refresh token, which revokes the token family and causes 401s.
+_CATALOGS_LOCK = threading.Lock()
 
 
 def load_catalog_from_cache(catalog_name: str) -> Catalog:
@@ -10,9 +15,10 @@ def load_catalog_from_cache(catalog_name: str) -> Catalog:
     Args:
         catalog_name (str): The name of the catalog to load.
     """
-    if catalog_name not in CATALOGS:
-        CATALOGS[catalog_name] = load_catalog(catalog_name)
-    return CATALOGS[catalog_name]
+    with _CATALOGS_LOCK:
+        if catalog_name not in CATALOGS:
+            CATALOGS[catalog_name] = load_catalog(catalog_name)
+        return CATALOGS[catalog_name]
 
 
 def load_table(catalog_name: str, schema: str, table_name: str) -> Table:
