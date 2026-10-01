@@ -211,6 +211,7 @@ class ActionTask(Task):
             journal_entry.set_status(Status.WARNING, str(w))
             task_exception = w
         except Exception as e:  # noqa: BLE001
+            logger.exception("Failed to execute %s for table %s", self.strategy.get_action(), self.mnt_props.full_name)
             journal_entry.set_status(Status.FAILED, str(e))
             task_exception = e
 
