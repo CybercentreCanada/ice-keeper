@@ -190,7 +190,7 @@ class ActionTask(Task):
         """
         journal_entry = JournalEntry.make_journal_entry(self.strategy.get_action(), self.mnt_props)
         journal_entry.start_time = datetime.now(timezone.utc)
-        task_exception: None | Exception = None
+        task_exception: Exception | None = None
 
         try:
             # Refresh maintenance properties if required
@@ -210,7 +210,7 @@ class ActionTask(Task):
         except ActionWarning as w:
             journal_entry.set_status(Status.WARNING, str(w))
             task_exception = w
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.exception("Failed to execute %s for table %s", self.strategy.get_action(), self.mnt_props.full_name)
             journal_entry.set_status(Status.FAILED, str(e))
             task_exception = e

@@ -140,7 +140,7 @@ class TaskExecutor(SubTaskExecutor):
                     success = False
             # Queue the result for journaling
             self.queue_result(result)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             msg = f"Unexpected error executing task {task.task_description}: {e}"
             logger.exception(msg)
             success = False
