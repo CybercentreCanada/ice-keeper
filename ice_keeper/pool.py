@@ -126,7 +126,6 @@ class TaskExecutor(SubTaskExecutor):
             # Execute the task
             result = task.execute(self)
             if result.exception:  # Handle execution errors
-                msg = f"Error executing task {task.task_description}: {result.exception}"
                 logger.exception("Error executing task %s: %s", task.task_description, result.exception)
                 success = False
                 if isinstance(result.exception, ClosedSparkSessionError):
