@@ -1,6 +1,6 @@
 [project]
 name = "ice-keeper"
-version = "0.0.1"
+version = "0.0.2"
 description = ""
 authors = [{ name = "cccs-jc", email = "jean-claude.cote@cyber.gc.ca" }]
 readme = "README.md"
@@ -22,7 +22,7 @@ dependencies = [
 [project.optional-dependencies]
 # Define a group (e.g., 'spark') for the heavy stuff
 spark = [
-    "pyspark>=3.5.0,<4.0.0",
+    "pyspark==4.1.3",
 ]
 
 [project.scripts]
@@ -38,7 +38,7 @@ dev = [
   "pytest>=8.3.4,<9.0.0",
   "mypy==1.15.0",
   "pytest-env>=1.1.5,<2.0.0",
-  "pyspark>=3.5.0,<4.0.0",
+  "pyspark==4.1.3",
   "build",
 ]
 
