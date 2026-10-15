@@ -1,7 +1,7 @@
 # Variables
-ICEBERG_VERSION := 1.10.1
-SPARK_VERSION := 3.5
-SCALA_VERSION := 2.12
+ICEBERG_VERSION := 1.12.0
+SPARK_VERSION := 4.1
+SCALA_VERSION := 2.13
 JAR_NAME := iceberg-spark-runtime-$(SPARK_VERSION)_$(SCALA_VERSION)-$(ICEBERG_VERSION).jar
 JAR_URL := https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-spark-runtime-$(SPARK_VERSION)_$(SCALA_VERSION)/$(ICEBERG_VERSION)/$(JAR_NAME)
 JARS_DIR := ./jars

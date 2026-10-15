@@ -32,6 +32,11 @@ ice-keeper = "ice_keeper.ice_keeper:main"
 # Use operating system’s trust store
 native-tls = true
 
+[[tool.uv.index]]
+name = "cccs"
+url = "https://bagofholding-u.cse-cst.gc.ca/repository/pypi-cccs/simple"
+default = true
+
 [dependency-groups]
 dev = [
   "ruff==0.14.0",
