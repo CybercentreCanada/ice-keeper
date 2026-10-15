@@ -140,7 +140,7 @@ def spark_fixture(tmp_path_factory: pytest.TempPathFactory) -> None:
         # Make spark is running in UTC timezone.
         .config("spark.sql.session.timeZone", "UTC")
         # Use a local catalog to speed up integration testing.
-        .config("spark.driver.extraClassPath", "./jars/iceberg-spark-runtime-3.5_2.12-1.10.1.jar")
+        .config("spark.driver.extraClassPath", "./jars/iceberg-spark-runtime-4.1_2.13-1.12.0.jar")
         .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
         .config("spark.sql.catalog.local", "org.apache.iceberg.spark.SparkCatalog")
         .config("spark.sql.catalog.local.type", "hadoop")
